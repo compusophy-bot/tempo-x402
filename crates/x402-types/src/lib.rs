@@ -6,6 +6,7 @@ pub mod response;
 pub mod scheme;
 
 pub use constants::*;
+pub use constants::ChainConfig;
 pub use error::X402Error;
 pub use payment::*;
 pub use response::*;

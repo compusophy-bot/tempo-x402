@@ -2,6 +2,20 @@
 name = "x402-facilitator"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "x402 facilitator server for payment verification and on-chain settlement"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "payment", "facilitator", "settlement"]
+categories = ["web-programming::http-server"]
+
+[lib]
+name = "x402_facilitator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "x402-facilitator"
+path = "src/main.rs"
 
 [dependencies]
 x402-types = { workspace = true }
@@ -15,4 +29,13 @@ tokio = { workspace = true }
 dotenvy = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+alloy = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+reqwest = { workspace = true }
+
+[dev-dependencies]
+actix-rt = "2"
+serde_json = { workspace = true }
+x402-types = { workspace = true }
 alloy = { workspace = true }

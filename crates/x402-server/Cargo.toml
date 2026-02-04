@@ -2,6 +2,12 @@
 name = "x402-server"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "x402 resource server with payment middleware for gating API endpoints"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "payment", "api", "middleware"]
+categories = ["web-programming::http-server"]
 
 [lib]
 name = "x402_server"
@@ -19,7 +25,6 @@ serde_json = { workspace = true }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
 actix-governor = { workspace = true }
-actix-files = { workspace = true }
 tokio = { workspace = true }
 dotenvy = { workspace = true }
 tracing = { workspace = true }
@@ -28,4 +33,6 @@ reqwest = { workspace = true }
 alloy = { workspace = true }
 base64 = { workspace = true }
 tokio-stream = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
 futures = { workspace = true }

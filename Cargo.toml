@@ -7,10 +7,6 @@ members = [
     "crates/x402-server",
     "crates/x402-client",
 ]
-exclude = [
-    "crates/x402-frontend",
-]
-
 [workspace.dependencies]
 x402-types = { path = "crates/x402-types" }
 x402-tempo = { path = "crates/x402-tempo" }
@@ -26,11 +22,13 @@ dotenvy = "0.15"
 reqwest = { version = "0.12", features = ["json"] }
 actix-web = "4"
 actix-cors = "0.7"
-actix-files = "0.6"
 actix-governor = "0.8"
 tokio-stream = "0.1"
 futures = "0.3"
 dashmap = "6"
+prometheus = "0.14"
+lazy_static = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
 hmac = "0.12"
 sha2 = "0.10"
 

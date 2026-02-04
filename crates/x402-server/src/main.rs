@@ -1,5 +1,4 @@
 use actix_cors::Cors;
-use actix_files::Files;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer};
 use alloy::providers::RootProvider;
@@ -55,7 +54,7 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(4021);
 
     // Build payment config using the server scheme for price parsing
-    let server_scheme = x402_tempo::TempoSchemeServer;
+    let server_scheme = x402_tempo::TempoSchemeServer::new();
     let gate_config = PaymentGateConfig::from_env(&facilitator_url);
 
     if gate_config.hmac_secret.is_none() {
@@ -68,10 +67,6 @@ async fn main() -> std::io::Result<()> {
     let provider = web::Data::new(Arc::new(provider));
     let http_client = web::Data::new(reqwest::Client::new());
 
-    // Frontend dist path
-    let frontend_dir =
-        std::env::var("FRONTEND_DIR").unwrap_or_else(|_| "./dist".to_string());
-
     let cors_origins = gate_config.allowed_origins.clone();
 
     tracing::info!("x402 server listening at http://localhost:{port}");
@@ -79,7 +74,6 @@ async fn main() -> std::io::Result<()> {
     tracing::info!("Payments go to: {evm_address}");
     tracing::info!("Using facilitator: {facilitator_url}");
     tracing::info!("Rate limit: {} req/min per IP", gate_config.rate_limit_rpm);
-    tracing::info!("Frontend: http://localhost:{port}");
 
     let governor_conf = GovernorConfigBuilder::default()
         .requests_per_minute(gate_config.rate_limit_rpm)
@@ -87,24 +81,17 @@ async fn main() -> std::io::Result<()> {
         .expect("failed to build rate limiter config");
 
     HttpServer::new(move || {
-        let app = App::new()
+        App::new()
             .wrap(build_cors(&cors_origins))
             .wrap(Governor::new(&governor_conf))
             .app_data(payment_config.clone())
             .app_data(provider.clone())
             .app_data(http_client.clone())
             .app_data(web::JsonConfig::default().limit(65_536))
+            .service(routes::metrics_endpoint)
+            .service(routes::health)
             .service(routes::block_number)
-            .service(routes::api_demo);
-
-        // Serve static frontend if directory exists
-        let fe = frontend_dir.clone();
-        if std::path::Path::new(&fe).exists() {
-            app.service(Files::new("/", &fe).index_file("index.html"))
-        } else {
-            tracing::warn!("Frontend directory '{fe}' not found, skipping static files");
-            app
-        }
+            .service(routes::api_demo)
     })
     .bind(("0.0.0.0", port))?
     .run()

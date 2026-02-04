@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::providers::Provider;
@@ -7,11 +6,12 @@ use dashmap::DashMap;
 use tokio::sync::Mutex;
 
 use x402_types::{
-    PaymentPayload, PaymentRequirements, SchemeFacilitator, SettleResponse, VerifyResponse,
-    X402Error, TEMPO_NETWORK,
+    ChainConfig, PaymentPayload, PaymentRequirements, SchemeFacilitator, SettleResponse,
+    VerifyResponse, X402Error,
 };
 
-use crate::eip712::verify_signature;
+use crate::eip712::verify_signature_for_chain;
+use crate::nonce_store::{InMemoryNonceStore, NonceStore};
 use crate::tip20;
 use crate::PaymentAuthorization;
 
@@ -19,8 +19,9 @@ use crate::PaymentAuthorization;
 pub struct TempoSchemeFacilitator<P> {
     provider: P,
     facilitator_address: Address,
-    /// Tracks used nonces to prevent replay attacks.
-    used_nonces: Arc<DashMap<FixedBytes<32>, Instant>>,
+    config: ChainConfig,
+    /// Pluggable nonce store for replay protection.
+    nonce_store: Arc<dyn NonceStore>,
     /// Per-payer mutex for atomic verify+settle (prevents TOCTOU).
     payer_locks: Arc<DashMap<Address, Arc<Mutex<()>>>>,
     /// Maximum payment timeout in seconds (used for nonce expiry).
@@ -32,10 +33,32 @@ impl<P> TempoSchemeFacilitator<P> {
         Self {
             provider,
             facilitator_address,
-            used_nonces: Arc::new(DashMap::new()),
+            config: ChainConfig::default(),
+            nonce_store: Arc::new(InMemoryNonceStore::new()),
             payer_locks: Arc::new(DashMap::new()),
             max_timeout_seconds: 300, // 5 minutes default
         }
+    }
+
+    pub fn with_chain_config(
+        provider: P,
+        facilitator_address: Address,
+        config: ChainConfig,
+    ) -> Self {
+        Self {
+            provider,
+            facilitator_address,
+            config,
+            nonce_store: Arc::new(InMemoryNonceStore::new()),
+            payer_locks: Arc::new(DashMap::new()),
+            max_timeout_seconds: 300,
+        }
+    }
+
+    /// Set a custom nonce store (e.g. SqliteNonceStore for persistence).
+    pub fn with_nonce_store(mut self, store: Arc<dyn NonceStore>) -> Self {
+        self.nonce_store = store;
+        self
     }
 
     /// Start a background task that purges expired nonces every 60 seconds.
@@ -43,31 +66,42 @@ impl<P> TempoSchemeFacilitator<P> {
     where
         P: Send + Sync + 'static,
     {
-        let nonces = Arc::clone(&self.used_nonces);
+        let store = Arc::clone(&self.nonce_store);
         let expiry_secs = self.max_timeout_seconds + 60;
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 interval.tick().await;
-                let before = nonces.len();
-                nonces.retain(|_, inserted: &mut Instant| inserted.elapsed().as_secs() < expiry_secs);
-                let purged = before - nonces.len();
+                let purged = store.purge_expired(expiry_secs);
                 if purged > 0 {
-                    tracing::info!(purged, remaining = nonces.len(), "purged expired nonces");
+                    tracing::info!(purged, "purged expired nonces");
                 }
             }
         });
     }
 
     /// Check if a nonce has already been used.
-    fn is_nonce_used(&self, nonce: &FixedBytes<32>) -> bool {
-        self.used_nonces.contains_key(nonce)
+    #[doc(hidden)]
+    pub fn is_nonce_used(&self, nonce: &FixedBytes<32>) -> bool {
+        self.nonce_store.is_used(nonce)
     }
 
     /// Record a nonce as used.
-    fn record_nonce(&self, nonce: FixedBytes<32>) {
-        self.used_nonces.insert(nonce, Instant::now());
+    #[doc(hidden)]
+    pub fn record_nonce(&self, nonce: FixedBytes<32>) {
+        self.nonce_store.record(nonce);
+    }
+
+    /// Check RPC connectivity by fetching the latest block number.
+    pub async fn health_check(&self) -> Result<u64, X402Error>
+    where
+        P: Provider + Send + Sync,
+    {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|e| X402Error::ChainError(format!("health check failed: {e}")))
     }
 
     /// Get or create a per-payer mutex for atomic operations.
@@ -144,7 +178,7 @@ where
         let sig_bytes = alloy::hex::decode(p.signature.strip_prefix("0x").unwrap_or(&p.signature))
             .map_err(|e| X402Error::SignatureError(format!("invalid hex signature: {e}")))?;
 
-        let recovered = verify_signature(&auth, &sig_bytes)?;
+        let recovered = verify_signature_for_chain(&auth, &sig_bytes, &self.config)?;
         if recovered != p.from {
             return Ok(VerifyResponse {
                 is_valid: false,
@@ -233,7 +267,7 @@ where
                 error_reason: check.invalid_reason,
                 payer: check.payer,
                 transaction: String::new(),
-                network: TEMPO_NETWORK.to_string(),
+                network: self.config.network.clone(),
             });
         }
 
@@ -262,7 +296,7 @@ where
             error_reason: None,
             payer: Some(p.from),
             transaction: format!("{tx_hash}"),
-            network: TEMPO_NETWORK.to_string(),
+            network: self.config.network.clone(),
         })
     }
 }

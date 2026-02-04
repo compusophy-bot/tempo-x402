@@ -98,3 +98,40 @@ impl PaymentConfig {
         self.routes.get(&key)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_payment_config_creates_block_number_route() {
+        let scheme = x402_tempo::TempoSchemeServer::new();
+        let gate = PaymentGateConfig {
+            facilitator_url: "http://localhost:4022".to_string(),
+            hmac_secret: None,
+            rate_limit_rpm: 60,
+            allowed_origins: vec![],
+        };
+        let config = PaymentConfig::new(&scheme, Address::ZERO, &gate);
+        let route = config.get_route("GET", "/blockNumber");
+        assert!(route.is_some());
+        let req = &route.unwrap().requirements;
+        assert_eq!(req.scheme, "tempo-tip20");
+        assert_eq!(req.network, "eip155:42431");
+        assert_eq!(req.price, "$0.001");
+        assert_eq!(req.amount, "1000");
+    }
+
+    #[test]
+    fn test_get_route_returns_none_for_unknown() {
+        let scheme = x402_tempo::TempoSchemeServer::new();
+        let gate = PaymentGateConfig {
+            facilitator_url: "http://test".to_string(),
+            hmac_secret: None,
+            rate_limit_rpm: 60,
+            allowed_origins: vec![],
+        };
+        let config = PaymentConfig::new(&scheme, Address::ZERO, &gate);
+        assert!(config.get_route("POST", "/unknown").is_none());
+    }
+}

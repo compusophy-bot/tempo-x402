@@ -87,3 +87,56 @@ pub fn encode_payment(payload: &PaymentPayload) -> Result<String, X402Error> {
     let json = serde_json::to_vec(payload)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&json))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{Address, FixedBytes};
+    use x402_types::TempoPaymentData;
+
+    fn sample_payload() -> PaymentPayload {
+        PaymentPayload {
+            x402_version: 1,
+            payload: TempoPaymentData {
+                from: Address::ZERO,
+                to: Address::ZERO,
+                value: "1000".to_string(),
+                token: Address::ZERO,
+                valid_after: 0,
+                valid_before: u64::MAX,
+                nonce: FixedBytes::ZERO,
+                signature: "0xdead".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn test_encode_payment_roundtrip() {
+        let payload = sample_payload();
+        let encoded = encode_payment(&payload).unwrap();
+
+        let decoded_bytes = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .unwrap();
+        let decoded: PaymentPayload = serde_json::from_slice(&decoded_bytes).unwrap();
+
+        assert_eq!(decoded.x402_version, payload.x402_version);
+        assert_eq!(decoded.payload.from, payload.payload.from);
+        assert_eq!(decoded.payload.value, payload.payload.value);
+        assert_eq!(decoded.payload.signature, payload.payload.signature);
+    }
+
+    #[test]
+    fn test_encode_produces_valid_base64() {
+        let payload = sample_payload();
+        let encoded = encode_payment(&payload).unwrap();
+
+        // Should decode without error
+        let result = base64::engine::general_purpose::STANDARD.decode(&encoded);
+        assert!(result.is_ok());
+
+        // Should be valid JSON
+        let json: Result<serde_json::Value, _> = serde_json::from_slice(&result.unwrap());
+        assert!(json.is_ok());
+    }
+}

@@ -23,4 +23,7 @@ pub type WalletProvider = FillProvider<
 pub struct AppState {
     pub facilitator: x402_tempo::TempoSchemeFacilitator<WalletProvider>,
     pub hmac_secret: Option<Vec<u8>>,
+    pub chain_config: x402_types::ChainConfig,
+    pub webhook_urls: Vec<String>,
+    pub http_client: reqwest::Client,
 }

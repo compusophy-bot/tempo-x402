@@ -1,6 +1,7 @@
 pub mod client;
 pub mod eip712;
 pub mod facilitator;
+pub mod nonce_store;
 pub mod server;
 pub mod tip20;
 

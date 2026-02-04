@@ -48,7 +48,10 @@ pub async fn call_verify_and_settle(
     });
     let body_bytes = serde_json::to_vec(&body).map_err(|e| format!("serialization failed: {e}"))?;
 
-    let mut request = client.post(&url).header("Content-Type", "application/json");
+    let mut request = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(30));
 
     if let Some(secret) = hmac_secret {
         let sig = x402_types::hmac::compute_hmac(secret, &body_bytes);
@@ -68,6 +71,52 @@ pub async fn call_verify_and_settle(
     resp.json::<SettleResponse>()
         .await
         .map_err(|e| format!("facilitator response parse failed: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{Address, FixedBytes};
+    use x402_types::TempoPaymentData;
+
+    #[test]
+    fn test_decode_valid_header() {
+        let payload = PaymentPayload {
+            x402_version: 1,
+            payload: TempoPaymentData {
+                from: Address::ZERO,
+                to: Address::ZERO,
+                value: "1000".to_string(),
+                token: Address::ZERO,
+                valid_after: 0,
+                valid_before: u64::MAX,
+                nonce: FixedBytes::ZERO,
+                signature: "0xdead".to_string(),
+            },
+        };
+        let json = serde_json::to_vec(&payload).unwrap();
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(&json);
+        let decoded = decode_payment_header(&encoded).unwrap();
+        assert_eq!(decoded.x402_version, 1);
+        assert_eq!(decoded.payload.value, "1000");
+    }
+
+    #[test]
+    fn test_decode_invalid_base64() {
+        let result = decode_payment_header("not-valid-base64!!!");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid base64"));
+    }
+
+    #[test]
+    fn test_decode_invalid_json() {
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(b"this is not json");
+        let result = decode_payment_header(&encoded);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid JSON"));
+    }
 }
 
 /// High-level payment gate: checks header, verifies, settles.

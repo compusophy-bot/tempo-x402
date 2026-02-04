@@ -26,7 +26,6 @@ Server ◀──200 + data──────
 | `x402-server` | Resource server + reusable payment middleware (actix-web) |
 | `x402-facilitator` | Payment verification + on-chain settlement server |
 | `x402-client` | CLI client with auto-402 handling + token approval script |
-| `x402-frontend` | WASM interactive demo UI (Trunk, excluded from workspace) |
 
 ## Quick start
 

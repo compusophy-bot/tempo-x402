@@ -21,5 +21,3 @@ claude.md
 .DS_Store
 Thumbs.db
 
-# Trunk / WASM frontend build
-crates/x402-frontend/dist/

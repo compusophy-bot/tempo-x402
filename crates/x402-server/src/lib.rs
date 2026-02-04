@@ -1,4 +1,5 @@
 pub mod config;
+pub mod metrics;
 pub mod middleware;
 
 pub use config::{PaymentConfig, PaymentGateConfig, RoutePaymentConfig};

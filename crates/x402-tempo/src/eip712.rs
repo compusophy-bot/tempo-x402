@@ -1,37 +1,58 @@
-use alloy::primitives::{Address, FixedBytes, Signature, B256};
-use alloy::sol_types::{eip712_domain, SolStruct};
+use alloy::primitives::{Address, FixedBytes, Signature, U256, B256};
+use alloy::sol_types::SolStruct;
 
 use crate::PaymentAuthorization;
-use x402_types::{X402Error, TEMPO_CHAIN_ID};
+use x402_types::{ChainConfig, X402Error};
 
-/// Build the EIP-712 domain for a given token address.
-pub fn payment_domain(
+/// Build the EIP-712 domain for a given chain config and token address.
+pub fn payment_domain_for_chain(
+    config: &ChainConfig,
     token: Address,
 ) -> alloy::sol_types::Eip712Domain {
-    eip712_domain! {
-        name: "x402-tempo",
-        version: "1",
-        chain_id: TEMPO_CHAIN_ID,
-        verifying_contract: token,
+    alloy::sol_types::Eip712Domain {
+        name: Some(std::borrow::Cow::Owned(config.eip712_domain_name.clone())),
+        version: Some(std::borrow::Cow::Owned(config.eip712_domain_version.clone())),
+        chain_id: Some(U256::from(config.chain_id)),
+        verifying_contract: Some(token),
+        salt: None,
     }
 }
 
-/// Compute the EIP-712 signing hash for a PaymentAuthorization.
-pub fn signing_hash(auth: &PaymentAuthorization) -> B256 {
-    let domain = payment_domain(auth.token);
+/// Build the EIP-712 domain for a given token address (Tempo defaults).
+pub fn payment_domain(token: Address) -> alloy::sol_types::Eip712Domain {
+    payment_domain_for_chain(&ChainConfig::default(), token)
+}
+
+/// Compute the EIP-712 signing hash for a given chain config.
+pub fn signing_hash_for_chain(auth: &PaymentAuthorization, config: &ChainConfig) -> B256 {
+    let domain = payment_domain_for_chain(config, auth.token);
     auth.eip712_signing_hash(&domain)
 }
 
-/// Verify an EIP-712 signature and return the recovered signer address.
+/// Compute the EIP-712 signing hash (Tempo defaults).
+pub fn signing_hash(auth: &PaymentAuthorization) -> B256 {
+    signing_hash_for_chain(auth, &ChainConfig::default())
+}
+
+/// Verify an EIP-712 signature for a given chain config.
+pub fn verify_signature_for_chain(
+    auth: &PaymentAuthorization,
+    signature_bytes: &[u8],
+    config: &ChainConfig,
+) -> Result<Address, X402Error> {
+    let sig = Signature::from_raw(signature_bytes)
+        .map_err(|e| X402Error::SignatureError(format!("invalid signature: {e}")))?;
+    let hash = signing_hash_for_chain(auth, config);
+    sig.recover_address_from_prehash(&hash)
+        .map_err(|e| X402Error::SignatureError(format!("recovery failed: {e}")))
+}
+
+/// Verify an EIP-712 signature and return the recovered signer address (Tempo defaults).
 pub fn verify_signature(
     auth: &PaymentAuthorization,
     signature_bytes: &[u8],
 ) -> Result<Address, X402Error> {
-    let sig = Signature::from_raw(signature_bytes)
-        .map_err(|e| X402Error::SignatureError(format!("invalid signature: {e}")))?;
-    let hash = signing_hash(auth);
-    sig.recover_address_from_prehash(&hash)
-        .map_err(|e| X402Error::SignatureError(format!("recovery failed: {e}")))
+    verify_signature_for_chain(auth, signature_bytes, &ChainConfig::default())
 }
 
 /// Generate a random 32-byte nonce (keccak256 of 32 random bytes).

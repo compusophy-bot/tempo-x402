@@ -4,10 +4,10 @@ use actix_web::{web, App, HttpServer};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 
-mod routes;
-mod state;
+use std::sync::Arc;
 
-use state::AppState;
+use x402_facilitator::routes;
+use x402_facilitator::state::AppState;
 
 fn parse_cors_origins() -> Vec<String> {
     match std::env::var("ALLOWED_ORIGINS") {
@@ -60,8 +60,27 @@ async fn main() -> std::io::Result<()> {
         .wallet(alloy::network::EthereumWallet::from(signer))
         .connect_http(rpc_url.parse().expect("invalid RPC_URL"));
 
+    // Set up nonce storage (SQLite for persistence, falls back to in-memory)
+    let nonce_db_path =
+        std::env::var("NONCE_DB_PATH").unwrap_or_else(|_| "./x402-nonces.db".to_string());
+
+    let nonce_store: Arc<dyn x402_tempo::nonce_store::NonceStore> =
+        match x402_tempo::nonce_store::SqliteNonceStore::open(&nonce_db_path) {
+            Ok(store) => {
+                tracing::info!("Nonce store: SQLite at {nonce_db_path}");
+                Arc::new(store)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to open SQLite nonce store at {nonce_db_path}: {e} — using in-memory"
+                );
+                Arc::new(x402_tempo::nonce_store::InMemoryNonceStore::new())
+            }
+        };
+
     let facilitator =
-        x402_tempo::TempoSchemeFacilitator::new(provider, facilitator_address);
+        x402_tempo::TempoSchemeFacilitator::new(provider, facilitator_address)
+            .with_nonce_store(nonce_store);
 
     // Start background nonce cleanup
     facilitator.start_nonce_cleanup();
@@ -74,12 +93,30 @@ async fn main() -> std::io::Result<()> {
         tracing::warn!("FACILITATOR_SHARED_SECRET not set — HMAC auth disabled (dev mode)");
     }
 
+    let webhook_urls: Vec<String> = std::env::var("WEBHOOK_URLS")
+        .ok()
+        .map(|urls| {
+            urls.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !webhook_urls.is_empty() {
+        tracing::info!("Webhook URLs configured: {}", webhook_urls.len());
+    }
+
     let state = web::Data::new(AppState {
         facilitator,
         hmac_secret,
+        chain_config: x402_types::ChainConfig::default(),
+        webhook_urls,
+        http_client: reqwest::Client::new(),
     });
 
     let port: u16 = std::env::var("FACILITATOR_PORT")
+        .or_else(|_| std::env::var("PORT"))
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(4022);
@@ -109,6 +146,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(Governor::new(&governor_conf))
             .app_data(state.clone())
             .app_data(web::JsonConfig::default().limit(65_536))
+            .service(routes::health)
+            .service(routes::metrics_endpoint)
             .service(routes::supported)
             .service(routes::verify)
             .service(routes::verify_and_settle)

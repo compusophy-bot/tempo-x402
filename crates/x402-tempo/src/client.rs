@@ -3,20 +3,28 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
 use x402_types::{
-    PaymentPayload, PaymentRequirements, SchemeClient, TempoPaymentData, X402Error,
+    ChainConfig, PaymentPayload, PaymentRequirements, SchemeClient, TempoPaymentData, X402Error,
 };
 
-use crate::eip712::{encode_signature_hex, payment_domain, random_nonce};
+use crate::eip712::{encode_signature_hex, payment_domain_for_chain, random_nonce};
 use crate::PaymentAuthorization;
 
 /// Client-side scheme implementation: creates and signs EIP-712 payment payloads.
 pub struct TempoSchemeClient {
     signer: PrivateKeySigner,
+    config: ChainConfig,
 }
 
 impl TempoSchemeClient {
     pub fn new(signer: PrivateKeySigner) -> Self {
-        Self { signer }
+        Self {
+            signer,
+            config: ChainConfig::default(),
+        }
+    }
+
+    pub fn with_chain_config(signer: PrivateKeySigner, config: ChainConfig) -> Self {
+        Self { signer, config }
     }
 }
 
@@ -53,7 +61,7 @@ impl SchemeClient for TempoSchemeClient {
         };
 
         // Sign the EIP-712 hash
-        let domain = payment_domain(token);
+        let domain = payment_domain_for_chain(&self.config, token);
         let signing_hash =
             alloy::sol_types::SolStruct::eip712_signing_hash(&auth, &domain);
         let sig = self

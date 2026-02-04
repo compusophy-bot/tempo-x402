@@ -1,8 +1,28 @@
 use alloy::primitives::Address;
-use x402_types::{SchemeServer, X402Error, DEFAULT_TOKEN, TOKEN_DECIMALS};
+use x402_types::{ChainConfig, SchemeServer, X402Error};
 
 /// Server-side scheme: parses prices and builds payment requirements.
-pub struct TempoSchemeServer;
+pub struct TempoSchemeServer {
+    config: ChainConfig,
+}
+
+impl TempoSchemeServer {
+    pub fn new() -> Self {
+        Self {
+            config: ChainConfig::default(),
+        }
+    }
+
+    pub fn with_chain_config(config: ChainConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Default for TempoSchemeServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SchemeServer for TempoSchemeServer {
     fn parse_price(&self, price: &str) -> Result<(String, Address), X402Error> {
@@ -33,7 +53,7 @@ impl SchemeServer for TempoSchemeServer {
                 };
 
                 // Pad or truncate fractional part to TOKEN_DECIMALS digits
-                let decimals = TOKEN_DECIMALS as usize;
+                let decimals = self.config.token_decimals as usize;
                 let frac_str = if fractional_part.len() >= decimals {
                     &fractional_part[..decimals]
                 } else {
@@ -59,28 +79,29 @@ impl SchemeServer for TempoSchemeServer {
                     1
                 };
 
-                integer * 10u64.pow(TOKEN_DECIMALS) + fractional * scale
+                integer * 10u64.pow(self.config.token_decimals) + fractional * scale
             }
             None => {
                 // No decimal point — treat as whole number
                 let integer: u64 = cleaned.parse::<u64>().map_err(|e| {
                     X402Error::InvalidPayment(format!("invalid price '{price}': {e}"))
                 })?;
-                integer * 10u64.pow(TOKEN_DECIMALS)
+                integer * 10u64.pow(self.config.token_decimals)
             }
         };
 
-        Ok((amount.to_string(), DEFAULT_TOKEN))
+        Ok((amount.to_string(), self.config.default_token))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use x402_types::DEFAULT_TOKEN;
 
     #[test]
     fn test_parse_dollar_price() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         let (amount, asset) = server.parse_price("$0.001").unwrap();
         assert_eq!(amount, "1000");
         assert_eq!(asset, DEFAULT_TOKEN);
@@ -88,35 +109,35 @@ mod tests {
 
     #[test]
     fn test_parse_numeric_price() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         let (amount, _) = server.parse_price("0.01").unwrap();
         assert_eq!(amount, "10000");
     }
 
     #[test]
     fn test_parse_whole_dollar() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         let (amount, _) = server.parse_price("$1").unwrap();
         assert_eq!(amount, "1000000");
     }
 
     #[test]
     fn test_parse_large_amount() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         let (amount, _) = server.parse_price("$100.50").unwrap();
         assert_eq!(amount, "100500000");
     }
 
     #[test]
     fn test_parse_six_decimals() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         let (amount, _) = server.parse_price("0.000001").unwrap();
         assert_eq!(amount, "1");
     }
 
     #[test]
     fn test_parse_truncates_beyond_decimals() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         // 7 decimal digits — should truncate to 6
         let (amount, _) = server.parse_price("0.0000019").unwrap();
         assert_eq!(amount, "1");
@@ -124,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_fails() {
-        let server = TempoSchemeServer;
+        let server = TempoSchemeServer::new();
         assert!(server.parse_price("$").is_err());
     }
 }

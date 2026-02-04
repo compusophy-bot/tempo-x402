@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["cargo build --release"]
+
+[start]
+cmd = "sh start.sh"
