@@ -1,10 +1,14 @@
 # Rust build artifacts
-rust/target/
-**/target/
+target/
 
 # Environment files (may contain private keys)
 .env
-rust/.env
+
+# Local AI context
+claude.md
+
+# Local cargo config (user-specific target dirs, etc.)
+.cargo/
 
 # IDE
 .idea/
@@ -18,4 +22,4 @@ rust/.env
 Thumbs.db
 
 # Trunk / WASM frontend build
-rust/crates/x402-frontend/dist/
+crates/x402-frontend/dist/
