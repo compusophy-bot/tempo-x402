@@ -1,6 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse};
 use base64::Engine;
-use x402_types::{PaymentPayload, PaymentRequiredBody, PaymentRequirements, SettleResponse};
+use x402::{PaymentPayload, PaymentRequiredBody, PaymentRequirements, SettleResponse};
 
 use crate::config::PaymentConfig;
 
@@ -54,7 +54,7 @@ pub async fn call_verify_and_settle(
         .timeout(std::time::Duration::from_secs(30));
 
     if let Some(secret) = hmac_secret {
-        let sig = x402_types::hmac::compute_hmac(secret, &body_bytes);
+        let sig = x402::hmac::compute_hmac(secret, &body_bytes);
         request = request.header("X-Facilitator-Auth", sig);
     }
 
@@ -77,7 +77,7 @@ pub async fn call_verify_and_settle(
 mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes};
-    use x402_types::TempoPaymentData;
+    use x402::TempoPaymentData;
 
     #[test]
     fn test_decode_valid_header() {

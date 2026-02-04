@@ -1,6 +1,6 @@
 use alloy::primitives::Address;
 use std::collections::HashMap;
-use x402_types::{PaymentRequirements, SchemeServer, SCHEME_NAME, TEMPO_NETWORK};
+use x402::{PaymentRequirements, SchemeServer, SCHEME_NAME, TEMPO_NETWORK};
 
 /// Payment configuration for a single route.
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_payment_config_creates_block_number_route() {
-        let scheme = x402_tempo::TempoSchemeServer::new();
+        let scheme = x402::TempoSchemeServer::new();
         let gate = PaymentGateConfig {
             facilitator_url: "http://localhost:4022".to_string(),
             hmac_secret: None,
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_get_route_returns_none_for_unknown() {
-        let scheme = x402_tempo::TempoSchemeServer::new();
+        let scheme = x402::TempoSchemeServer::new();
         let gate = PaymentGateConfig {
             facilitator_url: "http://test".to_string(),
             hmac_secret: None,

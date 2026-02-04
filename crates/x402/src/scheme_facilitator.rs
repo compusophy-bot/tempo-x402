@@ -5,7 +5,7 @@ use alloy::providers::Provider;
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
-use x402_types::{
+use crate::{
     ChainConfig, PaymentPayload, PaymentRequirements, SchemeFacilitator, SettleResponse,
     VerifyResponse, X402Error,
 };

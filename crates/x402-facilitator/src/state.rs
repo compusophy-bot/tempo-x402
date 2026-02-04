@@ -21,9 +21,9 @@ pub type WalletProvider = FillProvider<
 
 /// Shared application state for the facilitator server.
 pub struct AppState {
-    pub facilitator: x402_tempo::TempoSchemeFacilitator<WalletProvider>,
+    pub facilitator: x402::TempoSchemeFacilitator<WalletProvider>,
     pub hmac_secret: Option<Vec<u8>>,
-    pub chain_config: x402_types::ChainConfig,
+    pub chain_config: x402::ChainConfig,
     pub webhook_urls: Vec<String>,
     pub http_client: reqwest::Client,
 }

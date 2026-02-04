@@ -2,7 +2,7 @@ use alloy::primitives::{Address, FixedBytes, Signature, U256, B256};
 use alloy::sol_types::SolStruct;
 
 use crate::PaymentAuthorization;
-use x402_types::{ChainConfig, X402Error};
+use crate::{ChainConfig, X402Error};
 
 /// Build the EIP-712 domain for a given chain config and token address.
 pub fn payment_domain_for_chain(
@@ -74,7 +74,7 @@ pub fn encode_signature_hex(sig: &Signature) -> String {
 mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes, U256};
-    use alloy::signers::{SignerSync};
+    use alloy::signers::SignerSync;
     use alloy::signers::local::PrivateKeySigner;
 
     #[test]
@@ -86,7 +86,7 @@ mod tests {
             from: addr,
             to: Address::ZERO,
             value: U256::from(1000u64),
-            token: x402_types::DEFAULT_TOKEN,
+            token: crate::DEFAULT_TOKEN,
             validAfter: U256::from(0u64),
             validBefore: U256::from(u64::MAX),
             nonce: FixedBytes::ZERO,

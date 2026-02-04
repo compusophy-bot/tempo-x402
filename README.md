@@ -5,10 +5,10 @@ x402 (HTTP 402 Payment Required) implementation for the [Tempo](https://tempo.xy
 ## How it works
 
 ```
-Client ──GET /resource──▶ Server ──402 + price──▶ Client
-Client ──sign EIP-712───▶ Client
-Client ──GET + X-PAYMENT──▶ Server ──verify+settle──▶ Facilitator ──transferFrom──▶ Tempo Chain
-Server ◀──200 + data──────
+Client ──GET /resource──> Server ──402 + price──> Client
+Client ──sign EIP-712───> Client
+Client ──GET + X-PAYMENT──> Server ──verify+settle──> Facilitator ──transferFrom──> Tempo Chain
+Server <──200 + data──────
 ```
 
 1. Client requests a protected endpoint
@@ -21,11 +21,9 @@ Server ◀──200 + data──────
 
 | Crate | What it does |
 |-------|-------------|
-| `x402-types` | Core types, payment structs, HMAC auth |
-| `x402-tempo` | EIP-712 signing/verification, TIP-20 contract calls, nonce replay protection |
-| `x402-server` | Resource server + reusable payment middleware (actix-web) |
+| `x402` | Core library: types, EIP-712, TIP-20, nonce store, HTTP client |
+| `x402-server` | Resource server + payment middleware (actix-web) |
 | `x402-facilitator` | Payment verification + on-chain settlement server |
-| `x402-client` | CLI client with auto-402 handling + token approval script |
 
 ## Quick start
 
@@ -68,7 +66,7 @@ Fund wallets via the Tempo faucet:
 cast rpc tempo_fundAddress 0xYOUR_ADDRESS --rpc-url https://rpc.moderato.tempo.xyz
 ```
 
-Optional settings: `FACILITATOR_SHARED_SECRET`, `ALLOWED_ORIGINS`, `RATE_LIMIT_RPM` — see `.env.example` for details.
+Optional settings: `FACILITATOR_SHARED_SECRET`, `ALLOWED_ORIGINS`, `RATE_LIMIT_RPM` -- see `.env.example` for details.
 
 ## Network
 

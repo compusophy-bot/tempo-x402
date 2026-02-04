@@ -6,7 +6,7 @@ use std::sync::Arc;
 use x402_server::config::PaymentConfig;
 use x402_server::middleware;
 
-use x402_types::{EXPLORER_BASE, TEMPO_NETWORK};
+use x402::{EXPLORER_BASE, TEMPO_NETWORK};
 
 #[get("/metrics")]
 pub async fn metrics_endpoint() -> HttpResponse {
@@ -193,7 +193,7 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
         return;
     }
 
-    let payment_required: x402_types::PaymentRequiredBody = match initial.json().await {
+    let payment_required: x402::PaymentRequiredBody = match initial.json().await {
         Ok(b) => b,
         Err(e) => {
             send(serde_json::json!({
@@ -250,9 +250,9 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
     };
 
     let payer_address = signer.address();
-    let client = x402_tempo::TempoSchemeClient::new(signer);
+    let client = x402::TempoSchemeClient::new(signer);
 
-    use x402_types::SchemeClient;
+    use x402::SchemeClient;
     let payload = match client.create_payment_payload(1, requirements).await {
         Ok(p) => p,
         Err(e) => {
@@ -325,7 +325,7 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
         .headers()
         .get("x-payment-response")
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| serde_json::from_str::<x402_types::SettleResponse>(s).ok())
+        .and_then(|s| serde_json::from_str::<x402::SettleResponse>(s).ok())
         .map(|s| s.transaction)
         .unwrap_or_default();
 

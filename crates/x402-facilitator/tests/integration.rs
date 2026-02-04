@@ -16,12 +16,12 @@ fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
         .connect_http("http://localhost:1".parse().unwrap());
 
     let facilitator =
-        x402_tempo::TempoSchemeFacilitator::new(provider, facilitator_address);
+        x402::TempoSchemeFacilitator::new(provider, facilitator_address);
 
     web::Data::new(AppState {
         facilitator,
         hmac_secret,
-        chain_config: x402_types::ChainConfig::default(),
+        chain_config: x402::ChainConfig::default(),
         webhook_urls: vec![],
         http_client: reqwest::Client::new(),
     })
@@ -107,7 +107,7 @@ async fn test_verify_accepts_valid_hmac() {
 
     // Compute valid HMAC over the body
     let body_bytes = b"{}";
-    let sig = x402_types::hmac::compute_hmac(b"test-secret", body_bytes);
+    let sig = x402::hmac::compute_hmac(b"test-secret", body_bytes);
 
     let req = test::TestRequest::post()
         .uri("/verify")

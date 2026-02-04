@@ -2,7 +2,7 @@ use alloy::primitives::U256;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
-use x402_types::{
+use crate::{
     ChainConfig, PaymentPayload, PaymentRequirements, SchemeClient, TempoPaymentData, X402Error,
 };
 
@@ -92,7 +92,7 @@ impl SchemeClient for TempoSchemeClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x402_types::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
+    use crate::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
 
     #[tokio::test]
     async fn test_create_payment_payload() {

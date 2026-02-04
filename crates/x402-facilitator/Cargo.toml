@@ -18,8 +18,7 @@ name = "x402-facilitator"
 path = "src/main.rs"
 
 [dependencies]
-x402-types = { workspace = true }
-x402-tempo = { workspace = true }
+x402 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 actix-web = { workspace = true }
@@ -37,5 +36,5 @@ reqwest = { workspace = true }
 [dev-dependencies]
 actix-rt = "2"
 serde_json = { workspace = true }
-x402-types = { workspace = true }
+x402 = { workspace = true }
 alloy = { workspace = true }

@@ -43,7 +43,7 @@ async fn main() -> std::io::Result<()> {
         std::env::var("FACILITATOR_URL").unwrap_or_else(|_| "http://localhost:4022".to_string());
 
     let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402_types::RPC_URL.to_string());
+        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
     let provider: RootProvider =
         RootProvider::new_http(rpc_url.parse().expect("invalid RPC_URL"));
@@ -54,7 +54,7 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(4021);
 
     // Build payment config using the server scheme for price parsing
-    let server_scheme = x402_tempo::TempoSchemeServer::new();
+    let server_scheme = x402::TempoSchemeServer::new();
     let gate_config = PaymentGateConfig::from_env(&facilitator_url);
 
     if gate_config.hmac_secret.is_none() {

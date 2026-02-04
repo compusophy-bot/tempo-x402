@@ -1,5 +1,5 @@
 use alloy::primitives::Address;
-use x402_types::{ChainConfig, SchemeServer, X402Error};
+use crate::{ChainConfig, SchemeServer, X402Error};
 
 /// Server-side scheme: parses prices and builds payment requirements.
 pub struct TempoSchemeServer {
@@ -26,7 +26,7 @@ impl Default for TempoSchemeServer {
 
 impl SchemeServer for TempoSchemeServer {
     fn parse_price(&self, price: &str) -> Result<(String, Address), X402Error> {
-        // Strip non-numeric characters (except '.') — handles "$0.001", "0.01", "$1", etc.
+        // Strip non-numeric characters (except '.') -- handles "$0.001", "0.01", "$1", etc.
         let cleaned: String = price
             .chars()
             .filter(|c| c.is_ascii_digit() || *c == '.')
@@ -57,7 +57,7 @@ impl SchemeServer for TempoSchemeServer {
                 let frac_str = if fractional_part.len() >= decimals {
                     &fractional_part[..decimals]
                 } else {
-                    // Pad with trailing zeros — we'll handle this inline
+                    // Pad with trailing zeros -- we'll handle this inline
                     fractional_part
                 };
 
@@ -82,7 +82,7 @@ impl SchemeServer for TempoSchemeServer {
                 integer * 10u64.pow(self.config.token_decimals) + fractional * scale
             }
             None => {
-                // No decimal point — treat as whole number
+                // No decimal point -- treat as whole number
                 let integer: u64 = cleaned.parse::<u64>().map_err(|e| {
                     X402Error::InvalidPayment(format!("invalid price '{price}': {e}"))
                 })?;
@@ -97,7 +97,7 @@ impl SchemeServer for TempoSchemeServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x402_types::DEFAULT_TOKEN;
+    use crate::DEFAULT_TOKEN;
 
     #[test]
     fn test_parse_dollar_price() {
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn test_parse_truncates_beyond_decimals() {
         let server = TempoSchemeServer::new();
-        // 7 decimal digits — should truncate to 6
+        // 7 decimal digits -- should truncate to 6
         let (amount, _) = server.parse_price("0.0000019").unwrap();
         assert_eq!(amount, "1");
     }

@@ -1,6 +1,6 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use serde::Deserialize;
-use x402_types::{PaymentPayload, PaymentRequirements, SchemeFacilitator};
+use x402::{PaymentPayload, PaymentRequirements, SchemeFacilitator};
 
 use crate::metrics;
 use crate::state::AppState;
@@ -28,7 +28,7 @@ fn validate_hmac(req: &HttpRequest, body_bytes: &[u8], state: &AppState) -> Resu
 
     match header_value {
         Some(sig) => {
-            if x402_types::hmac::verify_hmac(secret, body_bytes, sig) {
+            if x402::hmac::verify_hmac(secret, body_bytes, sig) {
                 Ok(())
             } else {
                 tracing::warn!("HMAC verification failed — signature mismatch");

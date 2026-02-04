@@ -1,13 +1,25 @@
-pub mod client;
+// Core types and traits
+pub mod constants;
+pub mod error;
+pub mod hmac;
+pub mod payment;
+pub mod response;
+pub mod scheme;
+
+// Tempo blockchain implementation
 pub mod eip712;
-pub mod facilitator;
-pub mod nonce_store;
-pub mod server;
 pub mod tip20;
+pub mod scheme_client;
+pub mod scheme_server;
+pub mod scheme_facilitator;
+pub mod nonce_store;
+
+// HTTP client
+pub mod http_client;
 
 use alloy::sol;
 
-// EIP-712 struct for payment authorizations — the sol! macro auto-derives
+// EIP-712 struct for payment authorizations -- the sol! macro auto-derives
 // SolStruct which gives us eip712_signing_hash().
 sol! {
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -33,6 +45,16 @@ sol! {
     }
 }
 
-pub use client::TempoSchemeClient;
-pub use facilitator::TempoSchemeFacilitator;
-pub use server::TempoSchemeServer;
+// Re-exports
+pub use constants::*;
+pub use constants::ChainConfig;
+pub use error::X402Error;
+pub use payment::*;
+pub use response::*;
+pub use scheme::*;
+
+pub use scheme_client::TempoSchemeClient;
+pub use scheme_facilitator::TempoSchemeFacilitator;
+pub use scheme_server::TempoSchemeServer;
+
+pub use http_client::{X402Client, encode_payment};

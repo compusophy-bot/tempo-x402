@@ -5257,20 +5257,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "x402-client"
+name = "x402"
 version = "0.1.0"
 dependencies = [
  "alloy",
  "base64",
+ "dashmap",
  "dotenvy",
+ "hmac",
+ "rand 0.9.2",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "x402-tempo",
- "x402-types",
 ]
 
 [[package]]
@@ -5291,8 +5296,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "x402-tempo",
- "x402-types",
+ "x402",
 ]
 
 [[package]]
@@ -5315,38 +5319,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
- "x402-tempo",
- "x402-types",
-]
-
-[[package]]
-name = "x402-tempo"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "dashmap",
- "rand 0.9.2",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "x402-types",
-]
-
-[[package]]
-name = "x402-types"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "base64",
- "hmac",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
+ "x402",
 ]
 
 [[package]]

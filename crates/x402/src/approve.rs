@@ -19,18 +19,18 @@ async fn main() {
     let token: Address = std::env::var("TEMPO_TOKEN")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(x402_types::DEFAULT_TOKEN);
+        .unwrap_or(x402::DEFAULT_TOKEN);
 
     let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402_types::RPC_URL.to_string());
+        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
     let approve_amount: U256 = match std::env::var("APPROVE_AMOUNT") {
         Ok(val) => val
             .parse::<U256>()
-            .expect("invalid APPROVE_AMOUNT — must be a valid U256"),
+            .expect("invalid APPROVE_AMOUNT -- must be a valid U256"),
         Err(_) => {
             tracing::warn!(
-                "APPROVE_AMOUNT not set — using U256::MAX. \
+                "APPROVE_AMOUNT not set -- using U256::MAX. \
                  This grants unlimited spend authority to the facilitator."
             );
             U256::MAX
@@ -51,7 +51,7 @@ async fn main() {
         .connect_http(rpc_url.parse().expect("invalid RPC_URL"));
 
     // Check current allowance
-    let current = x402_tempo::tip20::allowance(
+    let current = x402::tip20::allowance(
         &provider,
         token,
         account_address,
@@ -68,7 +68,7 @@ async fn main() {
     }
 
     println!("Sending approval transaction...");
-    let tx_hash = x402_tempo::tip20::approve(
+    let tx_hash = x402::tip20::approve(
         &provider,
         token,
         facilitator_address,

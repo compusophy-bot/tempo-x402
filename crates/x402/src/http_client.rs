@@ -1,5 +1,5 @@
 use base64::Engine;
-use x402_types::{
+use crate::{
     PaymentPayload, PaymentRequiredBody, SchemeClient, SettleResponse, X402Error, SCHEME_NAME,
 };
 
@@ -92,7 +92,7 @@ pub fn encode_payment(payload: &PaymentPayload) -> Result<String, X402Error> {
 mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes};
-    use x402_types::TempoPaymentData;
+    use crate::TempoPaymentData;
 
     fn sample_payload() -> PaymentPayload {
         PaymentPayload {

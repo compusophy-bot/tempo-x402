@@ -54,7 +54,7 @@ async fn main() -> std::io::Result<()> {
     let facilitator_address = signer.address();
 
     let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402_types::RPC_URL.to_string());
+        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
     let provider = ProviderBuilder::new()
         .wallet(alloy::network::EthereumWallet::from(signer))
@@ -64,8 +64,8 @@ async fn main() -> std::io::Result<()> {
     let nonce_db_path =
         std::env::var("NONCE_DB_PATH").unwrap_or_else(|_| "./x402-nonces.db".to_string());
 
-    let nonce_store: Arc<dyn x402_tempo::nonce_store::NonceStore> =
-        match x402_tempo::nonce_store::SqliteNonceStore::open(&nonce_db_path) {
+    let nonce_store: Arc<dyn x402::nonce_store::NonceStore> =
+        match x402::nonce_store::SqliteNonceStore::open(&nonce_db_path) {
             Ok(store) => {
                 tracing::info!("Nonce store: SQLite at {nonce_db_path}");
                 Arc::new(store)
@@ -74,12 +74,12 @@ async fn main() -> std::io::Result<()> {
                 tracing::warn!(
                     "Failed to open SQLite nonce store at {nonce_db_path}: {e} — using in-memory"
                 );
-                Arc::new(x402_tempo::nonce_store::InMemoryNonceStore::new())
+                Arc::new(x402::nonce_store::InMemoryNonceStore::new())
             }
         };
 
     let facilitator =
-        x402_tempo::TempoSchemeFacilitator::new(provider, facilitator_address)
+        x402::TempoSchemeFacilitator::new(provider, facilitator_address)
             .with_nonce_store(nonce_store);
 
     // Start background nonce cleanup
@@ -110,7 +110,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState {
         facilitator,
         hmac_secret,
-        chain_config: x402_types::ChainConfig::default(),
+        chain_config: x402::ChainConfig::default(),
         webhook_urls,
         http_client: reqwest::Client::new(),
     });
