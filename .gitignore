@@ -1,0 +1,21 @@
+# Rust build artifacts
+rust/target/
+**/target/
+
+# Environment files (may contain private keys)
+.env
+rust/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Trunk / WASM frontend build
+rust/crates/x402-frontend/dist/

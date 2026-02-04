@@ -1,0 +1,130 @@
+use alloy::primitives::Address;
+use x402_types::{SchemeServer, X402Error, DEFAULT_TOKEN, TOKEN_DECIMALS};
+
+/// Server-side scheme: parses prices and builds payment requirements.
+pub struct TempoSchemeServer;
+
+impl SchemeServer for TempoSchemeServer {
+    fn parse_price(&self, price: &str) -> Result<(String, Address), X402Error> {
+        // Strip non-numeric characters (except '.') — handles "$0.001", "0.01", "$1", etc.
+        let cleaned: String = price
+            .chars()
+            .filter(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
+
+        if cleaned.is_empty() {
+            return Err(X402Error::InvalidPayment(format!(
+                "invalid price '{price}': no numeric content"
+            )));
+        }
+
+        // Integer-only parsing: split on decimal point, compute from parts.
+        // No f64 anywhere in the pipeline.
+        let amount = match cleaned.split_once('.') {
+            Some((integer_part, fractional_part)) => {
+                let integer: u64 = if integer_part.is_empty() {
+                    0
+                } else {
+                    integer_part.parse::<u64>().map_err(|e| {
+                        X402Error::InvalidPayment(format!(
+                            "invalid price '{price}': integer part: {e}"
+                        ))
+                    })?
+                };
+
+                // Pad or truncate fractional part to TOKEN_DECIMALS digits
+                let decimals = TOKEN_DECIMALS as usize;
+                let frac_str = if fractional_part.len() >= decimals {
+                    &fractional_part[..decimals]
+                } else {
+                    // Pad with trailing zeros — we'll handle this inline
+                    fractional_part
+                };
+
+                let fractional: u64 = if frac_str.is_empty() {
+                    0
+                } else {
+                    frac_str.parse::<u64>().map_err(|e| {
+                        X402Error::InvalidPayment(format!(
+                            "invalid price '{price}': fractional part: {e}"
+                        ))
+                    })?
+                };
+
+                // Scale fractional part if it had fewer digits than TOKEN_DECIMALS
+                let actual_digits = frac_str.len();
+                let scale = if actual_digits < decimals {
+                    10u64.pow((decimals - actual_digits) as u32)
+                } else {
+                    1
+                };
+
+                integer * 10u64.pow(TOKEN_DECIMALS) + fractional * scale
+            }
+            None => {
+                // No decimal point — treat as whole number
+                let integer: u64 = cleaned.parse::<u64>().map_err(|e| {
+                    X402Error::InvalidPayment(format!("invalid price '{price}': {e}"))
+                })?;
+                integer * 10u64.pow(TOKEN_DECIMALS)
+            }
+        };
+
+        Ok((amount.to_string(), DEFAULT_TOKEN))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_dollar_price() {
+        let server = TempoSchemeServer;
+        let (amount, asset) = server.parse_price("$0.001").unwrap();
+        assert_eq!(amount, "1000");
+        assert_eq!(asset, DEFAULT_TOKEN);
+    }
+
+    #[test]
+    fn test_parse_numeric_price() {
+        let server = TempoSchemeServer;
+        let (amount, _) = server.parse_price("0.01").unwrap();
+        assert_eq!(amount, "10000");
+    }
+
+    #[test]
+    fn test_parse_whole_dollar() {
+        let server = TempoSchemeServer;
+        let (amount, _) = server.parse_price("$1").unwrap();
+        assert_eq!(amount, "1000000");
+    }
+
+    #[test]
+    fn test_parse_large_amount() {
+        let server = TempoSchemeServer;
+        let (amount, _) = server.parse_price("$100.50").unwrap();
+        assert_eq!(amount, "100500000");
+    }
+
+    #[test]
+    fn test_parse_six_decimals() {
+        let server = TempoSchemeServer;
+        let (amount, _) = server.parse_price("0.000001").unwrap();
+        assert_eq!(amount, "1");
+    }
+
+    #[test]
+    fn test_parse_truncates_beyond_decimals() {
+        let server = TempoSchemeServer;
+        // 7 decimal digits — should truncate to 6
+        let (amount, _) = server.parse_price("0.0000019").unwrap();
+        assert_eq!(amount, "1");
+    }
+
+    #[test]
+    fn test_parse_empty_fails() {
+        let server = TempoSchemeServer;
+        assert!(server.parse_price("$").is_err());
+    }
+}
