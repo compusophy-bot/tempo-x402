@@ -16,9 +16,7 @@ pub async fn metrics_endpoint() -> HttpResponse {
 }
 
 #[get("/health")]
-pub async fn health(
-    provider: web::Data<Arc<RootProvider>>,
-) -> HttpResponse {
+pub async fn health(provider: web::Data<Arc<RootProvider>>) -> HttpResponse {
     match provider.get_block_number().await {
         Ok(block) => HttpResponse::Ok().json(serde_json::json!({
             "status": "ok",
@@ -275,10 +273,7 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
     .await;
 
     let payload_json = serde_json::to_vec(&payload).unwrap_or_default();
-    let encoded = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        &payload_json,
-    );
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &payload_json);
 
     let paid_response = match http_client
         .get(format!("{server_url}/blockNumber"))

@@ -1,7 +1,7 @@
-use base64::Engine;
 use crate::{
     PaymentPayload, PaymentRequiredBody, SchemeClient, SettleResponse, X402Error, SCHEME_NAME,
 };
+use base64::Engine;
 
 /// HTTP client wrapper that automatically handles 402 responses.
 pub struct X402Client<S: SchemeClient> {
@@ -91,8 +91,8 @@ pub fn encode_payment(payload: &PaymentPayload) -> Result<String, X402Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Address, FixedBytes};
     use crate::TempoPaymentData;
+    use alloy::primitives::{Address, FixedBytes};
 
     fn sample_payload() -> PaymentPayload {
         PaymentPayload {

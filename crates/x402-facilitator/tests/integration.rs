@@ -15,8 +15,7 @@ fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
         .wallet(EthereumWallet::from(signer))
         .connect_http("http://localhost:1".parse().unwrap());
 
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, facilitator_address);
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address);
 
     web::Data::new(AppState {
         facilitator,
@@ -30,12 +29,7 @@ fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
 #[actix_rt::test]
 async fn test_supported_returns_scheme_and_network() {
     let state = make_state(None);
-    let app = test::init_service(
-        App::new()
-            .app_data(state)
-            .service(routes::supported),
-    )
-    .await;
+    let app = test::init_service(App::new().app_data(state).service(routes::supported)).await;
 
     let req = test::TestRequest::get().uri("/supported").to_request();
     let resp = test::call_service(&app, req).await;
@@ -165,8 +159,5 @@ async fn test_verify_and_settle_rejects_malformed_body() {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["success"], false);
-    assert!(body["errorReason"]
-        .as_str()
-        .unwrap()
-        .contains("invalid"));
+    assert!(body["errorReason"].as_str().unwrap().contains("invalid"));
 }

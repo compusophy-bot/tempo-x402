@@ -1,5 +1,5 @@
-use alloy::primitives::Address;
 use crate::{ChainConfig, SchemeServer, X402Error};
+use alloy::primitives::Address;
 
 /// Server-side scheme: parses prices and builds payment requirements.
 pub struct TempoSchemeServer {

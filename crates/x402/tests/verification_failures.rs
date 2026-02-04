@@ -8,9 +8,7 @@ use x402::PaymentAuthorization;
 use x402::DEFAULT_TOKEN;
 
 /// Helper: create a valid PaymentAuthorization and sign it.
-fn make_signed_auth(
-    signer: &PrivateKeySigner,
-) -> (PaymentAuthorization, Vec<u8>) {
+fn make_signed_auth(signer: &PrivateKeySigner) -> (PaymentAuthorization, Vec<u8>) {
     let auth = PaymentAuthorization {
         from: signer.address(),
         to: Address::ZERO,
@@ -79,9 +77,9 @@ fn test_verify_invalid_signature_bytes() {
 
 #[test]
 fn test_nonce_replay_detection() {
-    let provider = RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let provider =
+        RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce = FixedBytes::new([0x42; 32]);
 
@@ -92,9 +90,9 @@ fn test_nonce_replay_detection() {
 
 #[test]
 fn test_nonce_not_yet_used() {
-    let provider = RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let provider =
+        RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce = FixedBytes::new([0x01; 32]);
     assert!(!facilitator.is_nonce_used(&nonce));
@@ -102,9 +100,9 @@ fn test_nonce_not_yet_used() {
 
 #[test]
 fn test_multiple_nonces_independent() {
-    let provider = RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let provider =
+        RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce_a = FixedBytes::new([0xaa; 32]);
     let nonce_b = FixedBytes::new([0xbb; 32]);
@@ -163,9 +161,9 @@ async fn test_expired_authorization() {
         mime_type: None,
     };
 
-    let provider = RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let provider =
+        RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let result = facilitator.verify(&payload, &requirements).await.unwrap();
     assert!(!result.is_valid);
@@ -221,9 +219,9 @@ async fn test_not_yet_valid_authorization() {
         mime_type: None,
     };
 
-    let provider = RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let provider =
+        RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let result = facilitator.verify(&payload, &requirements).await.unwrap();
     assert!(!result.is_valid);

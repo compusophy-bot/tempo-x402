@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, FixedBytes, Signature, U256, B256};
+use alloy::primitives::{Address, FixedBytes, Signature, B256, U256};
 use alloy::sol_types::SolStruct;
 
 use crate::PaymentAuthorization;
@@ -11,7 +11,9 @@ pub fn payment_domain_for_chain(
 ) -> alloy::sol_types::Eip712Domain {
     alloy::sol_types::Eip712Domain {
         name: Some(std::borrow::Cow::Owned(config.eip712_domain_name.clone())),
-        version: Some(std::borrow::Cow::Owned(config.eip712_domain_version.clone())),
+        version: Some(std::borrow::Cow::Owned(
+            config.eip712_domain_version.clone(),
+        )),
         chain_id: Some(U256::from(config.chain_id)),
         verifying_contract: Some(token),
         salt: None,
@@ -74,8 +76,8 @@ pub fn encode_signature_hex(sig: &Signature) -> String {
 mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes, U256};
-    use alloy::signers::SignerSync;
     use alloy::signers::local::PrivateKeySigner;
+    use alloy::signers::SignerSync;
 
     #[test]
     fn test_sign_and_verify_roundtrip() {

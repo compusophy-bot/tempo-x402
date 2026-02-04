@@ -62,8 +62,7 @@ impl SchemeClient for TempoSchemeClient {
 
         // Sign the EIP-712 hash
         let domain = payment_domain_for_chain(&self.config, token);
-        let signing_hash =
-            alloy::sol_types::SolStruct::eip712_signing_hash(&auth, &domain);
+        let signing_hash = alloy::sol_types::SolStruct::eip712_signing_hash(&auth, &domain);
         let sig = self
             .signer
             .sign_hash_sync(&signing_hash)

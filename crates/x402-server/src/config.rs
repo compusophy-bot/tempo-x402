@@ -64,9 +64,7 @@ impl PaymentConfig {
         let mut routes = HashMap::new();
 
         // Gate GET /blockNumber at $0.001
-        let (amount, asset) = scheme
-            .parse_price("$0.001")
-            .expect("failed to parse price");
+        let (amount, asset) = scheme.parse_price("$0.001").expect("failed to parse price");
 
         routes.insert(
             "GET /blockNumber".to_string(),

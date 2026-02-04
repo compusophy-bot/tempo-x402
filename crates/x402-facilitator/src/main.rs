@@ -53,8 +53,7 @@ async fn main() -> std::io::Result<()> {
     let signer: PrivateKeySigner = key.parse().expect("invalid FACILITATOR_PRIVATE_KEY");
     let facilitator_address = signer.address();
 
-    let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
     let provider = ProviderBuilder::new()
         .wallet(alloy::network::EthereumWallet::from(signer))
@@ -78,9 +77,8 @@ async fn main() -> std::io::Result<()> {
             }
         };
 
-    let facilitator =
-        x402::TempoSchemeFacilitator::new(provider, facilitator_address)
-            .with_nonce_store(nonce_store);
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address)
+        .with_nonce_store(nonce_store);
 
     // Start background nonce cleanup
     facilitator.start_nonce_cleanup();

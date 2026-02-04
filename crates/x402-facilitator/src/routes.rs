@@ -15,7 +15,11 @@ pub struct PaymentRequest {
 
 /// Validate the HMAC header on an incoming request.
 /// Returns an error response if HMAC is required but missing/invalid.
-fn validate_hmac(req: &HttpRequest, body_bytes: &[u8], state: &AppState) -> Result<(), HttpResponse> {
+fn validate_hmac(
+    req: &HttpRequest,
+    body_bytes: &[u8],
+    state: &AppState,
+) -> Result<(), HttpResponse> {
     let secret = match &state.hmac_secret {
         Some(s) => s,
         None => return Ok(()), // No secret configured — skip HMAC (dev mode)
@@ -99,12 +103,18 @@ pub async fn verify(
         }
     };
 
-    match state.facilitator.verify(&parsed.payment_payload, &parsed.payment_requirements).await {
+    match state
+        .facilitator
+        .verify(&parsed.payment_payload, &parsed.payment_requirements)
+        .await
+    {
         Ok(result) => {
             if result.is_valid {
                 metrics::VERIFY_REQUESTS.with_label_values(&["valid"]).inc();
             } else {
-                metrics::VERIFY_REQUESTS.with_label_values(&["invalid"]).inc();
+                metrics::VERIFY_REQUESTS
+                    .with_label_values(&["invalid"])
+                    .inc();
                 tracing::info!(
                     payer = ?result.payer,
                     reason = result.invalid_reason.as_deref().unwrap_or("unknown"),
@@ -148,12 +158,20 @@ pub async fn verify_and_settle(
 
     let start = std::time::Instant::now();
 
-    match state.facilitator.settle(&parsed.payment_payload, &parsed.payment_requirements).await {
+    match state
+        .facilitator
+        .settle(&parsed.payment_payload, &parsed.payment_requirements)
+        .await
+    {
         Ok(result) => {
             let elapsed = start.elapsed().as_secs_f64();
             if result.success {
-                metrics::SETTLE_REQUESTS.with_label_values(&["success"]).inc();
-                metrics::SETTLE_LATENCY.with_label_values(&["success"]).observe(elapsed);
+                metrics::SETTLE_REQUESTS
+                    .with_label_values(&["success"])
+                    .inc();
+                metrics::SETTLE_LATENCY
+                    .with_label_values(&["success"])
+                    .observe(elapsed);
                 tracing::info!(
                     payer = ?result.payer,
                     tx = %result.transaction,
@@ -180,8 +198,12 @@ pub async fn verify_and_settle(
                     );
                 }
             } else {
-                metrics::SETTLE_REQUESTS.with_label_values(&["rejected"]).inc();
-                metrics::SETTLE_LATENCY.with_label_values(&["rejected"]).observe(elapsed);
+                metrics::SETTLE_REQUESTS
+                    .with_label_values(&["rejected"])
+                    .inc();
+                metrics::SETTLE_LATENCY
+                    .with_label_values(&["rejected"])
+                    .observe(elapsed);
                 tracing::warn!(
                     payer = ?result.payer,
                     reason = result.error_reason.as_deref().unwrap_or("unknown"),
@@ -193,7 +215,9 @@ pub async fn verify_and_settle(
         Err(e) => {
             let elapsed = start.elapsed().as_secs_f64();
             metrics::SETTLE_REQUESTS.with_label_values(&["error"]).inc();
-            metrics::SETTLE_LATENCY.with_label_values(&["error"]).observe(elapsed);
+            metrics::SETTLE_LATENCY
+                .with_label_values(&["error"])
+                .observe(elapsed);
             tracing::error!(error = %e, "settlement internal error");
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,

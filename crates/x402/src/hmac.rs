@@ -6,8 +6,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// Compute HMAC-SHA256 over the given body bytes using the shared secret.
 /// Returns the hex-encoded MAC.
 pub fn compute_hmac(secret: &[u8], body: &[u8]) -> String {
-    let mut mac =
-        HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(body);
     let result = mac.finalize();
     hex::encode(result.into_bytes())
@@ -16,8 +15,7 @@ pub fn compute_hmac(secret: &[u8], body: &[u8]) -> String {
 /// Verify an HMAC-SHA256 signature against the expected body.
 /// Returns `true` if the signature is valid.
 pub fn verify_hmac(secret: &[u8], body: &[u8], signature: &str) -> bool {
-    let mut mac =
-        HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
+    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(body);
 
     let expected = match hex::decode(signature) {
@@ -30,14 +28,11 @@ pub fn verify_hmac(secret: &[u8], body: &[u8], signature: &str) -> bool {
 
 mod hex {
     pub fn encode(bytes: impl AsRef<[u8]>) -> String {
-        bytes
-            .as_ref()
-            .iter()
-            .fold(String::new(), |mut s, b| {
-                use std::fmt::Write;
-                let _ = write!(s, "{b:02x}");
-                s
-            })
+        bytes.as_ref().iter().fold(String::new(), |mut s, b| {
+            use std::fmt::Write;
+            let _ = write!(s, "{b:02x}");
+            s
+        })
     }
 
     pub fn decode(s: &str) -> Result<Vec<u8>, ()> {

@@ -1,6 +1,6 @@
+use crate::X402Error;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
-use crate::X402Error;
 
 use crate::TIP20;
 

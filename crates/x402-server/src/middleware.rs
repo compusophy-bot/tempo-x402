@@ -95,8 +95,7 @@ mod tests {
             },
         };
         let json = serde_json::to_vec(&payload).unwrap();
-        let encoded =
-            base64::engine::general_purpose::STANDARD.encode(&json);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&json);
         let decoded = decode_payment_header(&encoded).unwrap();
         assert_eq!(decoded.x402_version, 1);
         assert_eq!(decoded.payload.value, "1000");
@@ -111,8 +110,7 @@ mod tests {
 
     #[test]
     fn test_decode_invalid_json() {
-        let encoded =
-            base64::engine::general_purpose::STANDARD.encode(b"this is not json");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(b"this is not json");
         let result = decode_payment_header(&encoded);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid JSON"));
@@ -134,10 +132,7 @@ pub async fn require_payment(
         }
     };
 
-    let payment_header = req
-        .headers()
-        .get("X-PAYMENT")
-        .and_then(|v| v.to_str().ok());
+    let payment_header = req.headers().get("X-PAYMENT").and_then(|v| v.to_str().ok());
 
     let payment_header = match payment_header {
         Some(h) => h,

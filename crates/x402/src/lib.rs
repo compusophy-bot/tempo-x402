@@ -8,11 +8,11 @@ pub mod scheme;
 
 // Tempo blockchain implementation
 pub mod eip712;
-pub mod tip20;
-pub mod scheme_client;
-pub mod scheme_server;
-pub mod scheme_facilitator;
 pub mod nonce_store;
+pub mod scheme_client;
+pub mod scheme_facilitator;
+pub mod scheme_server;
+pub mod tip20;
 
 // HTTP client
 pub mod http_client;
@@ -46,8 +46,8 @@ sol! {
 }
 
 // Re-exports
-pub use constants::*;
 pub use constants::ChainConfig;
+pub use constants::*;
 pub use error::X402Error;
 pub use payment::*;
 pub use response::*;
@@ -57,4 +57,4 @@ pub use scheme_client::TempoSchemeClient;
 pub use scheme_facilitator::TempoSchemeFacilitator;
 pub use scheme_server::TempoSchemeServer;
 
-pub use http_client::{X402Client, encode_payment};
+pub use http_client::{encode_payment, X402Client};

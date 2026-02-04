@@ -1,11 +1,10 @@
+use alloy::network::EthereumWallet;
 use alloy::providers::{
     fillers::{
-        BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
-        WalletFiller,
+        BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
     },
     Identity, RootProvider,
 };
-use alloy::network::EthereumWallet;
 
 /// Concrete provider type from `ProviderBuilder::new().wallet(...).connect_http(...)`.
 pub type WalletProvider = FillProvider<

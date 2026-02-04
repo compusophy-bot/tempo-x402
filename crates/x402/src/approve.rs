@@ -1,15 +1,15 @@
+use alloy::network::EthereumWallet;
 use alloy::primitives::{Address, U256};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::network::EthereumWallet;
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let client_key = std::env::var("EVM_PRIVATE_KEY")
-        .expect("EVM_PRIVATE_KEY environment variable is required");
+    let client_key =
+        std::env::var("EVM_PRIVATE_KEY").expect("EVM_PRIVATE_KEY environment variable is required");
 
     let facilitator_address: Address = std::env::var("FACILITATOR_ADDRESS")
         .expect("FACILITATOR_ADDRESS environment variable is required")
@@ -21,8 +21,7 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(x402::DEFAULT_TOKEN);
 
-    let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
     let approve_amount: U256 = match std::env::var("APPROVE_AMOUNT") {
         Ok(val) => val
@@ -51,14 +50,9 @@ async fn main() {
         .connect_http(rpc_url.parse().expect("invalid RPC_URL"));
 
     // Check current allowance
-    let current = x402::tip20::allowance(
-        &provider,
-        token,
-        account_address,
-        facilitator_address,
-    )
-    .await
-    .expect("failed to read allowance");
+    let current = x402::tip20::allowance(&provider, token, account_address, facilitator_address)
+        .await
+        .expect("failed to read allowance");
 
     println!("\nCurrent allowance: {current}");
 
@@ -68,14 +62,9 @@ async fn main() {
     }
 
     println!("Sending approval transaction...");
-    let tx_hash = x402::tip20::approve(
-        &provider,
-        token,
-        facilitator_address,
-        approve_amount,
-    )
-    .await
-    .expect("approval failed");
+    let tx_hash = x402::tip20::approve(&provider, token, facilitator_address, approve_amount)
+        .await
+        .expect("approval failed");
 
     println!("  tx: {tx_hash}");
     println!("Approval confirmed.");

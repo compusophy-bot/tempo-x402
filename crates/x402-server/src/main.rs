@@ -42,11 +42,9 @@ async fn main() -> std::io::Result<()> {
     let facilitator_url =
         std::env::var("FACILITATOR_URL").unwrap_or_else(|_| "http://localhost:4022".to_string());
 
-    let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
 
-    let provider: RootProvider =
-        RootProvider::new_http(rpc_url.parse().expect("invalid RPC_URL"));
+    let provider: RootProvider = RootProvider::new_http(rpc_url.parse().expect("invalid RPC_URL"));
 
     let port: u16 = std::env::var("PORT")
         .ok()

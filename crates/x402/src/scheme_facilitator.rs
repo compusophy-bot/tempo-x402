@@ -277,8 +277,7 @@ where
             .map_err(|e| X402Error::InvalidPayment(format!("invalid value: {e}")))?;
 
         // Execute transferFrom
-        let tx_hash =
-            tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await?;
+        let tx_hash = tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await?;
 
         // Record nonce AFTER successful settlement
         self.record_nonce(p.nonce);
