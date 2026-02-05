@@ -4,9 +4,9 @@ Living document. Revisit each session. Strike items when done, add new ones as t
 
 ## Now (v0.1.x)
 
-- [ ] **End-to-end test on deployed infra** — run `x402-client` against the Railway server+facilitator with real testnet funds, confirm a full payment round-trip (402 -> sign -> pay -> 200 + tx hash)
-- [ ] **Demo project** — separate repo with a simple app that imports `tempo-x402` from crates.io and demonstrates paid API calls (could be CLI, could be web)
-- [ ] **Documentation** — crate-level rustdoc (`cargo doc --workspace`), ensure docs.rs renders cleanly for all three crates
+- [x] **End-to-end test on deployed infra** — run `x402-client` against the Railway server+facilitator with real testnet funds, confirm a full payment round-trip (402 -> sign -> pay -> 200 + tx hash) ✓
+- [x] **Demo project** — https://tempo-x402-demo.vercel.app ([repo](https://github.com/compusophy/tempo-x402-demo)) ✓
+- [x] **Documentation** — crate-level rustdoc + llms.txt ✓
 - [ ] **CI hardening** — the release workflow builds binaries but doesn't run tests first; consider adding a test gate before the release job
 
 ## Soon (v0.2.0)

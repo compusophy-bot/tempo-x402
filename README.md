@@ -5,6 +5,8 @@
 
 x402 (HTTP 402 Payment Required) implementation for the [Tempo](https://tempo.xyz) blockchain. Pay-per-request API monetization using TIP-20 tokens (pathUSD) with EIP-712 signed payment authorizations.
 
+**[Live Demo](https://tempo-x402-demo.vercel.app)** · [Demo Source](https://github.com/compusophy/tempo-x402-demo)
+
 ## How it works
 
 ```
