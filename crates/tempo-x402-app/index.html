@@ -4,12 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>x402 Demo - Pay-per-Request APIs</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link data-trunk rel="css" href="style.css" />
 </head>
 <body>
-    <script type="module">
-        import init from '/pkg/tempo_x402_app.js';
-        init();
-    </script>
+    <link data-trunk rel="rust" data-wasm-opt="z" />
 </body>
 </html>

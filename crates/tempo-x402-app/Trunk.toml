@@ -11,8 +11,3 @@ watch = ["src", "index.html", "style.css"]
 address = "127.0.0.1"
 port = 8080
 open = true
-
-[[hooks]]
-stage = "post_build"
-command = "sh"
-command_arguments = ["-c", "cp style.css dist/"]
