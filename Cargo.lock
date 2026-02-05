@@ -4351,7 +4351,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "alloy",
  "base64",
@@ -4373,7 +4373,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-facilitator"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -4394,7 +4394,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-gateway"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -4420,7 +4420,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-server"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
