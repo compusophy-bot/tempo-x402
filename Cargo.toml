@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/tempo-x402",
+    "crates/tempo-x402-app",
     "crates/tempo-x402-client",
     "crates/tempo-x402-facilitator",
     "crates/tempo-x402-gateway",
@@ -44,3 +45,11 @@ alloy = { version = "1", features = [
     "provider-http",
     "network",
 ] }
+
+# Optimize WASM builds for small size
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

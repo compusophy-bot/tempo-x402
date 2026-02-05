@@ -1,0 +1,18 @@
+# Trunk build configuration for tempo-x402-app
+
+[build]
+target = "index.html"
+dist = "dist"
+
+[watch]
+watch = ["src", "index.html", "style.css"]
+
+[serve]
+address = "127.0.0.1"
+port = 8080
+open = true
+
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["-c", "cp style.css dist/"]
