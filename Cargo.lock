@@ -1518,8 +1518,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fac4744fb15ae8337dc853fee7fb3f4e48c0fbaa23d0afe49c447b4fab126118"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -4388,6 +4390,32 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "tempo-x402-gateway"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-governor",
+ "actix-web",
+ "alloy",
+ "base64",
+ "bytes",
+ "chrono",
+ "dotenvy",
+ "lazy_static",
+ "prometheus",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempo-x402",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
