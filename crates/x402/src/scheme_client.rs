@@ -16,6 +16,7 @@ pub struct TempoSchemeClient {
 }
 
 impl TempoSchemeClient {
+    /// Create a new client with Tempo Moderato defaults.
     pub fn new(signer: PrivateKeySigner) -> Self {
         Self {
             signer,
@@ -23,6 +24,7 @@ impl TempoSchemeClient {
         }
     }
 
+    /// Create a new client with a custom chain configuration.
     pub fn with_chain_config(signer: PrivateKeySigner, config: ChainConfig) -> Self {
         Self { signer, config }
     }

@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Errors returned by x402 operations.
 #[derive(Debug, Error)]
 pub enum X402Error {
     #[error("signature error: {0}")]

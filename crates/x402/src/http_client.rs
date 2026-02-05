@@ -3,7 +3,11 @@ use crate::{
 };
 use base64::Engine;
 
-/// HTTP client wrapper that automatically handles 402 responses.
+/// HTTP client that automatically handles 402 payment responses.
+///
+/// Wraps `reqwest::Client`. On a 402 response, it parses the payment
+/// requirements, signs an EIP-712 authorization via the provided
+/// [`SchemeClient`], and retries the request with an `X-PAYMENT` header.
 pub struct X402Client<S: SchemeClient> {
     http: reqwest::Client,
     scheme: S,

@@ -1,3 +1,32 @@
+//! x402 payment protocol for the Tempo blockchain.
+//!
+//! Implements HTTP 402 pay-per-request using EIP-712 signed authorizations
+//! and TIP-20 (ERC-20 compatible) token transfers on the Tempo chain.
+//!
+//! # Three-party model
+//!
+//! - **Client** ([`TempoSchemeClient`]) — signs payment authorizations
+//! - **Server** ([`TempoSchemeServer`]) — gates endpoints, returns 402 with pricing
+//! - **Facilitator** ([`TempoSchemeFacilitator`]) — verifies signatures and settles on-chain
+//!
+//! # Quick example (client)
+//!
+//! ```no_run
+//! use alloy::signers::local::PrivateKeySigner;
+//! use x402::{TempoSchemeClient, X402Client};
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
+//! let client = X402Client::new(TempoSchemeClient::new(signer));
+//!
+//! let (resp, settlement) = client
+//!     .fetch("https://api.example.com/data", reqwest::Method::GET)
+//!     .await
+//!     .unwrap();
+//! # }
+//! ```
+
 // Core types and traits
 pub mod constants;
 pub mod error;
@@ -19,8 +48,8 @@ pub mod http_client;
 
 use alloy::sol;
 
-// EIP-712 struct for payment authorizations -- the sol! macro auto-derives
-// SolStruct which gives us eip712_signing_hash().
+// EIP-712 struct for payment authorizations.
+// The sol! macro derives SolStruct which provides eip712_signing_hash().
 sol! {
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct PaymentAuthorization {
@@ -34,7 +63,7 @@ sol! {
     }
 }
 
-// TIP-20 (ERC-20 compatible) contract interface.
+// TIP-20 (ERC-20 compatible) contract interface for on-chain token operations.
 sol! {
     #[sol(rpc)]
     interface TIP20 {

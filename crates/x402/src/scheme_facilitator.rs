@@ -29,6 +29,7 @@ pub struct TempoSchemeFacilitator<P> {
 }
 
 impl<P> TempoSchemeFacilitator<P> {
+    /// Create a new facilitator with Tempo Moderato defaults and in-memory nonce store.
     pub fn new(provider: P, facilitator_address: Address) -> Self {
         Self {
             provider,
@@ -40,6 +41,7 @@ impl<P> TempoSchemeFacilitator<P> {
         }
     }
 
+    /// Create a new facilitator with a custom chain configuration.
     pub fn with_chain_config(
         provider: P,
         facilitator_address: Address,

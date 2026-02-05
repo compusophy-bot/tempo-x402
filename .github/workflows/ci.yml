@@ -38,3 +38,22 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docs match Cargo.toml version
+        run: |
+          VERSION=$(grep '^version' crates/x402/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "Cargo.toml version: $VERSION"
+
+          # README must reference the crate names
+          grep -q 'tempo-x402' README.md || { echo "README.md missing tempo-x402 reference"; exit 1; }
+
+          # llms.txt must exist and reference the current version
+          test -f llms.txt || { echo "llms.txt not found"; exit 1; }
+          grep -q "$VERSION" llms.txt || { echo "llms.txt version mismatch (expected $VERSION)"; exit 1; }
+          grep -q 'tempo-x402' llms.txt || { echo "llms.txt missing tempo-x402 reference"; exit 1; }
+
+          echo "Docs freshness check passed"
