@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 description = "x402 payment protocol library for Tempo blockchain (EIP-712, TIP-20, client)"
@@ -12,10 +12,6 @@ categories = ["cryptography", "web-programming"]
 [lib]
 name = "x402"
 path = "src/lib.rs"
-
-[[bin]]
-name = "x402-client"
-path = "src/main.rs"
 
 [[bin]]
 name = "x402-approve"

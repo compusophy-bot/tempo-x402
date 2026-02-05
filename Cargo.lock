@@ -4351,7 +4351,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "alloy",
  "base64",
@@ -4372,8 +4372,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tempo-x402-client"
+version = "0.4.0"
+dependencies = [
+ "alloy",
+ "base64",
+ "dotenvy",
+ "rand 0.9.2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempo-x402",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tempo-x402-facilitator"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -4394,7 +4411,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-gateway"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -4420,7 +4437,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-server"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "actix-cors",
  "actix-governor",

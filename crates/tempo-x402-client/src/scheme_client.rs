@@ -2,14 +2,15 @@ use alloy::primitives::U256;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
-use crate::{
-    ChainConfig, PaymentPayload, PaymentRequirements, SchemeClient, TempoPaymentData, X402Error,
+use x402::{
+    eip712::{encode_signature_hex, payment_domain_for_chain, random_nonce},
+    ChainConfig, PaymentAuthorization, PaymentPayload, PaymentRequirements, SchemeClient,
+    TempoPaymentData, X402Error,
 };
 
-use crate::eip712::{encode_signature_hex, payment_domain_for_chain, random_nonce};
-use crate::PaymentAuthorization;
-
 /// Client-side scheme implementation: creates and signs EIP-712 payment payloads.
+///
+/// Use this with [`X402Client`](crate::X402Client) to make paid API requests.
 pub struct TempoSchemeClient {
     signer: PrivateKeySigner,
     config: ChainConfig,
@@ -27,6 +28,11 @@ impl TempoSchemeClient {
     /// Create a new client with a custom chain configuration.
     pub fn with_chain_config(signer: PrivateKeySigner, config: ChainConfig) -> Self {
         Self { signer, config }
+    }
+
+    /// Get the address of the signer.
+    pub fn address(&self) -> alloy::primitives::Address {
+        self.signer.address()
     }
 }
 
@@ -93,7 +99,7 @@ impl SchemeClient for TempoSchemeClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
+    use x402::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
 
     #[tokio::test]
     async fn test_create_payment_payload() {
@@ -122,5 +128,12 @@ mod tests {
         assert_eq!(payload.payload.value, "1000");
         assert!(payload.payload.signature.starts_with("0x"));
         assert_eq!(payload.payload.signature.len(), 132); // 0x + 130 hex chars
+    }
+
+    #[test]
+    fn test_address() {
+        let signer = PrivateKeySigner::random();
+        let client = TempoSchemeClient::new(signer.clone());
+        assert_eq!(client.address(), signer.address());
     }
 }

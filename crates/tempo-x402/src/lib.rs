@@ -5,27 +5,21 @@
 //!
 //! # Three-party model
 //!
-//! - **Client** ([`TempoSchemeClient`]) — signs payment authorizations
+//! - **Client** — signs payment authorizations (see `tempo-x402-client` crate)
 //! - **Server** ([`TempoSchemeServer`]) — gates endpoints, returns 402 with pricing
 //! - **Facilitator** ([`TempoSchemeFacilitator`]) — verifies signatures and settles on-chain
 //!
-//! # Quick example (client)
+//! # Quick example (server)
 //!
-//! ```no_run
-//! use alloy::signers::local::PrivateKeySigner;
-//! use x402::{TempoSchemeClient, X402Client};
-//!
-//! # #[tokio::main]
-//! # async fn main() {
-//! let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
-//! let client = X402Client::new(TempoSchemeClient::new(signer));
-//!
-//! let (resp, settlement) = client
-//!     .fetch("https://api.example.com/data", reqwest::Method::GET)
-//!     .await
-//!     .unwrap();
-//! # }
 //! ```
+//! use x402::{TempoSchemeServer, SchemeServer};
+//!
+//! let server = TempoSchemeServer::default();
+//! let (amount, asset) = server.parse_price("$0.001").unwrap();
+//! assert_eq!(amount, "1000"); // 1000 micro-tokens
+//! ```
+//!
+//! For making paid requests, use the `tempo-x402-client` crate.
 
 // Core types and traits
 pub mod constants;
@@ -38,13 +32,9 @@ pub mod scheme;
 // Tempo blockchain implementation
 pub mod eip712;
 pub mod nonce_store;
-pub mod scheme_client;
 pub mod scheme_facilitator;
 pub mod scheme_server;
 pub mod tip20;
-
-// HTTP client
-pub mod http_client;
 
 use alloy::sol;
 
@@ -82,8 +72,5 @@ pub use payment::*;
 pub use response::*;
 pub use scheme::*;
 
-pub use scheme_client::TempoSchemeClient;
 pub use scheme_facilitator::TempoSchemeFacilitator;
 pub use scheme_server::TempoSchemeServer;
-
-pub use http_client::{encode_payment, X402Client};

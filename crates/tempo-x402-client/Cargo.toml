@@ -1,0 +1,31 @@
+[package]
+name = "tempo-x402-client"
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+description = "x402 client SDK for making paid API requests on Tempo blockchain"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "README.md"
+keywords = ["x402", "payment", "client", "sdk", "tempo"]
+categories = ["web-programming::http-client"]
+
+[lib]
+name = "x402_client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "x402-client"
+path = "src/main.rs"
+
+[dependencies]
+x402 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+alloy = { workspace = true }
+base64 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }
+reqwest = { workspace = true }
+rand = "0.9"

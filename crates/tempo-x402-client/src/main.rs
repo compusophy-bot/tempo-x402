@@ -1,5 +1,5 @@
 use alloy::signers::local::PrivateKeySigner;
-use x402::{TempoSchemeClient, X402Client};
+use x402_client::{TempoSchemeClient, X402Client};
 
 #[tokio::main]
 async fn main() {
@@ -19,6 +19,8 @@ async fn main() {
 
     let signer: PrivateKeySigner = evm_private_key.parse().expect("invalid EVM_PRIVATE_KEY");
 
+    println!("x402 Client SDK Demo");
+    println!("====================");
     println!("Requesting: {url}");
     println!("Paying from: {}\n", signer.address());
 
