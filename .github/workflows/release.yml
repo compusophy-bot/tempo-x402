@@ -26,8 +26,52 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # Docs validation: version consistency check
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version consistency
+        run: |
+          # Extract tag version (strip 'v' prefix)
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+
+          # Get workspace version
+          WORKSPACE_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+
+          # Check tag matches workspace
+          if [ "$TAG_VERSION" != "$WORKSPACE_VERSION" ]; then
+            echo "❌ Tag version ($TAG_VERSION) != Cargo.toml version ($WORKSPACE_VERSION)"
+            echo "Fix: Update Cargo.toml to $TAG_VERSION before tagging"
+            exit 1
+          fi
+          echo "✓ Tag matches workspace version: $WORKSPACE_VERSION"
+
+          # Check all crates match
+          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+            CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+            if [ "$CRATE_VERSION" != "$WORKSPACE_VERSION" ]; then
+              echo "❌ crates/$crate version ($CRATE_VERSION) != workspace ($WORKSPACE_VERSION)"
+              exit 1
+            fi
+            echo "✓ crates/$crate version matches"
+          done
+
+          # Check llms.txt
+          LLMS_VERSION=$(grep -A1 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
+          if [ "$LLMS_VERSION" != "$WORKSPACE_VERSION" ]; then
+            echo "❌ llms.txt version ($LLMS_VERSION) != workspace ($WORKSPACE_VERSION)"
+            echo "Fix: Run ./scripts/bump-version.sh $WORKSPACE_VERSION"
+            exit 1
+          fi
+          echo "✓ llms.txt version matches"
+
+          echo ""
+          echo "All versions consistent: $WORKSPACE_VERSION"
+
   build:
-    needs: test
+    needs: [test, docs]
     strategy:
       matrix:
         include:

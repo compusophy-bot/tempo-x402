@@ -287,4 +287,4 @@ Health check: GET /health on any service
 
 ## Version
 
-0.2.0
+0.2.1

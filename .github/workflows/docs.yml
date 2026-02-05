@@ -1,0 +1,113 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'crates/*/Cargo.toml'
+      - 'llms.txt'
+      - 'README.md'
+      - 'crates/*/README.md'
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'crates/*/Cargo.toml'
+      - 'llms.txt'
+      - 'README.md'
+      - 'crates/*/README.md'
+
+jobs:
+  validate:
+    name: Validate docs consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract workspace version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Workspace version: $VERSION"
+
+      - name: Check crate versions match
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          FAILED=0
+
+          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+            CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+            if [ "$CRATE_VERSION" != "$VERSION" ]; then
+              echo "❌ crates/$crate version ($CRATE_VERSION) != workspace ($VERSION)"
+              FAILED=1
+            else
+              echo "✓ crates/$crate version matches"
+            fi
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo ""
+            echo "Fix: Update all crate versions to match workspace version"
+            exit 1
+          fi
+
+      - name: Check llms.txt version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          LLMS_VERSION=$(grep -A1 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
+
+          if [ "$LLMS_VERSION" != "$VERSION" ]; then
+            echo "❌ llms.txt version ($LLMS_VERSION) != workspace ($VERSION)"
+            echo ""
+            echo "Fix: Update the version at the bottom of llms.txt to $VERSION"
+            exit 1
+          fi
+          echo "✓ llms.txt version matches"
+
+      - name: Check deployment URLs are reachable
+        run: |
+          URLS=(
+            "https://tempo-x402-demo.vercel.app"
+            "https://x402-server-production.up.railway.app/health"
+            "https://x402-facilitator-production-ec87.up.railway.app/health"
+            "https://x402-gateway-production-5018.up.railway.app/health"
+          )
+
+          FAILED=0
+          for url in "${URLS[@]}"; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ $url"
+            else
+              echo "⚠ $url returned $STATUS (may be temporary)"
+              # Don't fail on URL checks - services might be deploying
+            fi
+          done
+
+      - name: Check README consistency
+        run: |
+          # Verify main README has all crate links
+          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+            if ! grep -q "crates.io/crates/$crate" README.md; then
+              echo "⚠ README.md missing link to $crate on crates.io"
+            fi
+          done
+
+          # Verify each crate README exists and has docs link
+          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+            if [ ! -f "crates/$crate/README.md" ]; then
+              echo "❌ Missing crates/$crate/README.md"
+              exit 1
+            fi
+          done
+
+          echo "✓ All crate READMEs present"
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "================================"
+          echo "Docs validation passed!"
+          echo "Version: ${{ steps.version.outputs.version }}"
+          echo "================================"
