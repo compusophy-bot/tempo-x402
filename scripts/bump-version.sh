@@ -23,14 +23,15 @@ fi
 echo "Bumping version to: $NEW_VERSION"
 echo ""
 
-# Get current version
-OLD_VERSION=$(grep -m1 '^version = ' "$ROOT_DIR/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+# Get current version from core crate (source of truth)
+OLD_VERSION=$(grep -m1 '^version = ' "$ROOT_DIR/crates/tempo-x402/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
 echo "Current version: $OLD_VERSION"
 echo ""
 
-# Update workspace Cargo.toml
-sed -i'' -e "s/^version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/" "$ROOT_DIR/Cargo.toml"
-echo "✓ Updated Cargo.toml"
+if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
+    echo "Already at version $NEW_VERSION"
+    exit 0
+fi
 
 # Update each crate's Cargo.toml
 CRATES=("tempo-x402" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway")
@@ -42,18 +43,11 @@ for crate in "${CRATES[@]}"; do
     fi
 done
 
-# Update inter-crate dependencies (workspace deps use workspace = true, but just in case)
-# This handles any hardcoded version references
-for crate in "${CRATES[@]}"; do
-    CRATE_TOML="$ROOT_DIR/crates/$crate/Cargo.toml"
-    if [ -f "$CRATE_TOML" ]; then
-        # Update tempo-x402 = "X.Y" style dependencies
-        sed -i'' -e "s/tempo-x402 = \"$OLD_VERSION\"/tempo-x402 = \"$NEW_VERSION\"/g" "$CRATE_TOML"
-        sed -i'' -e "s/tempo-x402-server = \"$OLD_VERSION\"/tempo-x402-server = \"$NEW_VERSION\"/g" "$CRATE_TOML"
-        sed -i'' -e "s/tempo-x402-facilitator = \"$OLD_VERSION\"/tempo-x402-facilitator = \"$NEW_VERSION\"/g" "$CRATE_TOML"
-        sed -i'' -e "s/tempo-x402-gateway = \"$OLD_VERSION\"/tempo-x402-gateway = \"$NEW_VERSION\"/g" "$CRATE_TOML"
-    fi
-done
+# Update workspace dependency version in root Cargo.toml
+if [ -f "$ROOT_DIR/Cargo.toml" ]; then
+    sed -i'' -e "s/version = \"$OLD_VERSION\"/version = \"$NEW_VERSION\"/g" "$ROOT_DIR/Cargo.toml"
+    echo "✓ Updated Cargo.toml workspace dependency"
+fi
 
 # Update llms.txt version at the bottom
 if [ -f "$ROOT_DIR/llms.txt" ]; then

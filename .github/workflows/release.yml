@@ -37,22 +37,22 @@ jobs:
           # Extract tag version (strip 'v' prefix)
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
 
-          # Get workspace version
-          WORKSPACE_VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          # Get version from core crate (source of truth)
+          CORE_VERSION=$(grep -m1 '^version = ' crates/tempo-x402/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
 
-          # Check tag matches workspace
-          if [ "$TAG_VERSION" != "$WORKSPACE_VERSION" ]; then
-            echo "❌ Tag version ($TAG_VERSION) != Cargo.toml version ($WORKSPACE_VERSION)"
-            echo "Fix: Update Cargo.toml to $TAG_VERSION before tagging"
+          # Check tag matches core version
+          if [ "$TAG_VERSION" != "$CORE_VERSION" ]; then
+            echo "❌ Tag version ($TAG_VERSION) != crates/tempo-x402 version ($CORE_VERSION)"
+            echo "Fix: Update crate versions to $TAG_VERSION before tagging"
             exit 1
           fi
-          echo "✓ Tag matches workspace version: $WORKSPACE_VERSION"
+          echo "✓ Tag matches core version: $CORE_VERSION"
 
           # Check all crates match
-          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+          for crate in tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
             CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
-            if [ "$CRATE_VERSION" != "$WORKSPACE_VERSION" ]; then
-              echo "❌ crates/$crate version ($CRATE_VERSION) != workspace ($WORKSPACE_VERSION)"
+            if [ "$CRATE_VERSION" != "$CORE_VERSION" ]; then
+              echo "❌ crates/$crate version ($CRATE_VERSION) != core ($CORE_VERSION)"
               exit 1
             fi
             echo "✓ crates/$crate version matches"
@@ -60,15 +60,15 @@ jobs:
 
           # Check llms.txt
           LLMS_VERSION=$(grep -A1 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
-          if [ "$LLMS_VERSION" != "$WORKSPACE_VERSION" ]; then
-            echo "❌ llms.txt version ($LLMS_VERSION) != workspace ($WORKSPACE_VERSION)"
-            echo "Fix: Run ./scripts/bump-version.sh $WORKSPACE_VERSION"
+          if [ "$LLMS_VERSION" != "$CORE_VERSION" ]; then
+            echo "❌ llms.txt version ($LLMS_VERSION) != core ($CORE_VERSION)"
+            echo "Fix: Run ./scripts/bump-version.sh $CORE_VERSION"
             exit 1
           fi
           echo "✓ llms.txt version matches"
 
           echo ""
-          echo "All versions consistent: $WORKSPACE_VERSION"
+          echo "All versions consistent: $CORE_VERSION"
 
   build:
     needs: [test, docs]
