@@ -1,42 +1,73 @@
 # tempo-x402
 
-> x402 (HTTP 402 Payment Required) implementation for the Tempo blockchain.
-> Pay-per-request API monetization using TIP-20 tokens with EIP-712 signatures.
+Pay-per-request APIs on the Tempo blockchain. Clients sign EIP-712 payment
+authorizations, servers gate content behind HTTP 402, facilitators settle
+payments on-chain via transferFrom.
+
+Live demo: https://tempo-x402-demo.vercel.app
+Source: https://github.com/compusophy/tempo-x402
+Crates: https://crates.io/crates/tempo-x402
 
 ## Installation
 
 ```toml
-# Cargo.toml
 [dependencies]
 tempo-x402 = "0.1"
 ```
 
-The crate is published as `tempo-x402` on crates.io but the library name is `x402`:
+The crate is published as `tempo-x402` but the library name is `x402`:
+
 ```rust
 use x402::{TempoSchemeClient, X402Client};
 ```
 
-There are also `tempo-x402-server` and `tempo-x402-facilitator` crates for running
-the server and facilitator services, but most integrations only need `tempo-x402`.
-
-## How x402 Works
-
-Three parties: Client, Resource Server, Facilitator.
+## The Flow
 
 ```
-1. Client  --GET /resource-->  Server
-2. Server  --402 + price--->   Client     (returns PaymentRequirements)
-3. Client  signs EIP-712 PaymentAuthorization
-4. Client  --GET + X-PAYMENT-->  Server   (base64-encoded PaymentPayload in header)
-5. Server  --POST /verify-and-settle-->  Facilitator
-6. Facilitator: verify sig, check balance/allowance/nonce, transferFrom on-chain
-7. Server  --200 + data + x-payment-response header-->  Client
+┌────────┐         ┌────────┐         ┌─────────────┐         ┌───────┐
+│ Client │         │ Server │         │ Facilitator │         │ Chain │
+└───┬────┘         └───┬────┘         └──────┬──────┘         └───┬───┘
+    │                  │                     │                    │
+    │  GET /resource   │                     │                    │
+    │─────────────────>│                     │                    │
+    │                  │                     │                    │
+    │  402 + payment   │                     │                    │
+    │  requirements    │                     │                    │
+    │<─────────────────│                     │                    │
+    │                  │                     │                    │
+    │  [sign EIP-712]  │                     │                    │
+    │                  │                     │                    │
+    │  GET /resource   │                     │                    │
+    │  + X-PAYMENT hdr │                     │                    │
+    │─────────────────>│                     │                    │
+    │                  │                     │                    │
+    │                  │  POST /verify-and-  │                    │
+    │                  │  settle             │                    │
+    │                  │────────────────────>│                    │
+    │                  │                     │                    │
+    │                  │                     │  transferFrom()    │
+    │                  │                     │───────────────────>│
+    │                  │                     │                    │
+    │                  │                     │  tx hash           │
+    │                  │                     │<───────────────────│
+    │                  │                     │                    │
+    │                  │  settlement result  │                    │
+    │                  │<────────────────────│                    │
+    │                  │                     │                    │
+    │  200 + content   │                     │                    │
+    │  + tx hash       │                     │                    │
+    │<─────────────────│                     │                    │
 ```
 
-## Client Integration (paying for API calls)
+Step by step:
+1. Client requests a protected endpoint
+2. Server returns 402 with PaymentRequirements (price, token, recipient)
+3. Client signs EIP-712 PaymentAuthorization, retries with X-PAYMENT header
+4. Server forwards to facilitator's /verify-and-settle endpoint
+5. Facilitator verifies signature, checks balance/allowance/nonce, calls transferFrom
+6. Server returns content + settlement transaction hash
 
-This is the most common integration. Use `X402Client` to make requests that
-automatically handle 402 responses:
+## Client Example
 
 ```rust
 use alloy::signers::local::PrivateKeySigner;
@@ -44,15 +75,13 @@ use x402::{TempoSchemeClient, X402Client};
 
 #[tokio::main]
 async fn main() {
-    let signer: PrivateKeySigner = "0xYOUR_PRIVATE_KEY".parse().unwrap();
-    let scheme = TempoSchemeClient::new(signer);
-    let client = X402Client::new(scheme);
+    let signer: PrivateKeySigner = "0xPRIVATE_KEY".parse().unwrap();
+    let client = X402Client::new(TempoSchemeClient::new(signer));
 
     match client.fetch("https://api.example.com/data", reqwest::Method::GET).await {
         Ok((response, settlement)) => {
             let body: serde_json::Value = response.json().await.unwrap();
             println!("Data: {body}");
-
             if let Some(s) = settlement {
                 println!("Paid via tx: {}", s.transaction);
             }
@@ -62,92 +91,66 @@ async fn main() {
 }
 ```
 
-### What X402Client does internally:
-1. Makes the request normally
-2. If response is 402, parses the `PaymentRequiredBody` JSON
-3. Finds a matching `tempo-tip20` scheme in the `accepts` array
-4. Uses `TempoSchemeClient` to sign an EIP-712 `PaymentAuthorization`
-5. Base64-encodes the `PaymentPayload` and retries with `X-PAYMENT` header
-6. Returns the response + optional `SettleResponse` from `x-payment-response` header
+## Types
 
-### Manual payment (without X402Client):
-```rust
-use x402::{TempoSchemeClient, SchemeClient, encode_payment};
+### PaymentRequirements (402 response body, in `accepts` array)
 
-let scheme = TempoSchemeClient::new(signer);
-let payload = scheme.create_payment_payload(1, &requirements).await?;
-let header_value = encode_payment(&payload)?;
-// Set header: X-PAYMENT: {header_value}
-```
-
-## Key Types
-
-### PaymentRequirements (what the server sends in 402 response)
 ```rust
 pub struct PaymentRequirements {
-    pub scheme: String,         // "tempo-tip20"
-    pub network: String,        // "eip155:42431"
-    pub price: String,          // "$0.001"
-    pub asset: Address,         // pathUSD token address
-    pub amount: String,         // "1000" (in smallest unit, 6 decimals)
-    pub pay_to: Address,        // recipient wallet
+    pub scheme: String,              // "tempo-tip20"
+    pub network: String,             // "eip155:42431"
+    pub price: String,               // "$0.001"
+    pub asset: Address,              // token contract
+    pub amount: String,              // "1000" (smallest unit)
+    pub pay_to: Address,             // recipient
     pub max_timeout_seconds: u64,
     pub description: Option<String>,
     pub mime_type: Option<String>,
 }
 ```
 
-### PaymentPayload (what the client sends in X-PAYMENT header)
+### PaymentPayload (X-PAYMENT header, base64-encoded JSON)
+
 ```rust
 pub struct PaymentPayload {
-    pub x402_version: u32,      // always 1
+    pub x402_version: u32,           // 1
     pub payload: TempoPaymentData,
 }
 
 pub struct TempoPaymentData {
-    pub from: Address,          // payer wallet
-    pub to: Address,            // recipient (must match pay_to)
-    pub value: String,          // amount in smallest unit
-    pub token: Address,         // token contract address
-    pub valid_after: u64,       // unix timestamp
-    pub valid_before: u64,      // unix timestamp
-    pub nonce: FixedBytes<32>,  // random, prevents replay
-    pub signature: String,      // 0x-prefixed hex EIP-712 signature
+    pub from: Address,               // payer
+    pub to: Address,                 // recipient
+    pub value: String,               // amount
+    pub token: Address,              // token contract
+    pub valid_after: u64,            // unix timestamp
+    pub valid_before: u64,           // unix timestamp
+    pub nonce: FixedBytes<32>,       // random bytes
+    pub signature: String,           // 0x-prefixed EIP-712 sig
 }
 ```
 
-### SettleResponse (from facilitator, forwarded to client)
+### SettleResponse (from facilitator, in x-payment-response header)
+
 ```rust
 pub struct SettleResponse {
     pub success: bool,
     pub error_reason: Option<String>,
     pub payer: Option<Address>,
-    pub transaction: String,    // tx hash on Tempo chain
-    pub network: String,        // "eip155:42431"
-}
-```
-
-### VerifyResponse (from facilitator /verify endpoint)
-```rust
-pub struct VerifyResponse {
-    pub is_valid: bool,
-    pub invalid_reason: Option<String>,
-    pub payer: Option<Address>,
+    pub transaction: String,         // tx hash
+    pub network: String,             // "eip155:42431"
 }
 ```
 
 ## Traits
 
-Three traits define the scheme interface. The `Tempo*` structs implement them:
-
 ```rust
-// Client signs payments
+// Client: signs payments
 pub trait SchemeClient: Send + Sync {
     async fn create_payment_payload(&self, x402_version: u32, requirements: &PaymentRequirements)
         -> Result<PaymentPayload, X402Error>;
 }
 
-// Facilitator verifies and settles
+// Facilitator: verifies and settles
 pub trait SchemeFacilitator: Send + Sync {
     async fn verify(&self, payload: &PaymentPayload, requirements: &PaymentRequirements)
         -> Result<VerifyResponse, X402Error>;
@@ -155,15 +158,15 @@ pub trait SchemeFacilitator: Send + Sync {
         -> Result<SettleResponse, X402Error>;
 }
 
-// Server parses prices
+// Server: parses prices
 pub trait SchemeServer: Send + Sync {
     fn parse_price(&self, price: &str) -> Result<(String, Address), X402Error>;
 }
 ```
 
-## Chain Configuration
+Implementations: `TempoSchemeClient`, `TempoSchemeFacilitator`, `TempoSchemeServer`
 
-Default configuration targets Tempo Moderato (testnet):
+## Chain Config
 
 ```rust
 use x402::ChainConfig;
@@ -172,79 +175,49 @@ let config = ChainConfig::default();
 // chain_id: 42431
 // network: "eip155:42431"
 // scheme_name: "tempo-tip20"
-// default_token: 0x20c0000000000000000000000000000000000000 (pathUSD, 6 decimals)
+// default_token: 0x20c0000000000000000000000000000000000000
+// token_decimals: 6
 // rpc_url: "https://rpc.moderato.tempo.xyz"
-// explorer_base: "https://explore.moderato.tempo.xyz"
 ```
 
-To target a different chain, create a custom `ChainConfig` and pass it to
-`TempoSchemeClient::with_chain_config()`, etc.
+Custom chain: `TempoSchemeClient::with_chain_config(signer, config)`
 
-## Constants
-
-```rust
-use x402::{TEMPO_CHAIN_ID, TEMPO_NETWORK, SCHEME_NAME, DEFAULT_TOKEN, TOKEN_DECIMALS, RPC_URL};
-```
-
-## EIP-712 Utilities
+## Utilities
 
 ```rust
+// EIP-712
 use x402::eip712;
-
-// Sign
-let hash = eip712::signing_hash(&authorization);
+let hash = eip712::signing_hash(&auth);
 let nonce = eip712::random_nonce();
-let sig_hex = eip712::encode_signature_hex(&signature);
+let recovered = eip712::verify_signature(&auth, &sig_bytes)?;
 
-// Verify
-let signer_address = eip712::verify_signature(&authorization, &sig_bytes)?;
-```
-
-## TIP-20 On-Chain Operations
-
-```rust
+// TIP-20 on-chain
 use x402::tip20;
-
 let balance = tip20::balance_of(&provider, token, owner).await?;
 let allowance = tip20::allowance(&provider, token, owner, spender).await?;
 let tx = tip20::transfer_from(&provider, token, from, to, value).await?;
 let tx = tip20::approve(&provider, token, spender, amount).await?;
-```
 
-## HMAC Authentication (server <-> facilitator)
-
-```rust
+// HMAC (server <-> facilitator auth)
 use x402::hmac;
+let sig = hmac::compute_hmac(secret, body);
+let valid = hmac::verify_hmac(secret, body, &sig);
 
-let signature = hmac::compute_hmac(secret, body_bytes);
-let valid = hmac::verify_hmac(secret, body_bytes, &signature);
-```
-
-## Nonce Store (replay protection)
-
-```rust
-use x402::nonce_store::{NonceStore, InMemoryNonceStore, SqliteNonceStore};
-
-// In-memory (fast, lost on restart)
-let store = InMemoryNonceStore::new();
-
-// SQLite (persistent, survives restarts)
+// Nonce store (replay protection)
+use x402::nonce_store::{InMemoryNonceStore, SqliteNonceStore};
 let store = SqliteNonceStore::open("./nonces.db")?;
-
 store.record(nonce);
 store.is_used(&nonce);
-store.purge_expired(300); // purge entries older than 5 minutes
 ```
 
 ## Prerequisites
 
-Before a client can pay, it must:
-1. Have pathUSD tokens (fund via `cast rpc tempo_fundAddress 0xADDRESS --rpc-url https://rpc.moderato.tempo.xyz`)
-2. Approve the facilitator to spend tokens (`cargo run --bin x402-approve` or call `tip20::approve`)
+Before paying:
+1. Have pathUSD tokens: `cast rpc tempo_fundAddress 0xADDR --rpc-url https://rpc.moderato.tempo.xyz`
+2. Approve facilitator: `cargo run --bin x402-approve` or `tip20::approve(&provider, token, facilitator, amount)`
 
-## Error Type
+## Errors
 
-All operations return `Result<T, X402Error>`:
 ```rust
 pub enum X402Error {
     SignatureError(String),
@@ -259,10 +232,10 @@ pub enum X402Error {
 
 ## Deployed Services
 
+- Demo: https://tempo-x402-demo.vercel.app
 - Server: https://x402-server-production.up.railway.app
 - Facilitator: https://x402-facilitator-production-ec87.up.railway.app
-- Health check: GET /health on either service
-- Source: https://github.com/compusophy/tempo-x402
+- Health: GET /health on server or facilitator
 
 ## Version
 

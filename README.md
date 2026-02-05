@@ -3,92 +3,119 @@
 [![crates.io](https://img.shields.io/crates/v/tempo-x402.svg)](https://crates.io/crates/tempo-x402)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-x402 (HTTP 402 Payment Required) implementation for the [Tempo](https://tempo.xyz) blockchain. Pay-per-request API monetization using TIP-20 tokens (pathUSD) with EIP-712 signed payment authorizations.
+Pay-per-request APIs on the [Tempo](https://tempo.xyz) blockchain. Clients sign EIP-712 payment authorizations, servers gate content behind HTTP 402, facilitators settle payments on-chain.
 
-**[Live Demo](https://tempo-x402-demo.vercel.app)** · [Demo Source](https://github.com/compusophy/tempo-x402-demo)
+**[Live Demo](https://tempo-x402-demo.vercel.app)** — try it now, no setup required
 
-## How it works
+## The Flow
 
 ```
-Client ──GET /resource──> Server ──402 + price──> Client
-Client ──sign EIP-712───> Client
-Client ──GET + X-PAYMENT──> Server ──verify+settle──> Facilitator ──transferFrom──> Tempo Chain
-Server <──200 + data──────
+┌────────┐         ┌────────┐         ┌─────────────┐         ┌───────┐
+│ Client │         │ Server │         │ Facilitator │         │ Chain │
+└───┬────┘         └───┬────┘         └──────┬──────┘         └───┬───┘
+    │                  │                     │                    │
+    │  GET /resource   │                     │                    │
+    │─────────────────>│                     │                    │
+    │                  │                     │                    │
+    │  402 + payment   │                     │                    │
+    │  requirements    │                     │                    │
+    │<─────────────────│                     │                    │
+    │                  │                     │                    │
+    │  [sign EIP-712]  │                     │                    │
+    │                  │                     │                    │
+    │  GET /resource   │                     │                    │
+    │  + X-PAYMENT hdr │                     │                    │
+    │─────────────────>│                     │                    │
+    │                  │                     │                    │
+    │                  │  POST /verify-and-  │                    │
+    │                  │  settle             │                    │
+    │                  │────────────────────>│                    │
+    │                  │                     │                    │
+    │                  │                     │  transferFrom()    │
+    │                  │                     │───────────────────>│
+    │                  │                     │                    │
+    │                  │                     │  tx hash           │
+    │                  │                     │<───────────────────│
+    │                  │                     │                    │
+    │                  │  settlement result  │                    │
+    │                  │<────────────────────│                    │
+    │                  │                     │                    │
+    │  200 + content   │                     │                    │
+    │  + tx hash       │                     │                    │
+    │<─────────────────│                     │                    │
+    │                  │                     │                    │
 ```
 
 1. Client requests a protected endpoint
-2. Server responds **402** with payment requirements (price, token, recipient)
+2. Server returns **402** with price, token address, and recipient
 3. Client signs an EIP-712 `PaymentAuthorization` and retries with `X-PAYMENT` header
-4. Server forwards to the facilitator, which atomically verifies the signature and executes `transferFrom` on-chain
-5. Server returns the content + transaction hash
+4. Server forwards to facilitator for verification and on-chain settlement
+5. Facilitator calls `transferFrom` to move tokens from client to server
+6. Server returns the content plus the settlement transaction hash
 
 ## Crates
 
-| Crate | What it does |
-|-------|-------------|
-| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library: types, EIP-712, TIP-20, nonce store, HTTP client |
-| [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server + payment middleware (actix-web) |
-| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification + on-chain settlement server |
+| Crate | Purpose |
+|-------|---------|
+| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, EIP-712, TIP-20, HTTP client |
+| [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
+| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and on-chain settlement |
 
-## Quick start
+## Quick Start
 
 ```bash
-# 1. Clone and build
-git clone https://github.com/compusophy/tempo-x402.git
-cd tempo-x402
-cargo build --workspace
-
-# 2. Configure
-cp .env.example .env
-# Edit .env with your keys (see below)
-
-# 3. Approve the facilitator to spend your tokens
-cargo run --bin x402-approve
-
-# 4. Start the facilitator (terminal 1)
-cargo run --bin x402-facilitator
-
-# 5. Start the server (terminal 2)
-cargo run --bin x402-server
-
-# 6. Make a paid request (terminal 3)
-cargo run --bin x402-client
+# Add to your Cargo.toml
+cargo add tempo-x402
 ```
 
-## Configuration
+```rust
+use alloy::signers::local::PrivateKeySigner;
+use x402::{TempoSchemeClient, X402Client};
 
-Copy `.env.example` to `.env` and fill in:
+#[tokio::main]
+async fn main() {
+    let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
+    let client = X402Client::new(TempoSchemeClient::new(signer));
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `EVM_PRIVATE_KEY` | Yes | Client wallet private key (pays for requests) |
-| `EVM_ADDRESS` | Yes | Server wallet address (receives payments) |
-| `FACILITATOR_PRIVATE_KEY` | Yes | Facilitator wallet key (executes `transferFrom`) |
-| `FACILITATOR_ADDRESS` | Yes | Facilitator address (for token approval) |
+    let (response, settlement) = client
+        .fetch("https://api.example.com/paid-endpoint", reqwest::Method::GET)
+        .await
+        .unwrap();
 
-Fund wallets via the Tempo faucet:
+    println!("Data: {}", response.text().await.unwrap());
+    if let Some(s) = settlement {
+        println!("Paid: {}", s.transaction);
+    }
+}
+```
+
+## Network
+
+| | |
+|---|---|
+| Chain | Tempo Moderato (testnet) |
+| Chain ID | 42431 |
+| Token | pathUSD — `0x20c0000000000000000000000000000000000000` (6 decimals) |
+| RPC | https://rpc.moderato.tempo.xyz |
+| Explorer | https://explore.moderato.tempo.xyz |
+
+Fund your wallet:
 ```bash
 cast rpc tempo_fundAddress 0xYOUR_ADDRESS --rpc-url https://rpc.moderato.tempo.xyz
 ```
 
-Optional settings: `FACILITATOR_SHARED_SECRET`, `ALLOWED_ORIGINS`, `RATE_LIMIT_RPM` -- see `.env.example` for details.
+## Deployed Services
 
-## Network
+| Service | URL |
+|---------|-----|
+| Demo | https://tempo-x402-demo.vercel.app |
+| Server | https://x402-server-production.up.railway.app |
+| Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
 
-- **Chain**: Tempo Moderato (testnet)
-- **Chain ID**: 42431
-- **Token**: pathUSD (`0x20c0000000000000000000000000000000000000`, 6 decimals)
-- **RPC**: `https://rpc.moderato.tempo.xyz`
-- **Explorer**: `https://explore.moderato.tempo.xyz`
+## Documentation
 
-## Security
-
-- Nonce replay protection with automatic expiry
-- HMAC authentication between server and facilitator
-- Atomic verify-and-settle with per-payer mutex (no TOCTOU)
-- Configurable CORS and rate limiting
-- Request body size limits (64KB)
-- Error sanitization (internal details logged, not exposed to clients)
+- [llms.txt](./llms.txt) — complete API reference for LLM integrations
+- [Demo source](https://github.com/compusophy/tempo-x402-demo) — Next.js frontend example
 
 ## License
 
