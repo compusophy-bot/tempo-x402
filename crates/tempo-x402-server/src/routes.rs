@@ -60,7 +60,7 @@ pub async fn block_number(
     let mut response = get_block_number(&provider).await;
     if let Ok(header_val) = actix_web::http::header::HeaderValue::from_str(&settle_json) {
         response.headers_mut().insert(
-            actix_web::http::header::HeaderName::from_static("x-payment-response"),
+            actix_web::http::header::HeaderName::from_static("payment-response"),
             header_val,
         );
     }
@@ -318,7 +318,7 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
 
     let tx_hash = paid_response
         .headers()
-        .get("x-payment-response")
+        .get("payment-response")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| serde_json::from_str::<x402::SettleResponse>(s).ok())
         .map(|s| s.transaction)
