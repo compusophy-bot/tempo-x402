@@ -103,8 +103,8 @@ pub async fn register(
         &state.config.platform_fee_amount,
     );
 
-    // Require payment
-    let settle = require_payment(
+    // Require payment (returns 402 with requirements if no valid payment)
+    let settle = match require_payment(
         &req,
         requirements,
         &state.http_client,
@@ -112,7 +112,10 @@ pub async fn register(
         state.config.hmac_secret.as_deref(),
     )
     .await
-    .map_err(|_| GatewayError::PaymentRequired)?;
+    {
+        Ok(s) => s,
+        Err(http_response) => return Ok(http_response), // Already a proper 402 response
+    };
 
     // Extract payer address from settlement response
     let owner_address = settle

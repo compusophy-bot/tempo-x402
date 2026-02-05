@@ -35,8 +35,8 @@ pub async fn gateway_proxy(
         endpoint.description.as_deref(),
     );
 
-    // Require payment
-    let settle = require_payment(
+    // Require payment (returns 402 with requirements if no valid payment)
+    let settle = match require_payment(
         &req,
         requirements,
         &state.http_client,
@@ -44,7 +44,10 @@ pub async fn gateway_proxy(
         state.config.hmac_secret.as_deref(),
     )
     .await
-    .map_err(|_| GatewayError::PaymentRequired)?;
+    {
+        Ok(s) => s,
+        Err(http_response) => return Ok(http_response),
+    };
 
     // Build target URL
     let target_url = format!(
@@ -103,8 +106,8 @@ async fn gateway_proxy_no_path(
         endpoint.description.as_deref(),
     );
 
-    // Require payment
-    let settle = require_payment(
+    // Require payment (returns 402 with requirements if no valid payment)
+    let settle = match require_payment(
         &req,
         requirements,
         &state.http_client,
@@ -112,7 +115,10 @@ async fn gateway_proxy_no_path(
         state.config.hmac_secret.as_deref(),
     )
     .await
-    .map_err(|_| GatewayError::PaymentRequired)?;
+    {
+        Ok(s) => s,
+        Err(http_response) => return Ok(http_response),
+    };
 
     // Build target URL (just the base)
     let target_url = if let Some(query) = req.uri().query() {

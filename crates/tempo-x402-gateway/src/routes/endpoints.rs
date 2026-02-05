@@ -5,7 +5,8 @@ use x402::SchemeServer;
 use crate::db::UpdateEndpoint;
 use crate::error::GatewayError;
 use crate::middleware::{
-    extract_payer_from_header, payment_response_header, platform_requirements, require_payment,
+    extract_payer_from_header, payment_required_response, payment_response_header,
+    platform_requirements, require_payment,
 };
 use crate::state::AppState;
 
@@ -93,8 +94,18 @@ pub async fn update_endpoint(
         (None, None)
     };
 
+    // Build platform payment requirements
+    let requirements = platform_requirements(
+        state.config.platform_address,
+        &state.config.platform_fee,
+        &state.config.platform_fee_amount,
+    );
+
     // Verify ownership BEFORE settling payment (so non-owners don't lose money)
-    let payer = extract_payer_from_header(&req).ok_or(GatewayError::PaymentRequired)?;
+    let payer = match extract_payer_from_header(&req) {
+        Some(p) => p,
+        None => return Ok(payment_required_response(requirements)),
+    };
 
     let owner: Address = endpoint
         .owner_address
@@ -105,15 +116,8 @@ pub async fn update_endpoint(
         return Err(GatewayError::NotOwner);
     }
 
-    // Build platform payment requirements
-    let requirements = platform_requirements(
-        state.config.platform_address,
-        &state.config.platform_fee,
-        &state.config.platform_fee_amount,
-    );
-
     // Now settle payment (ownership verified, safe to charge)
-    let settle = require_payment(
+    let settle = match require_payment(
         &req,
         requirements,
         &state.http_client,
@@ -121,7 +125,10 @@ pub async fn update_endpoint(
         state.config.hmac_secret.as_deref(),
     )
     .await
-    .map_err(|_| GatewayError::PaymentRequired)?;
+    {
+        Ok(s) => s,
+        Err(http_response) => return Ok(http_response),
+    };
 
     // Update the endpoint
     let updated = state.db.update_endpoint(
@@ -155,8 +162,18 @@ pub async fn delete_endpoint(
         .get_endpoint(&slug)?
         .ok_or_else(|| GatewayError::EndpointNotFound(slug.clone()))?;
 
+    // Build platform payment requirements
+    let requirements = platform_requirements(
+        state.config.platform_address,
+        &state.config.platform_fee,
+        &state.config.platform_fee_amount,
+    );
+
     // Verify ownership BEFORE settling payment (so non-owners don't lose money)
-    let payer = extract_payer_from_header(&req).ok_or(GatewayError::PaymentRequired)?;
+    let payer = match extract_payer_from_header(&req) {
+        Some(p) => p,
+        None => return Ok(payment_required_response(requirements)),
+    };
 
     let owner: Address = endpoint
         .owner_address
@@ -167,15 +184,8 @@ pub async fn delete_endpoint(
         return Err(GatewayError::NotOwner);
     }
 
-    // Build platform payment requirements
-    let requirements = platform_requirements(
-        state.config.platform_address,
-        &state.config.platform_fee,
-        &state.config.platform_fee_amount,
-    );
-
     // Now settle payment (ownership verified, safe to charge)
-    let settle = require_payment(
+    let settle = match require_payment(
         &req,
         requirements,
         &state.http_client,
@@ -183,7 +193,10 @@ pub async fn delete_endpoint(
         state.config.hmac_secret.as_deref(),
     )
     .await
-    .map_err(|_| GatewayError::PaymentRequired)?;
+    {
+        Ok(s) => s,
+        Err(http_response) => return Ok(http_response),
+    };
 
     // Delete (deactivate) the endpoint
     state.db.delete_endpoint(&slug)?;
