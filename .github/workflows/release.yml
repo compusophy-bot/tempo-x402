@@ -7,9 +7,27 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
+  # Test gate: must pass before building release artifacts
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace
+      - name: Run clippy
+        run: cargo clippy --workspace -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -39,7 +57,7 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           mkdir -p dist
-          for bin in x402-server x402-facilitator x402-client x402-approve; do
+          for bin in x402-server x402-facilitator x402-client x402-approve x402-gateway; do
             src="target/${{ matrix.target }}/release/${bin}"
             if [ -f "$src" ]; then
               cp "$src" "dist/${bin}-${tag}-${{ matrix.target }}"
