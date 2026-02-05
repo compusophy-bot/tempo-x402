@@ -58,8 +58,8 @@ jobs:
             echo "✓ crates/$crate version matches"
           done
 
-          # Check llms.txt
-          LLMS_VERSION=$(grep -A1 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
+          # Check llms.txt (version is 2 lines after ## Version due to blank line)
+          LLMS_VERSION=$(grep -A2 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
           if [ "$LLMS_VERSION" != "$CORE_VERSION" ]; then
             echo "❌ llms.txt version ($LLMS_VERSION) != core ($CORE_VERSION)"
             echo "Fix: Run ./scripts/bump-version.sh $CORE_VERSION"

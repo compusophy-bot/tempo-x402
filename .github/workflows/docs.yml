@@ -55,7 +55,7 @@ jobs:
       - name: Check llms.txt version
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          LLMS_VERSION=$(grep -A1 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
+          LLMS_VERSION=$(grep -A2 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
 
           if [ "$LLMS_VERSION" != "$VERSION" ]; then
             echo "❌ llms.txt version ($LLMS_VERSION) != core ($VERSION)"

@@ -7,8 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Get version from workspace Cargo.toml (single source of truth)
-VERSION=$(grep -m1 '^version = ' "$ROOT_DIR/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+# Get version from core crate (single source of truth)
+VERSION=$(grep -m1 '^version = ' "$ROOT_DIR/crates/tempo-x402/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
 
 if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from Cargo.toml"
@@ -26,14 +26,14 @@ else
     echo "WARNING: No ## Version section in llms.txt"
 fi
 
-# Verify all crate versions match workspace version
+# Verify all crate versions match core version
 CRATES=("tempo-x402" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway")
 for crate in "${CRATES[@]}"; do
     CRATE_TOML="$ROOT_DIR/crates/$crate/Cargo.toml"
     if [ -f "$CRATE_TOML" ]; then
         CRATE_VERSION=$(grep -m1 '^version = ' "$CRATE_TOML" | sed 's/version = "\(.*\)"/\1/')
         if [ "$CRATE_VERSION" != "$VERSION" ]; then
-            echo "ERROR: $crate version ($CRATE_VERSION) != workspace version ($VERSION)"
+            echo "ERROR: $crate version ($CRATE_VERSION) != core version ($VERSION)"
             exit 1
         fi
         echo "✓ $crate version matches"
