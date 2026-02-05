@@ -13,6 +13,12 @@ pub trait NonceStore: Send + Sync {
     /// Record a nonce as used.
     fn record(&self, nonce: FixedBytes<32>);
 
+    /// Atomically check if nonce is unused and record it if so.
+    /// Returns `true` if the nonce was successfully claimed (was not used before).
+    /// Returns `false` if the nonce was already used (replay attempt).
+    /// This is the preferred method for replay protection as it's atomic.
+    fn try_use(&self, nonce: FixedBytes<32>) -> bool;
+
     /// Purge nonces older than `max_age_secs`. Returns number purged.
     fn purge_expired(&self, max_age_secs: u64) -> usize;
 }
@@ -43,6 +49,18 @@ impl NonceStore for InMemoryNonceStore {
 
     fn record(&self, nonce: FixedBytes<32>) {
         self.nonces.insert(nonce, Instant::now());
+    }
+
+    fn try_use(&self, nonce: FixedBytes<32>) -> bool {
+        // DashMap's entry API provides atomicity within a single process
+        use dashmap::mapref::entry::Entry;
+        match self.nonces.entry(nonce) {
+            Entry::Occupied(_) => false, // Already used
+            Entry::Vacant(v) => {
+                v.insert(Instant::now());
+                true // Successfully claimed
+            }
+        }
     }
 
     fn purge_expired(&self, max_age_secs: u64) -> usize {
@@ -98,6 +116,22 @@ impl NonceStore for SqliteNonceStore {
             "INSERT OR IGNORE INTO used_nonces (nonce, recorded_at) VALUES (?1, ?2)",
             rusqlite::params![nonce.as_slice(), now],
         );
+    }
+
+    fn try_use(&self, nonce: FixedBytes<32>) -> bool {
+        let conn = self.conn.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        // INSERT will fail on PRIMARY KEY constraint if nonce exists.
+        // This is atomic at the database level, safe across processes.
+        // Returns true if successfully inserted, false if constraint violation.
+        conn.execute(
+            "INSERT INTO used_nonces (nonce, recorded_at) VALUES (?1, ?2)",
+            rusqlite::params![nonce.as_slice(), now],
+        )
+        .is_ok()
     }
 
     fn purge_expired(&self, max_age_secs: u64) -> usize {
@@ -208,5 +242,34 @@ mod tests {
         store.record(a);
         assert!(store.is_used(&a));
         assert!(!store.is_used(&b));
+    }
+
+    #[test]
+    fn test_in_memory_try_use_atomic() {
+        let store = InMemoryNonceStore::new();
+        let nonce = FixedBytes::new([0x99; 32]);
+
+        // First try_use should succeed
+        assert!(store.try_use(nonce));
+        // Second try_use should fail (already used)
+        assert!(!store.try_use(nonce));
+        // Should be marked as used
+        assert!(store.is_used(&nonce));
+    }
+
+    #[test]
+    fn test_sqlite_try_use_atomic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.db");
+        let store = SqliteNonceStore::open(path.to_str().unwrap()).unwrap();
+
+        let nonce = FixedBytes::new([0x99; 32]);
+
+        // First try_use should succeed
+        assert!(store.try_use(nonce));
+        // Second try_use should fail (already used)
+        assert!(!store.try_use(nonce));
+        // Should be marked as used
+        assert!(store.is_used(&nonce));
     }
 }

@@ -63,7 +63,8 @@ pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
             || host_lower == "[::1]"
             || host_lower.starts_with("[fc") // IPv6 private fc00::/7
             || host_lower.starts_with("[fd") // IPv6 private
-            || host_lower.starts_with("[fe80") // IPv6 link-local
+            || host_lower.starts_with("[fe80")
+        // IPv6 link-local
         {
             return Err(GatewayError::InvalidUrl(
                 "target cannot be localhost or private IP".to_string(),

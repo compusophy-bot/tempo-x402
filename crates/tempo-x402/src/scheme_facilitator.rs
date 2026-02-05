@@ -95,6 +95,13 @@ impl<P> TempoSchemeFacilitator<P> {
         self.nonce_store.record(nonce);
     }
 
+    /// Atomically check if nonce is unused and claim it if so.
+    /// Returns true if successfully claimed, false if already used.
+    #[doc(hidden)]
+    pub fn try_use_nonce(&self, nonce: FixedBytes<32>) -> bool {
+        self.nonce_store.try_use(nonce)
+    }
+
     /// Check RPC connectivity by fetching the latest block number.
     pub async fn health_check(&self) -> Result<u64, X402Error>
     where
@@ -278,11 +285,25 @@ where
             .parse::<U256>()
             .map_err(|e| X402Error::InvalidPayment(format!("invalid value: {e}")))?;
 
-        // Execute transferFrom
-        let tx_hash = tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await?;
+        // Atomically claim the nonce BEFORE executing the transfer.
+        // This prevents replay attacks even across multiple processes.
+        if !self.try_use_nonce(p.nonce) {
+            tracing::warn!(
+                nonce = %format!("{:.8}", p.nonce),
+                payer = %p.from,
+                "nonce race: another request claimed it first"
+            );
+            return Ok(SettleResponse {
+                success: false,
+                error_reason: Some("Nonce already used (concurrent request)".to_string()),
+                payer: Some(p.from),
+                transaction: String::new(),
+                network: self.config.network.clone(),
+            });
+        }
 
-        // Record nonce AFTER successful settlement
-        self.record_nonce(p.nonce);
+        // Execute transferFrom (nonce is now claimed, safe to proceed)
+        let tx_hash = tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await?;
 
         tracing::info!(
             payer = %p.from,

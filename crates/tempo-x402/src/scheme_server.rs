@@ -79,14 +79,26 @@ impl SchemeServer for TempoSchemeServer {
                     1
                 };
 
-                integer * 10u64.pow(self.config.token_decimals) + fractional * scale
+                let multiplier = 10u64.pow(self.config.token_decimals);
+                let integer_part = integer.checked_mul(multiplier).ok_or_else(|| {
+                    X402Error::InvalidPayment(format!("invalid price '{price}': overflow"))
+                })?;
+                let fractional_part = fractional.checked_mul(scale).ok_or_else(|| {
+                    X402Error::InvalidPayment(format!("invalid price '{price}': overflow"))
+                })?;
+                integer_part.checked_add(fractional_part).ok_or_else(|| {
+                    X402Error::InvalidPayment(format!("invalid price '{price}': overflow"))
+                })?
             }
             None => {
                 // No decimal point -- treat as whole number
                 let integer: u64 = cleaned.parse::<u64>().map_err(|e| {
                     X402Error::InvalidPayment(format!("invalid price '{price}': {e}"))
                 })?;
-                integer * 10u64.pow(self.config.token_decimals)
+                let multiplier = 10u64.pow(self.config.token_decimals);
+                integer.checked_mul(multiplier).ok_or_else(|| {
+                    X402Error::InvalidPayment(format!("invalid price '{price}': overflow"))
+                })?
             }
         };
 
@@ -147,5 +159,12 @@ mod tests {
     fn test_parse_empty_fails() {
         let server = TempoSchemeServer::new();
         assert!(server.parse_price("$").is_err());
+    }
+
+    #[test]
+    fn test_parse_overflow_fails() {
+        let server = TempoSchemeServer::new();
+        // This would overflow u64 when multiplied by 10^6
+        assert!(server.parse_price("$99999999999999999999").is_err());
     }
 }
