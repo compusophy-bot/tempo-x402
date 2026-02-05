@@ -79,6 +79,13 @@ pub fn extract_payment_header(req: &HttpRequest) -> Option<PaymentPayload> {
     serde_json::from_slice(&decoded).ok()
 }
 
+/// Extract the payer address from the X-PAYMENT header without settling.
+/// Used to verify ownership before committing to payment.
+pub fn extract_payer_from_header(req: &HttpRequest) -> Option<Address> {
+    let payload = extract_payment_header(req)?;
+    Some(payload.payload.from)
+}
+
 /// Call the facilitator's /verify-and-settle endpoint
 pub async fn verify_and_settle(
     http_client: &reqwest::Client,
@@ -93,8 +100,8 @@ pub async fn verify_and_settle(
     );
 
     let request_body = serde_json::json!({
-        "payload": payload,
-        "requirements": requirements,
+        "paymentPayload": payload,
+        "paymentRequirements": requirements,
     });
 
     let body_bytes = serde_json::to_vec(&request_body)
@@ -108,7 +115,7 @@ pub async fn verify_and_settle(
     // Add HMAC signature if secret is configured
     if let Some(secret) = hmac_secret {
         let signature = compute_hmac(secret, &body_bytes);
-        req_builder = req_builder.header("X-HMAC-SHA256", signature);
+        req_builder = req_builder.header("X-Facilitator-Auth", signature);
     }
 
     let response = req_builder
