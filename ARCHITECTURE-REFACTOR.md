@@ -31,7 +31,7 @@ crates/
 
 - [x] 1. Extract `tempo-x402-client` from `tempo-x402` (the X402Client stuff) — v0.4.0
 - [x] 2. Strip demo endpoints from `tempo-x402-server` — v0.4.0 (server is now SDK-only)
-- [ ] 3. Create `tempo-x402-app` - Rust WASM kitchen sink (future work)
+- [x] 3. Create `tempo-x402-app` - Rust WASM kitchen sink — v0.4.0
 - [ ] 4. Deprecate external demo repo (tempo-x402-demo) (future work)
 - [ ] 5. Add Railway config for deploying entire stack (future work)
 
