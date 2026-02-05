@@ -2,6 +2,7 @@ use alloy::primitives::FixedBytes;
 use dashmap::DashMap;
 use std::sync::Mutex;
 use std::time::Instant;
+use tracing;
 
 /// Trait for nonce storage backends.
 ///
@@ -96,13 +97,15 @@ impl SqliteNonceStore {
 impl NonceStore for SqliteNonceStore {
     fn is_used(&self, nonce: &FixedBytes<32>) -> bool {
         let conn = self.conn.lock().unwrap();
+        // Fail-secure: if database query fails, assume nonce IS used to prevent replays.
+        // Note: settlement uses try_use() which is atomic and handles errors safely.
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM used_nonces WHERE nonce = ?1",
                 [nonce.as_slice()],
                 |row| row.get(0),
             )
-            .unwrap_or(0);
+            .unwrap_or(1); // Fail-secure: database error = assume nonce is used
         count > 0
     }
 
@@ -112,10 +115,14 @@ impl NonceStore for SqliteNonceStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let _ = conn.execute(
+        // Note: INSERT OR IGNORE means duplicate nonces are silently accepted (idempotent).
+        // Errors here are rare (disk full, corruption) and would be caught by try_use() in settlement.
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO used_nonces (nonce, recorded_at) VALUES (?1, ?2)",
             rusqlite::params![nonce.as_slice(), now],
-        );
+        ) {
+            tracing::warn!(error = %e, "failed to record nonce - may allow replay if try_use also fails");
+        }
     }
 
     fn try_use(&self, nonce: FixedBytes<32>) -> bool {

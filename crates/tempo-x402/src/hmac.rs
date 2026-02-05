@@ -14,15 +14,17 @@ pub fn compute_hmac(secret: &[u8], body: &[u8]) -> String {
 
 /// Verify an HMAC-SHA256 signature against the expected body.
 /// Returns `true` if the signature is valid.
+///
+/// Uses constant-time comparison to prevent timing attacks.
+/// Invalid hex signatures are handled without timing side-channels.
 pub fn verify_hmac(secret: &[u8], body: &[u8], signature: &str) -> bool {
     let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC accepts any key length");
     mac.update(body);
 
-    let expected = match hex::decode(signature) {
-        Ok(bytes) => bytes,
-        Err(_) => return false,
-    };
+    // Decode hex first - if invalid, compare against zeros to maintain constant-time
+    let expected = hex::decode(signature).unwrap_or_else(|_| vec![0u8; 32]);
 
+    // hmac crate's verify_slice uses constant-time comparison
     mac.verify_slice(&expected).is_ok()
 }
 
