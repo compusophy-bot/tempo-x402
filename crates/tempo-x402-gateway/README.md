@@ -75,6 +75,10 @@ The target API receives additional headers:
 
 The gateway never holds funds - payments go directly from caller to endpoint owner via the Tempo blockchain.
 
+## Deployed
+
+https://x402-gateway-production-5018.up.railway.app
+
 ## License
 
 MIT

@@ -12,7 +12,7 @@ Crates: https://crates.io/crates/tempo-x402
 
 ```toml
 [dependencies]
-tempo-x402 = "0.1"
+tempo-x402 = "0.2"
 ```
 
 The crate is published as `tempo-x402` but the library name is `x402`:
@@ -204,11 +204,46 @@ let sig = hmac::compute_hmac(secret, body);
 let valid = hmac::verify_hmac(secret, body, &sig);
 
 // Nonce store (replay protection)
-use x402::nonce_store::{InMemoryNonceStore, SqliteNonceStore};
+use x402::nonce_store::{InMemoryNonceStore, SqliteNonceStore, NonceStore};
 let store = SqliteNonceStore::open("./nonces.db")?;
-store.record(nonce);
+store.try_use(nonce);  // atomic check-and-record
 store.is_used(&nonce);
+store.purge_expired(300);
 ```
+
+## Gateway
+
+The gateway is a relay/proxy that adds x402 payment rails to any HTTP API.
+
+### Gateway Endpoints
+
+| Method | Path | Payment | Description |
+|--------|------|---------|-------------|
+| POST | `/register` | Platform fee | Register a new endpoint |
+| GET | `/endpoints` | Free | List all endpoints |
+| GET | `/endpoints/:slug` | Free | Get endpoint details |
+| PATCH | `/endpoints/:slug` | Platform fee | Update endpoint (owner only) |
+| DELETE | `/endpoints/:slug` | Platform fee | Deactivate endpoint (owner only) |
+| ANY | `/g/:slug/*` | Endpoint price | Proxy to target API |
+
+### Gateway Usage
+
+```bash
+# Register an endpoint (returns 402, sign and retry)
+curl -X POST https://x402-gateway.example.com/register \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
+
+# Call a proxied endpoint
+curl https://x402-gateway.example.com/g/my-api/users/123 \
+  -H "X-PAYMENT: <base64-encoded-payment>"
+```
+
+Target APIs receive verification headers:
+- `X-X402-Verified: true`
+- `X-X402-Payer: 0x...`
+- `X-X402-Amount: 50000`
+- `X-X402-TxHash: 0x...`
 
 ## Prerequisites
 
@@ -232,10 +267,23 @@ pub enum X402Error {
 
 ## Deployed Services
 
-- Demo: https://tempo-x402-demo.vercel.app
-- Server: https://x402-server-production.up.railway.app
-- Facilitator: https://x402-facilitator-production-ec87.up.railway.app
-- Health: GET /health on server or facilitator
+| Service | URL |
+|---------|-----|
+| Demo | https://tempo-x402-demo.vercel.app |
+| Server | https://x402-server-production.up.railway.app |
+| Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
+| Gateway | https://x402-gateway-production-5018.up.railway.app |
+
+Health check: GET /health on any service
+
+## Crates
+
+| Crate | Purpose |
+|-------|---------|
+| `tempo-x402` | Core library: types, signing, HTTP client |
+| `tempo-x402-server` | Resource server with payment middleware |
+| `tempo-x402-facilitator` | Payment verification and settlement |
+| `tempo-x402-gateway` | API relay/proxy with endpoint registration |
 
 ## Version
 

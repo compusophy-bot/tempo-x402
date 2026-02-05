@@ -2,7 +2,7 @@
 
 Pay-per-request APIs on the Tempo blockchain.
 
-**[Live Demo](https://tempo-x402-demo.vercel.app)** · **[Documentation](https://tempo-x402-demo.vercel.app/docs)** · **[crates.io](https://crates.io/crates/tempo-x402)**
+**[Live Demo](https://tempo-x402-demo.vercel.app)** | **[Documentation](https://tempo-x402-demo.vercel.app/docs)** | **[crates.io](https://crates.io/crates/tempo-x402)**
 
 ## How It Works
 
@@ -35,18 +35,16 @@ Pay-per-request APIs on the Tempo blockchain.
     │<─────────────────│                     │                    │
 ```
 
-**Client** requests a paid endpoint. **Server** returns 402 with price info. Client signs an EIP-712 payment authorization and retries. Server forwards to **Facilitator**, which verifies the signature and calls `transferFrom` on-chain to settle the payment. Server returns the content.
+**Client** requests a paid endpoint. **Server** returns 402 with price info. Client signs an EIP-712 payment authorization and retries. Server forwards to **Facilitator**, which verifies the signature and calls `transferFrom` on-chain. Server returns the content.
 
 ## Architecture
 
-Three services, one chain:
-
-| Component | What it does | Stack |
+| Component | What it does | Crate |
 |-----------|--------------|-------|
-| **Client** | Signs payments, makes requests | Rust (`tempo-x402` crate) or any language with EIP-712 |
-| **Server** | Gates endpoints, returns 402, forwards payments | Rust, actix-web |
-| **Facilitator** | Verifies signatures, settles on-chain | Rust, actix-web, alloy |
-| **Chain** | Tempo Moderato (testnet), pathUSD token | EVM, TIP-20 |
+| **Client** | Signs payments, makes requests | `tempo-x402` |
+| **Server** | Gates endpoints, returns 402 | `tempo-x402-server` |
+| **Facilitator** | Verifies signatures, settles on-chain | `tempo-x402-facilitator` |
+| **Gateway** | Proxy any API with payment rails | `tempo-x402-gateway` |
 
 The facilitator holds no funds — it just has approval to call `transferFrom` on behalf of clients who have pre-approved it.
 
@@ -86,6 +84,16 @@ async fn main() {
 | [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, signing, HTTP client |
 | [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
 | [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and settlement |
+| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API relay/proxy with endpoint registration |
+
+## Deployed Services
+
+| Service | URL |
+|---------|-----|
+| Demo | https://tempo-x402-demo.vercel.app |
+| Server | https://x402-server-production.up.railway.app |
+| Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
+| Gateway | https://x402-gateway-production-5018.up.railway.app |
 
 ## Network
 
