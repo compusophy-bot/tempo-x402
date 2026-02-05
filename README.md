@@ -1,5 +1,8 @@
 # tempo-x402
 
+[![crates.io](https://img.shields.io/crates/v/tempo-x402.svg)](https://crates.io/crates/tempo-x402)
+[![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 x402 (HTTP 402 Payment Required) implementation for the [Tempo](https://tempo.xyz) blockchain. Pay-per-request API monetization using TIP-20 tokens (pathUSD) with EIP-712 signed payment authorizations.
 
 ## How it works
@@ -21,9 +24,9 @@ Server <──200 + data──────
 
 | Crate | What it does |
 |-------|-------------|
-| `x402` | Core library: types, EIP-712, TIP-20, nonce store, HTTP client |
-| `x402-server` | Resource server + payment middleware (actix-web) |
-| `x402-facilitator` | Payment verification + on-chain settlement server |
+| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library: types, EIP-712, TIP-20, nonce store, HTTP client |
+| [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server + payment middleware (actix-web) |
+| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification + on-chain settlement server |
 
 ## Quick start
 
