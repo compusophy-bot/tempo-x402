@@ -1,0 +1,299 @@
+openapi: 3.1.0
+info:
+  title: x402 Facilitator API
+  description: Payment verification and settlement service for the x402 protocol
+  version: 0.2.1
+  contact:
+    url: https://github.com/compusophy/tempo-x402
+  license:
+    name: MIT
+
+servers:
+  - url: https://x402-facilitator-production-ec87.up.railway.app
+    description: Production
+  - url: http://localhost:4022
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns service health status
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /supported:
+    get:
+      operationId: getSupported
+      summary: Get supported payment schemes
+      description: Returns the payment schemes, networks, and extensions supported by this facilitator
+      responses:
+        '200':
+          description: Supported configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportedResponse'
+
+  /verify:
+    post:
+      operationId: verifyPayment
+      summary: Verify a payment signature
+      description: Verifies the EIP-712 signature without settling on-chain
+      security:
+        - hmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: HMAC authentication failed
+
+  /settle:
+    post:
+      operationId: settlePayment
+      summary: Settle a verified payment
+      description: Executes transferFrom on-chain after verification
+      security:
+        - hmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettleRequest'
+      responses:
+        '200':
+          description: Settlement result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettleResponse'
+        '400':
+          description: Invalid request
+        '401':
+          description: HMAC authentication failed
+
+  /verify-and-settle:
+    post:
+      operationId: verifyAndSettle
+      summary: Atomically verify and settle a payment
+      description: Combines verification and settlement in a single atomic operation
+      security:
+        - hmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyAndSettleRequest'
+      responses:
+        '200':
+          description: Settlement result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettleResponse'
+        '400':
+          description: Invalid request or verification failed
+        '401':
+          description: HMAC authentication failed
+
+components:
+  securitySchemes:
+    hmacAuth:
+      type: apiKey
+      in: header
+      name: X-Facilitator-Auth
+      description: HMAC-SHA256 signature of the request body
+
+  schemas:
+    PaymentRequirements:
+      type: object
+      required:
+        - scheme
+        - network
+        - asset
+        - amount
+        - payTo
+        - maxTimeoutSeconds
+      properties:
+        scheme:
+          type: string
+          example: tempo-tip20
+        network:
+          type: string
+          example: eip155:42431
+        price:
+          type: string
+          example: "$0.01"
+        asset:
+          type: string
+          format: address
+          example: "0x20c0000000000000000000000000000000000000"
+        amount:
+          type: string
+          example: "10000"
+        payTo:
+          type: string
+          format: address
+          example: "0x1234567890123456789012345678901234567890"
+        maxTimeoutSeconds:
+          type: integer
+          example: 30
+        description:
+          type: string
+        mimeType:
+          type: string
+
+    TempoPaymentData:
+      type: object
+      required:
+        - from
+        - to
+        - value
+        - token
+        - validAfter
+        - validBefore
+        - nonce
+        - signature
+      properties:
+        from:
+          type: string
+          format: address
+        to:
+          type: string
+          format: address
+        value:
+          type: string
+        token:
+          type: string
+          format: address
+        validAfter:
+          type: integer
+          format: int64
+        validBefore:
+          type: integer
+          format: int64
+        nonce:
+          type: string
+          format: bytes32
+        signature:
+          type: string
+          format: hex
+
+    PaymentPayload:
+      type: object
+      required:
+        - x402Version
+        - payload
+      properties:
+        x402Version:
+          type: integer
+          example: 1
+        payload:
+          $ref: '#/components/schemas/TempoPaymentData'
+
+    VerifyRequest:
+      type: object
+      required:
+        - paymentPayload
+        - paymentRequirements
+      properties:
+        paymentPayload:
+          $ref: '#/components/schemas/PaymentPayload'
+        paymentRequirements:
+          $ref: '#/components/schemas/PaymentRequirements'
+
+    SettleRequest:
+      type: object
+      required:
+        - paymentPayload
+        - paymentRequirements
+      properties:
+        paymentPayload:
+          $ref: '#/components/schemas/PaymentPayload'
+        paymentRequirements:
+          $ref: '#/components/schemas/PaymentRequirements'
+
+    VerifyAndSettleRequest:
+      type: object
+      required:
+        - paymentPayload
+        - paymentRequirements
+      properties:
+        paymentPayload:
+          $ref: '#/components/schemas/PaymentPayload'
+        paymentRequirements:
+          $ref: '#/components/schemas/PaymentRequirements'
+
+    VerifyResponse:
+      type: object
+      required:
+        - isValid
+      properties:
+        isValid:
+          type: boolean
+        invalidReason:
+          type: string
+        payer:
+          type: string
+          format: address
+
+    SettleResponse:
+      type: object
+      required:
+        - success
+        - transaction
+        - network
+      properties:
+        success:
+          type: boolean
+        errorReason:
+          type: string
+        payer:
+          type: string
+          format: address
+        transaction:
+          type: string
+          format: hex
+          example: "0xabc123..."
+        network:
+          type: string
+          example: eip155:42431
+
+    SupportedResponse:
+      type: object
+      properties:
+        kinds:
+          type: array
+          items:
+            type: object
+            properties:
+              x402Version:
+                type: integer
+              scheme:
+                type: string
+              network:
+                type: string

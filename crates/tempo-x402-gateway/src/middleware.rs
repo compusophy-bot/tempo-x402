@@ -66,9 +66,9 @@ pub fn payment_required_response(requirements: PaymentRequirements) -> HttpRespo
         .json(body)
 }
 
-/// Extract and decode the X-PAYMENT header
+/// Extract and decode the PAYMENT-SIGNATURE header
 pub fn extract_payment_header(req: &HttpRequest) -> Option<PaymentPayload> {
-    let header = req.headers().get("X-PAYMENT")?;
+    let header = req.headers().get("PAYMENT-SIGNATURE")?;
     let header_str = header.to_str().ok()?;
 
     // Base64 decode
@@ -79,7 +79,7 @@ pub fn extract_payment_header(req: &HttpRequest) -> Option<PaymentPayload> {
     serde_json::from_slice(&decoded).ok()
 }
 
-/// Extract the payer address from the X-PAYMENT header without settling.
+/// Extract the payer address from the PAYMENT-SIGNATURE header without settling.
 /// Used to verify ownership before committing to payment.
 pub fn extract_payer_from_header(req: &HttpRequest) -> Option<Address> {
     let payload = extract_payment_header(req)?;
@@ -158,7 +158,7 @@ pub async fn require_payment(
     facilitator_url: &str,
     hmac_secret: Option<&[u8]>,
 ) -> Result<SettleResponse, HttpResponse> {
-    // Check for X-PAYMENT header
+    // Check for PAYMENT-SIGNATURE header
     let payload = match extract_payment_header(req) {
         Some(p) => p,
         None => return Err(payment_required_response(requirements)),
@@ -187,7 +187,7 @@ pub async fn require_payment(
     }
 }
 
-/// Build the X-Payment-Response header value
+/// Build the PAYMENT-RESPONSE header value
 pub fn payment_response_header(settle: &SettleResponse) -> String {
     let response = serde_json::json!({
         "success": settle.success,

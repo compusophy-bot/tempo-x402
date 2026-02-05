@@ -1,0 +1,564 @@
+openapi: 3.1.0
+info:
+  title: x402 Gateway API
+  description: |
+    API relay/proxy that adds x402 payment rails to any HTTP API.
+
+    Users pay a platform fee to register endpoints, callers pay endpoint owners to access proxied content.
+  version: 0.2.1
+  contact:
+    url: https://github.com/compusophy/tempo-x402
+  license:
+    name: MIT
+
+servers:
+  - url: https://x402-gateway-production-5018.up.railway.app
+    description: Production
+  - url: http://localhost:4023
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /register:
+    post:
+      operationId: registerEndpoint
+      summary: Register a new endpoint (payment required)
+      description: |
+        Register a new API endpoint to be proxied through the gateway.
+        Requires platform fee payment. The payer becomes the endpoint owner.
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Endpoint registered
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Invalid request (bad slug, URL, or price format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredBody'
+        '409':
+          description: Slug already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /endpoints:
+    get:
+      operationId: listEndpoints
+      summary: List all active endpoints
+      description: Returns all registered endpoints (free, no payment required)
+      responses:
+        '200':
+          description: List of endpoints
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointList'
+
+  /endpoints/{slug}:
+    get:
+      operationId: getEndpoint
+      summary: Get endpoint details
+      description: Returns details for a specific endpoint (free, no payment required)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Endpoint details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointDetails'
+        '404':
+          description: Endpoint not found
+
+    patch:
+      operationId: updateEndpoint
+      summary: Update endpoint (owner only, payment required)
+      description: |
+        Update an existing endpoint. Requires platform fee payment.
+        Only the endpoint owner can update their endpoint.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequest'
+      responses:
+        '200':
+          description: Endpoint updated
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateResponse'
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredBody'
+        '403':
+          description: Not the endpoint owner
+        '404':
+          description: Endpoint not found
+
+    delete:
+      operationId: deleteEndpoint
+      summary: Deactivate endpoint (owner only, payment required)
+      description: |
+        Deactivate an endpoint. Requires platform fee payment.
+        Only the endpoint owner can delete their endpoint.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Endpoint deactivated
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '402':
+          description: Payment required
+        '403':
+          description: Not the endpoint owner
+        '404':
+          description: Endpoint not found
+
+  /g/{slug}:
+    get:
+      operationId: proxyGetRoot
+      summary: Proxy GET request to endpoint root
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Proxied response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredBody'
+        '404':
+          description: Endpoint not found
+
+  /g/{slug}/{path}:
+    get:
+      operationId: proxyGet
+      summary: Proxy GET request (payment required)
+      description: |
+        Proxy a GET request to the registered endpoint.
+        Payment goes to the endpoint owner.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Proxied response from target API
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredBody'
+        '404':
+          description: Endpoint not found
+
+    post:
+      operationId: proxyPost
+      summary: Proxy POST request (payment required)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Proxied response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+        '402':
+          description: Payment required
+        '404':
+          description: Endpoint not found
+
+    put:
+      operationId: proxyPut
+      summary: Proxy PUT request (payment required)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Proxied response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+        '402':
+          description: Payment required
+        '404':
+          description: Endpoint not found
+
+    delete:
+      operationId: proxyDelete
+      summary: Proxy DELETE request (payment required)
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Proxied response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+        '402':
+          description: Payment required
+        '404':
+          description: Endpoint not found
+
+components:
+  parameters:
+    PaymentSignature:
+      name: PAYMENT-SIGNATURE
+      in: header
+      description: Base64-encoded PaymentPayload JSON
+      required: false
+      schema:
+        type: string
+        format: base64
+
+  headers:
+    PaymentResponse:
+      description: Base64-encoded settlement response
+      schema:
+        type: string
+        format: base64
+
+  schemas:
+    PaymentRequirements:
+      type: object
+      required:
+        - scheme
+        - network
+        - asset
+        - amount
+        - payTo
+        - maxTimeoutSeconds
+      properties:
+        scheme:
+          type: string
+          example: tempo-tip20
+        network:
+          type: string
+          example: eip155:42431
+        price:
+          type: string
+          example: "$0.01"
+        asset:
+          type: string
+          format: address
+          example: "0x20c0000000000000000000000000000000000000"
+        amount:
+          type: string
+          example: "10000"
+        payTo:
+          type: string
+          format: address
+        maxTimeoutSeconds:
+          type: integer
+          example: 30
+        description:
+          type: string
+        mimeType:
+          type: string
+
+    PaymentRequiredBody:
+      type: object
+      required:
+        - x402Version
+        - accepts
+      properties:
+        x402Version:
+          type: integer
+          example: 1
+        accepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRequirements'
+        description:
+          type: string
+        mimeType:
+          type: string
+
+    RegisterRequest:
+      type: object
+      required:
+        - slug
+        - target_url
+        - price
+      properties:
+        slug:
+          type: string
+          description: Unique identifier for the endpoint (3-64 chars, alphanumeric + hyphens)
+          example: my-api
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9-]{1,62}[a-zA-Z0-9]$
+        target_url:
+          type: string
+          format: uri
+          description: HTTPS URL to proxy requests to
+          example: https://api.example.com
+        price:
+          type: string
+          description: Price per request (e.g., "$0.001" or "1000")
+          example: "$0.001"
+        description:
+          type: string
+          description: Optional description of the endpoint
+
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        endpoint:
+          $ref: '#/components/schemas/Endpoint'
+        transaction:
+          type: string
+          format: hex
+
+    UpdateRequest:
+      type: object
+      properties:
+        target_url:
+          type: string
+          format: uri
+        price:
+          type: string
+        description:
+          type: string
+
+    UpdateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        endpoint:
+          $ref: '#/components/schemas/Endpoint'
+        transaction:
+          type: string
+          format: hex
+
+    DeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        transaction:
+          type: string
+          format: hex
+
+    Endpoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        owner_address:
+          type: string
+          format: address
+        target_url:
+          type: string
+          format: uri
+        price_usd:
+          type: string
+        price_amount:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: integer
+          format: unix-timestamp
+        updated_at:
+          type: integer
+          format: unix-timestamp
+        active:
+          type: boolean
+
+    EndpointList:
+      type: object
+      properties:
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/EndpointInfo'
+        count:
+          type: integer
+
+    EndpointInfo:
+      type: object
+      properties:
+        slug:
+          type: string
+        target_url:
+          type: string
+        price:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: integer
+
+    EndpointDetails:
+      type: object
+      properties:
+        slug:
+          type: string
+        target_url:
+          type: string
+        price:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: integer
+        gateway_url:
+          type: string
+          description: URL to call this endpoint through the gateway
+          example: /g/my-api
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string

@@ -134,7 +134,7 @@ pub async fn register(
 
     // Return success with payment response header
     Ok(HttpResponse::Created()
-        .insert_header(("X-Payment-Response", payment_response_header(&settle)))
+        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
         .json(serde_json::json!({
             "success": true,
             "endpoint": endpoint,

@@ -1,0 +1,148 @@
+openapi: 3.1.0
+info:
+  title: x402 Resource Server API
+  description: Example resource server with x402 payment-gated endpoints
+  version: 0.2.1
+  contact:
+    url: https://github.com/compusophy/tempo-x402
+  license:
+    name: MIT
+
+servers:
+  - url: https://x402-server-production.up.railway.app
+    description: Production
+  - url: http://localhost:4021
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns service health status
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /blockNumber:
+    get:
+      operationId: getBlockNumber
+      summary: Get current block number (payment required)
+      description: Returns the current Tempo blockchain block number. Requires payment.
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Block number response
+          headers:
+            PAYMENT-RESPONSE:
+              $ref: '#/components/headers/PaymentResponse'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blockNumber:
+                    type: integer
+                    example: 12345678
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentRequiredBody'
+
+  /demo/test:
+    get:
+      operationId: demoTest
+      summary: Demo test endpoint (SSE)
+      description: Server-sent events endpoint for testing the payment flow
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  parameters:
+    PaymentSignature:
+      name: PAYMENT-SIGNATURE
+      in: header
+      description: Base64-encoded PaymentPayload JSON
+      required: false
+      schema:
+        type: string
+        format: base64
+
+  headers:
+    PaymentResponse:
+      description: Base64-encoded settlement response
+      schema:
+        type: string
+        format: base64
+
+  schemas:
+    PaymentRequirements:
+      type: object
+      required:
+        - scheme
+        - network
+        - asset
+        - amount
+        - payTo
+        - maxTimeoutSeconds
+      properties:
+        scheme:
+          type: string
+          example: tempo-tip20
+        network:
+          type: string
+          example: eip155:42431
+        price:
+          type: string
+          example: "$0.001"
+        asset:
+          type: string
+          format: address
+          example: "0x20c0000000000000000000000000000000000000"
+        amount:
+          type: string
+          example: "1000"
+        payTo:
+          type: string
+          format: address
+        maxTimeoutSeconds:
+          type: integer
+          example: 30
+        description:
+          type: string
+        mimeType:
+          type: string
+
+    PaymentRequiredBody:
+      type: object
+      required:
+        - x402Version
+        - accepts
+      properties:
+        x402Version:
+          type: integer
+          example: 1
+        accepts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRequirements'
+        description:
+          type: string
+        mimeType:
+          type: string

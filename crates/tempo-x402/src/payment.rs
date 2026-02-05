@@ -15,7 +15,7 @@ pub struct TempoPaymentData {
     pub signature: String,
 }
 
-/// Wire-format payment payload (sent in X-PAYMENT header, base64-encoded JSON).
+/// Wire-format payment payload (sent in PAYMENT-SIGNATURE header, base64-encoded JSON).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentPayload {

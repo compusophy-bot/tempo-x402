@@ -38,7 +38,8 @@ use x402::{TempoSchemeClient, X402Client};
     │  [sign EIP-712]  │                     │                    │
     │                  │                     │                    │
     │  GET /resource   │                     │                    │
-    │  + X-PAYMENT hdr │                     │                    │
+    │  + PAYMENT-      │                     │                    │
+    │    SIGNATURE hdr │                     │                    │
     │─────────────────>│                     │                    │
     │                  │                     │                    │
     │                  │  POST /verify-and-  │                    │
@@ -62,7 +63,7 @@ use x402::{TempoSchemeClient, X402Client};
 Step by step:
 1. Client requests a protected endpoint
 2. Server returns 402 with PaymentRequirements (price, token, recipient)
-3. Client signs EIP-712 PaymentAuthorization, retries with X-PAYMENT header
+3. Client signs EIP-712 PaymentAuthorization, retries with PAYMENT-SIGNATURE header
 4. Server forwards to facilitator's /verify-and-settle endpoint
 5. Facilitator verifies signature, checks balance/allowance/nonce, calls transferFrom
 6. Server returns content + settlement transaction hash
@@ -109,7 +110,7 @@ pub struct PaymentRequirements {
 }
 ```
 
-### PaymentPayload (X-PAYMENT header, base64-encoded JSON)
+### PaymentPayload (PAYMENT-SIGNATURE header, base64-encoded JSON)
 
 ```rust
 pub struct PaymentPayload {
@@ -129,7 +130,7 @@ pub struct TempoPaymentData {
 }
 ```
 
-### SettleResponse (from facilitator, in x-payment-response header)
+### SettleResponse (from facilitator, in PAYMENT-RESPONSE header)
 
 ```rust
 pub struct SettleResponse {
@@ -236,7 +237,7 @@ curl -X POST https://x402-gateway.example.com/register \
 
 # Call a proxied endpoint
 curl https://x402-gateway.example.com/g/my-api/users/123 \
-  -H "X-PAYMENT: <base64-encoded-payment>"
+  -H "PAYMENT-SIGNATURE: <base64-encoded-payment>"
 ```
 
 Target APIs receive verification headers:
@@ -285,6 +286,13 @@ Health check: GET /health on any service
 | `tempo-x402-facilitator` | Payment verification and settlement |
 | `tempo-x402-gateway` | API relay/proxy with endpoint registration |
 
+## API Specs
+
+OpenAPI 3.1 specifications are available in the `openapi/` directory:
+- `facilitator.yaml` - Payment verification and settlement
+- `server.yaml` - Resource server with payment middleware
+- `gateway.yaml` - API relay/proxy with endpoint registration
+
 ## Version
 
-0.2.1
+0.3.0

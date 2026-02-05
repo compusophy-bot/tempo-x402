@@ -11,7 +11,7 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "connection",
     "keep-alive",
     "transfer-encoding",
-    "x-payment",
+    "payment-signature",
     "content-length", // Will be recalculated
 ];
 
@@ -104,7 +104,7 @@ pub async fn proxy_request(
 
     // Add payment response header if requested
     if include_payment_response {
-        builder.insert_header(("X-Payment-Response", payment_response_header(settle)));
+        builder.insert_header(("PAYMENT-RESPONSE", payment_response_header(settle)));
     }
 
     Ok(builder.body(body))
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn test_headers_to_strip() {
         assert!(HEADERS_TO_STRIP.contains(&"host"));
-        assert!(HEADERS_TO_STRIP.contains(&"x-payment"));
+        assert!(HEADERS_TO_STRIP.contains(&"payment-signature"));
         assert!(!HEADERS_TO_STRIP.contains(&"content-type"));
     }
 }

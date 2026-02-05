@@ -25,7 +25,7 @@ pub fn payment_required_body(requirements: &PaymentRequirements) -> PaymentRequi
     }
 }
 
-/// Decode the X-PAYMENT header into a PaymentPayload.
+/// Decode the PAYMENT-SIGNATURE header into a PaymentPayload.
 pub fn decode_payment_header(header_value: &str) -> Result<PaymentPayload, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(header_value)
@@ -133,7 +133,10 @@ pub async fn require_payment(
         }
     };
 
-    let payment_header = req.headers().get("X-PAYMENT").and_then(|v| v.to_str().ok());
+    let payment_header = req
+        .headers()
+        .get("PAYMENT-SIGNATURE")
+        .and_then(|v| v.to_str().ok());
 
     let payment_header = match payment_header {
         Some(h) => h,

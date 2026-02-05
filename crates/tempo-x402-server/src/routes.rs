@@ -277,7 +277,7 @@ async fn run_demo(tx: tokio::sync::mpsc::Sender<String>, http_client: &reqwest::
 
     let paid_response = match http_client
         .get(format!("{server_url}/blockNumber"))
-        .header("X-PAYMENT", &encoded)
+        .header("PAYMENT-SIGNATURE", &encoded)
         .send()
         .await
     {

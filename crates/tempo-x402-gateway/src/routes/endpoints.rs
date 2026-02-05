@@ -140,7 +140,7 @@ pub async fn update_endpoint(
     )?;
 
     Ok(HttpResponse::Ok()
-        .insert_header(("X-Payment-Response", payment_response_header(&settle)))
+        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
         .json(serde_json::json!({
             "success": true,
             "endpoint": updated,
@@ -202,7 +202,7 @@ pub async fn delete_endpoint(
     state.db.delete_endpoint(&slug)?;
 
     Ok(HttpResponse::Ok()
-        .insert_header(("X-Payment-Response", payment_response_header(&settle)))
+        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
         .json(serde_json::json!({
             "success": true,
             "message": format!("Endpoint '{}' has been deactivated", slug),

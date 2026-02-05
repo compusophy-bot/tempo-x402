@@ -63,7 +63,7 @@ pub async fn gateway_proxy(
         target_url
     };
 
-    // Proxy the request (includes X-Payment-Response header)
+    // Proxy the request (includes PAYMENT-RESPONSE header)
     let response =
         proxy_request(&state.http_client, &req, &target_url, body, &settle, true).await?;
 
@@ -127,7 +127,7 @@ async fn gateway_proxy_no_path(
         endpoint.target_url.clone()
     };
 
-    // Proxy the request (includes X-Payment-Response header)
+    // Proxy the request (includes PAYMENT-RESPONSE header)
     let response =
         proxy_request(&state.http_client, &req, &target_url, body, &settle, true).await?;
 

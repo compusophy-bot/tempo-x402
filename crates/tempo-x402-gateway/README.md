@@ -33,10 +33,10 @@ curl -X POST http://localhost:4023/register \
   -H "Content-Type: application/json" \
   -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
 
-# Sign the payment and retry with X-PAYMENT header
+# Sign the payment and retry with payment header
 curl -X POST http://localhost:4023/register \
   -H "Content-Type: application/json" \
-  -H "X-PAYMENT: <base64-encoded-payment>" \
+  -H "PAYMENT-SIGNATURE: <base64-encoded-payment>" \
   -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
 ```
 
@@ -45,7 +45,7 @@ curl -X POST http://localhost:4023/register \
 ```bash
 # Request to /g/my-api/users/123 proxies to https://api.example.com/users/123
 curl http://localhost:4023/g/my-api/users/123 \
-  -H "X-PAYMENT: <base64-encoded-payment>"
+  -H "PAYMENT-SIGNATURE: <base64-encoded-payment>"
 ```
 
 The target API receives additional headers:

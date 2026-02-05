@@ -21,7 +21,8 @@ Pay-per-request APIs on the Tempo blockchain.
     │  [sign EIP-712]  │                     │                    │
     │                  │                     │                    │
     │  GET /resource   │                     │                    │
-    │  + X-PAYMENT hdr │                     │                    │
+    │  + PAYMENT-      │                     │                    │
+    │    SIGNATURE hdr │                     │                    │
     │─────────────────>│                     │                    │
     │                  │                     │                    │
     │                  │  verify + settle    │                    │

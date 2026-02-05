@@ -7,7 +7,7 @@ use base64::Engine;
 ///
 /// Wraps `reqwest::Client`. On a 402 response, it parses the payment
 /// requirements, signs an EIP-712 authorization via the provided
-/// [`SchemeClient`], and retries the request with an `X-PAYMENT` header.
+/// [`SchemeClient`], and retries the request with a `PAYMENT-SIGNATURE` header.
 pub struct X402Client<S: SchemeClient> {
     http: reqwest::Client,
     scheme: S,
@@ -70,7 +70,7 @@ impl<S: SchemeClient> X402Client<S> {
         let resp = self
             .http
             .request(method, url)
-            .header("X-PAYMENT", &encoded)
+            .header("PAYMENT-SIGNATURE", &encoded)
             .send()
             .await
             .map_err(|e| X402Error::HttpError(format!("paid request failed: {e}")))?;
@@ -78,7 +78,7 @@ impl<S: SchemeClient> X402Client<S> {
         // Extract settlement info from headers
         let settle = resp
             .headers()
-            .get("x-payment-response")
+            .get("payment-response")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| serde_json::from_str::<SettleResponse>(s).ok());
 
@@ -86,7 +86,7 @@ impl<S: SchemeClient> X402Client<S> {
     }
 }
 
-/// Base64-encode a payment payload for the X-PAYMENT header.
+/// Base64-encode a payment payload for the PAYMENT-SIGNATURE header.
 pub fn encode_payment(payload: &PaymentPayload) -> Result<String, X402Error> {
     let json = serde_json::to_vec(payload)?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&json))
