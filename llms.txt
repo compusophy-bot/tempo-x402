@@ -239,4 +239,4 @@ pub enum X402Error {
 
 ## Version
 
-0.1.0
+0.2.0
