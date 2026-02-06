@@ -141,7 +141,11 @@ pub async fn require_payment(
     let payment_header = match payment_header {
         Some(h) => h,
         None => {
-            REQUESTS.with_label_values(&[req.path(), "402"]).inc();
+            // Use the matched route pattern (not raw path) to prevent cardinality bombs
+            let endpoint_label = req.match_pattern().unwrap_or_else(|| "unknown".to_string());
+            REQUESTS
+                .with_label_values(&[endpoint_label.as_str(), "402"])
+                .inc();
             let body = payment_required_body(requirements);
             return Err(HttpResponse::PaymentRequired().json(body));
         }
@@ -172,15 +176,21 @@ pub async fn require_payment(
     )
     .await;
 
+    let endpoint_label = req.match_pattern().unwrap_or_else(|| "unknown".to_string());
+
     match settle_result {
         Ok(ref s) if s.success => {
             PAYMENT_ATTEMPTS.with_label_values(&["success"]).inc();
-            REQUESTS.with_label_values(&[req.path(), "200"]).inc();
+            REQUESTS
+                .with_label_values(&[endpoint_label.as_str(), "200"])
+                .inc();
             Ok(s.clone())
         }
         Ok(s) => {
             PAYMENT_ATTEMPTS.with_label_values(&["rejected"]).inc();
-            REQUESTS.with_label_values(&[req.path(), "402"]).inc();
+            REQUESTS
+                .with_label_values(&[endpoint_label.as_str(), "402"])
+                .inc();
             tracing::warn!(
                 payer = ?s.payer,
                 reason = s.error_reason.as_deref().unwrap_or("unknown"),
@@ -192,7 +202,9 @@ pub async fn require_payment(
         }
         Err(e) => {
             PAYMENT_ATTEMPTS.with_label_values(&["error"]).inc();
-            REQUESTS.with_label_values(&[req.path(), "500"]).inc();
+            REQUESTS
+                .with_label_values(&[endpoint_label.as_str(), "500"])
+                .inc();
             tracing::error!(error = %e, "facilitator communication error");
             Err(HttpResponse::InternalServerError().json(serde_json::json!({
                 "error": "payment processing failed"

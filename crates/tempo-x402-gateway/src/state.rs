@@ -14,6 +14,7 @@ impl AppState {
     pub fn new(config: GatewayConfig, db: Database) -> Self {
         let http_client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none()) // Prevent SSRF via redirects
             .build()
             .expect("failed to create HTTP client");
 

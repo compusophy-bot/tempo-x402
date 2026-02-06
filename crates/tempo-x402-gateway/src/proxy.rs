@@ -13,6 +13,11 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "transfer-encoding",
     "payment-signature",
     "content-length", // Will be recalculated
+    // Strip x402 verification headers to prevent client spoofing
+    "x-x402-verified",
+    "x-x402-payer",
+    "x-x402-txhash",
+    "x-x402-network",
 ];
 
 /// Proxy an HTTP request to the target URL
@@ -69,20 +74,20 @@ pub async fn proxy_request(
     }
 
     // Send the request
-    let response = request_builder
-        .send()
-        .await
-        .map_err(|e| GatewayError::ProxyError(format!("request failed: {}", e)))?;
+    let response = request_builder.send().await.map_err(|e| {
+        tracing::error!(error = %e, "proxy request failed");
+        GatewayError::ProxyError("upstream request failed".to_string())
+    })?;
 
     // Build the response
     let status = response.status();
     let headers = response.headers().clone();
 
     // Get response body
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| GatewayError::ProxyError(format!("failed to read response body: {}", e)))?;
+    let body = response.bytes().await.map_err(|e| {
+        tracing::error!(error = %e, "failed to read proxy response body");
+        GatewayError::ProxyError("failed to read upstream response".to_string())
+    })?;
 
     // Build actix response
     let mut builder = HttpResponse::build(

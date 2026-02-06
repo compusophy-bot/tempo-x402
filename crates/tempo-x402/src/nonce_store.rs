@@ -94,11 +94,24 @@ impl SqliteNonceStore {
     }
 }
 
+/// Helper to get current unix timestamp safely (returns 0 on clock error rather than panicking).
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
 impl NonceStore for SqliteNonceStore {
     fn is_used(&self, nonce: &FixedBytes<32>) -> bool {
-        let conn = self.conn.lock().unwrap();
-        // Fail-secure: if database query fails, assume nonce IS used to prevent replays.
-        // Note: settlement uses try_use() which is atomic and handles errors safely.
+        // Fail-secure: if mutex is poisoned or query fails, assume nonce IS used
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                tracing::error!("nonce store mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM used_nonces WHERE nonce = ?1",
@@ -110,13 +123,14 @@ impl NonceStore for SqliteNonceStore {
     }
 
     fn record(&self, nonce: FixedBytes<32>) {
-        let conn = self.conn.lock().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        // Note: INSERT OR IGNORE means duplicate nonces are silently accepted (idempotent).
-        // Errors here are rare (disk full, corruption) and would be caught by try_use() in settlement.
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                tracing::error!("nonce store mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        let now = unix_now();
         if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO used_nonces (nonce, recorded_at) VALUES (?1, ?2)",
             rusqlite::params![nonce.as_slice(), now],
@@ -126,14 +140,17 @@ impl NonceStore for SqliteNonceStore {
     }
 
     fn try_use(&self, nonce: FixedBytes<32>) -> bool {
-        let conn = self.conn.lock().unwrap();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        // Fail-secure: if mutex is poisoned, reject (return false = nonce "already used")
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                tracing::error!("nonce store mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        let now = unix_now();
         // INSERT will fail on PRIMARY KEY constraint if nonce exists.
         // This is atomic at the database level, safe across processes.
-        // Returns true if successfully inserted, false if constraint violation.
         conn.execute(
             "INSERT INTO used_nonces (nonce, recorded_at) VALUES (?1, ?2)",
             rusqlite::params![nonce.as_slice(), now],
@@ -142,12 +159,14 @@ impl NonceStore for SqliteNonceStore {
     }
 
     fn purge_expired(&self, max_age_secs: u64) -> usize {
-        let conn = self.conn.lock().unwrap();
-        let cutoff = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64
-            - max_age_secs as i64;
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                tracing::error!("nonce store mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        let cutoff = unix_now() - max_age_secs as i64;
         conn.execute(
             "DELETE FROM used_nonces WHERE recorded_at < ?1",
             rusqlite::params![cutoff],

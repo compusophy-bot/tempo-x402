@@ -133,6 +133,29 @@ where
     ) -> Result<VerifyResponse, X402Error> {
         let p = &payload.payload;
 
+        // 0. Validate scheme and network match this facilitator
+        if requirements.scheme != crate::SCHEME_NAME {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some(format!(
+                    "Scheme mismatch: expected '{}', got '{}'",
+                    crate::SCHEME_NAME,
+                    requirements.scheme
+                )),
+                payer: None,
+            });
+        }
+        if requirements.network != self.config.network {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some(format!(
+                    "Network mismatch: expected '{}', got '{}'",
+                    self.config.network, requirements.network
+                )),
+                payer: None,
+            });
+        }
+
         // 1. Check nonce replay
         if self.is_nonce_used(&p.nonce) {
             tracing::warn!(
@@ -168,6 +191,19 @@ where
             });
         }
 
+        // Enforce maximum validity window to prevent replay after nonce purge
+        let validity_window = p.valid_before.saturating_sub(p.valid_after);
+        if validity_window > self.max_timeout_seconds {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some(format!(
+                    "Validity window too large: {}s exceeds max {}s",
+                    validity_window, self.max_timeout_seconds
+                )),
+                payer: None,
+            });
+        }
+
         // 3. Verify EIP-712 signature
         let value = p
             .value
@@ -197,6 +233,14 @@ where
         }
 
         // 4. Verify payment details match requirements
+        if p.token != requirements.asset {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Token address mismatch".to_string()),
+                payer: None,
+            });
+        }
+
         if p.to != requirements.pay_to {
             return Ok(VerifyResponse {
                 is_valid: false,
