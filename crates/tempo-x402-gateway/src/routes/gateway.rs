@@ -42,6 +42,7 @@ pub async fn gateway_proxy(
         &state.http_client,
         &state.config.facilitator_url,
         state.config.hmac_secret.as_deref(),
+        state.facilitator.as_deref(),
     )
     .await
     {
@@ -113,6 +114,7 @@ async fn gateway_proxy_no_path(
         &state.http_client,
         &state.config.facilitator_url,
         state.config.hmac_secret.as_deref(),
+        state.facilitator.as_deref(),
     )
     .await
     {

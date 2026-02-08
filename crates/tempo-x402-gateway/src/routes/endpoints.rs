@@ -156,6 +156,7 @@ pub async fn update_endpoint(
         &state.http_client,
         &state.config.facilitator_url,
         state.config.hmac_secret.as_deref(),
+        state.facilitator.as_deref(),
     )
     .await
     {
@@ -243,6 +244,7 @@ pub async fn delete_endpoint(
         &state.http_client,
         &state.config.facilitator_url,
         state.config.hmac_secret.as_deref(),
+        state.facilitator.as_deref(),
     )
     .await
     {

@@ -1,8 +1,12 @@
 use actix_cors::Cors;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{middleware::Logger, web, App, HttpServer};
+use alloy::providers::ProviderBuilder;
+use alloy::signers::local::PrivateKeySigner;
+use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use x402_facilitator::state::AppState as FacilitatorState;
 use x402_gateway::{
     config::GatewayConfig, db::Database, metrics::register_metrics, routes, state::AppState,
 };
@@ -26,11 +30,11 @@ async fn main() -> std::io::Result<()> {
     let port = config.port;
     let allowed_origins = config.allowed_origins.clone();
     let rate_limit_rpm = config.rate_limit_rpm;
+    let spa_dir = config.spa_dir.clone();
 
     tracing::info!("Starting x402-gateway on port {}", port);
     tracing::info!("Platform address: {:#x}", config.platform_address);
     tracing::info!("Platform fee: {}", config.platform_fee);
-    tracing::info!("Facilitator URL: {}", config.facilitator_url);
     tracing::info!(
         "HMAC auth: {}",
         if config.hmac_secret.is_some() {
@@ -40,6 +44,57 @@ async fn main() -> std::io::Result<()> {
         }
     );
 
+    // Bootstrap embedded facilitator if FACILITATOR_PRIVATE_KEY is set
+    let facilitator_state = if let Some(ref key) = config.facilitator_private_key {
+        tracing::info!("Embedded facilitator: bootstrapping in-process");
+
+        let signer: PrivateKeySigner = key.parse().expect("invalid FACILITATOR_PRIVATE_KEY");
+        let facilitator_address = signer.address();
+
+        let provider = ProviderBuilder::new()
+            .wallet(alloy::network::EthereumWallet::from(signer))
+            .connect_http(config.rpc_url.parse().expect("invalid RPC_URL"));
+
+        // Set up nonce storage
+        let nonce_store: Arc<dyn x402::nonce_store::NonceStore> =
+            match x402::nonce_store::SqliteNonceStore::open(&config.nonce_db_path) {
+                Ok(store) => {
+                    tracing::info!("Nonce store: SQLite at {}", config.nonce_db_path);
+                    Arc::new(store)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to open SQLite nonce store at {}: {} — using in-memory",
+                        config.nonce_db_path,
+                        e
+                    );
+                    Arc::new(x402::nonce_store::InMemoryNonceStore::new())
+                }
+            };
+
+        let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address)
+            .with_nonce_store(nonce_store);
+
+        facilitator.start_nonce_cleanup();
+
+        tracing::info!("Embedded facilitator address: {facilitator_address}");
+
+        if !config.webhook_urls.is_empty() {
+            tracing::info!("Webhook URLs configured: {}", config.webhook_urls.len());
+        }
+
+        Some(Arc::new(FacilitatorState {
+            facilitator,
+            hmac_secret: config.hmac_secret.clone(),
+            chain_config: x402::ChainConfig::default(),
+            webhook_urls: config.webhook_urls.clone(),
+            http_client: reqwest::Client::new(),
+        }))
+    } else {
+        tracing::info!("Facilitator URL: {}", config.facilitator_url);
+        None
+    };
+
     // Initialize database
     let db = Database::new(&config.db_path).expect("Failed to initialize database");
     tracing::info!("Database initialized at: {}", config.db_path);
@@ -48,14 +103,21 @@ async fn main() -> std::io::Result<()> {
     register_metrics();
 
     // Create shared state
-    let state = AppState::new(config, db);
+    let state = AppState::new(config, db, facilitator_state.clone());
     let state_data = web::Data::new(state);
+
+    // Wrap facilitator state for facilitator routes (if embedded)
+    let facilitator_data = facilitator_state.map(web::Data::from);
 
     // Configure rate limiter
     let governor_conf = GovernorConfigBuilder::default()
         .requests_per_minute(rate_limit_rpm as u64)
         .finish()
         .expect("Failed to create rate limiter config");
+
+    if let Some(ref dir) = spa_dir {
+        tracing::info!("Serving SPA from: {}", dir);
+    }
 
     // Start HTTP server
     HttpServer::new(move || {
@@ -80,7 +142,7 @@ async fn main() -> std::io::Result<()> {
             ])
             .max_age(3600);
 
-        App::new()
+        let mut app = App::new()
             .app_data(state_data.clone())
             .wrap(Logger::default())
             .wrap(cors)
@@ -88,7 +150,33 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::health::configure)
             .configure(routes::register::configure)
             .configure(routes::endpoints::configure)
-            .configure(routes::gateway::configure)
+            .configure(routes::gateway::configure);
+
+        // Mount facilitator HTTP routes if embedded (for external callers)
+        if let Some(ref fac_data) = facilitator_data {
+            app = app.service(
+                web::scope("/facilitator")
+                    .app_data(fac_data.clone())
+                    .service(x402_facilitator::routes::supported)
+                    .service(x402_facilitator::routes::verify)
+                    .service(x402_facilitator::routes::verify_and_settle),
+            );
+        }
+
+        // Serve SPA static files last (catch-all) if configured
+        if let Some(ref dir) = spa_dir {
+            let index_path = format!("{}/index.html", dir);
+            app = app.service(
+                actix_files::Files::new("/", dir)
+                    .index_file("index.html")
+                    .default_handler(web::to(move || {
+                        let path = index_path.clone();
+                        async move { actix_files::NamedFile::open_async(path).await }
+                    })),
+            );
+        }
+
+        app
     })
     .bind(("0.0.0.0", port))?
     .run()

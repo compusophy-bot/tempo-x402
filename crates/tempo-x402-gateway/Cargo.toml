@@ -19,8 +19,10 @@ path = "src/main.rs"
 
 [dependencies]
 x402 = { workspace = true }
+x402-facilitator = { workspace = true }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
+actix-files = { workspace = true }
 actix-governor = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

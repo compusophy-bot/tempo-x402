@@ -1,14 +1,36 @@
 use actix_web::{web, HttpResponse};
 
 use crate::metrics::REGISTRY;
+use crate::state::AppState;
 
 /// GET /health - Health check endpoint
-pub async fn health() -> HttpResponse {
-    HttpResponse::Ok().json(serde_json::json!({
+pub async fn health(state: web::Data<AppState>) -> HttpResponse {
+    let mut response = serde_json::json!({
         "status": "ok",
         "service": "x402-gateway",
         "version": env!("CARGO_PKG_VERSION"),
-    }))
+    });
+
+    // If facilitator is embedded, include its health
+    if let Some(ref fac) = state.facilitator {
+        match fac.facilitator.health_check().await {
+            Ok(block) => {
+                response["facilitator_status"] = serde_json::json!("ok");
+                response["latestBlock"] = serde_json::json!(block.to_string());
+            }
+            Err(_) => {
+                response["status"] = serde_json::json!("degraded");
+                response["facilitator_status"] = serde_json::json!("degraded");
+                response["facilitator_error"] = serde_json::json!("RPC unreachable");
+            }
+        }
+    }
+
+    if response["status"] == "degraded" {
+        HttpResponse::ServiceUnavailable().json(response)
+    } else {
+        HttpResponse::Ok().json(response)
+    }
 }
 
 /// GET /metrics - Prometheus metrics endpoint

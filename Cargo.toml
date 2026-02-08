@@ -7,10 +7,12 @@ members = [
     "crates/tempo-x402-facilitator",
     "crates/tempo-x402-gateway",
     "crates/tempo-x402-server",
+    "crates/tempo-x402-wallet",
 ]
 
 [workspace.dependencies]
 x402 = { path = "crates/tempo-x402", version = "0.4.1", package = "tempo-x402" }
+x402-facilitator = { path = "crates/tempo-x402-facilitator", version = "0.4.1", package = "tempo-x402-facilitator" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,6 +25,7 @@ dotenvy = "0.15"
 reqwest = { version = "0.12", features = ["json"] }
 actix-web = "4"
 actix-cors = "0.7"
+actix-files = "0.6"
 actix-governor = "0.8"
 tokio-stream = "0.1"
 futures = "0.3"

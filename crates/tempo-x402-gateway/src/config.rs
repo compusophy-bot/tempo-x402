@@ -28,6 +28,16 @@ pub struct GatewayConfig {
     pub allowed_origins: Vec<String>,
     /// Rate limit requests per minute
     pub rate_limit_rpm: u32,
+    /// Facilitator private key — if set, run facilitator in-process
+    pub facilitator_private_key: Option<String>,
+    /// Nonce DB path for embedded facilitator
+    pub nonce_db_path: String,
+    /// Webhook URLs for settlement notifications
+    pub webhook_urls: Vec<String>,
+    /// RPC URL for chain access
+    pub rpc_url: String,
+    /// Directory to serve SPA static files from (None = don't serve SPA)
+    pub spa_dir: Option<String>,
 }
 
 impl GatewayConfig {
@@ -89,6 +99,32 @@ impl GatewayConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_RATE_LIMIT_RPM);
 
+        // Optional: embedded facilitator private key
+        let facilitator_private_key = env::var("FACILITATOR_PRIVATE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        // Optional: nonce DB path for embedded facilitator
+        let nonce_db_path =
+            env::var("NONCE_DB_PATH").unwrap_or_else(|_| "./x402-nonces.db".to_string());
+
+        // Optional: webhook URLs
+        let webhook_urls: Vec<String> = env::var("WEBHOOK_URLS")
+            .ok()
+            .map(|urls| {
+                urls.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Optional: RPC URL
+        let rpc_url = env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+
+        // Optional: SPA directory
+        let spa_dir = env::var("SPA_DIR").ok().filter(|s| !s.is_empty());
+
         Ok(Self {
             platform_address,
             facilitator_url,
@@ -99,6 +135,11 @@ impl GatewayConfig {
             platform_fee_amount,
             allowed_origins,
             rate_limit_rpm,
+            facilitator_private_key,
+            nonce_db_path,
+            webhook_urls,
+            rpc_url,
+            spa_dir,
         })
     }
 }

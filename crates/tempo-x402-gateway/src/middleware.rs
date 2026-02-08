@@ -1,9 +1,10 @@
 use actix_web::{HttpRequest, HttpResponse};
 use alloy::primitives::Address;
 use x402::{
-    hmac::compute_hmac, PaymentPayload, PaymentRequiredBody, PaymentRequirements, SettleResponse,
-    DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK,
+    hmac::compute_hmac, PaymentPayload, PaymentRequiredBody, PaymentRequirements,
+    SchemeFacilitator, SettleResponse, DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK,
 };
+use x402_facilitator::state::AppState as FacilitatorState;
 
 use crate::error::GatewayError;
 
@@ -86,14 +87,27 @@ pub fn extract_payer_from_header(req: &HttpRequest) -> Option<Address> {
     Some(payload.payload.from)
 }
 
-/// Call the facilitator's /verify-and-settle endpoint
+/// Call the facilitator's /verify-and-settle endpoint.
+/// If `facilitator_state` is Some, calls the facilitator in-process (no HTTP).
+/// Otherwise falls back to the HTTP path.
 pub async fn verify_and_settle(
     http_client: &reqwest::Client,
     facilitator_url: &str,
     hmac_secret: Option<&[u8]>,
+    facilitator_state: Option<&FacilitatorState>,
     payload: &PaymentPayload,
     requirements: &PaymentRequirements,
 ) -> Result<SettleResponse, GatewayError> {
+    // In-process path: call facilitator directly
+    if let Some(fac) = facilitator_state {
+        return fac
+            .facilitator
+            .settle(payload, requirements)
+            .await
+            .map_err(|e| GatewayError::PaymentFailed(e.to_string()));
+    }
+
+    // HTTP fallback path
     let url = format!(
         "{}/verify-and-settle",
         facilitator_url.trim_end_matches('/')
@@ -157,6 +171,7 @@ pub async fn require_payment(
     http_client: &reqwest::Client,
     facilitator_url: &str,
     hmac_secret: Option<&[u8]>,
+    facilitator_state: Option<&FacilitatorState>,
 ) -> Result<SettleResponse, HttpResponse> {
     // Check for PAYMENT-SIGNATURE header
     let payload = match extract_payment_header(req) {
@@ -169,6 +184,7 @@ pub async fn require_payment(
         http_client,
         facilitator_url,
         hmac_secret,
+        facilitator_state,
         &payload,
         &requirements,
     )
