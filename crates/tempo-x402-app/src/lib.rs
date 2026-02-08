@@ -82,7 +82,6 @@ pub fn App() -> impl IntoView {
                 <Header />
                 <Routes>
                     <Route path="/" view=HomePage />
-                    <Route path="/gateway" view=GatewayPage />
                     <Route path="/docs" view=DocsPage />
                     <Route path="/*any" view=NotFound />
                 </Routes>
@@ -104,8 +103,8 @@ fn Header() -> impl IntoView {
                 <a href="/" class="logo">"x402"</a>
                 <div class="nav-links">
                     <a href="/">"Demo"</a>
-                    <a href="/gateway">"Gateway"</a>
                     <a href="/docs">"Docs"</a>
+                    <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
                 </div>
                 <WalletButtons wallet=wallet set_wallet=set_wallet />
             </nav>
@@ -220,7 +219,7 @@ fn HomePage() -> impl IntoView {
         <div class="page">
             <h1>"x402 Payment Demo"</h1>
             <p class="subtitle">
-                "HTTP 402 Payment Required - Pay-per-request APIs on Tempo blockchain"
+                "HTTP 402 Payment Required — pay-per-request APIs on Tempo"
             </p>
 
             <PaymentDemo />
@@ -228,13 +227,13 @@ fn HomePage() -> impl IntoView {
             <div class="info-section">
                 <h2>"How it works"</h2>
                 <ol class="steps">
-                    <li>"Connect your wallet with pathUSD tokens"</li>
-                    <li>"Request a protected endpoint"</li>
-                    <li>"Receive 402 with payment requirements"</li>
-                    <li>"Sign an EIP-712 payment authorization"</li>
-                    <li>"Retry with PAYMENT-SIGNATURE header"</li>
-                    <li>"Facilitator verifies and settles on-chain"</li>
-                    <li>"Receive content + transaction hash"</li>
+                    <li>"Connect a wallet (MetaMask, demo key, or create an embedded wallet)"</li>
+                    <li>"Click \"Pay & Request\" to hit a paid API endpoint"</li>
+                    <li>"The gateway returns 402 with payment requirements"</li>
+                    <li>"Your wallet signs an EIP-712 payment authorization"</li>
+                    <li>"The request retries with PAYMENT-SIGNATURE header"</li>
+                    <li>"The facilitator settles the payment on-chain"</li>
+                    <li>"You get the API response + a transaction hash"</li>
                 </ol>
             </div>
         </div>
@@ -245,7 +244,7 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn PaymentDemo() -> impl IntoView {
     let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
-    let (status, set_status) = create_signal(String::from("Ready to make a paid request"));
+    let (status, set_status) = create_signal(String::from("Ready — connect a wallet and click Pay & Request"));
     let (result, set_result) = create_signal(None::<String>);
     let (tx_hash, set_tx_hash) = create_signal(None::<String>);
     let (loading, set_loading) = create_signal(false);
@@ -253,12 +252,12 @@ fn PaymentDemo() -> impl IntoView {
     let make_request = move |_| {
         let w = wallet.get();
         if !w.connected {
-            set_status.set("Please connect your wallet first".to_string());
+            set_status.set("Connect a wallet first (MetaMask, Demo Key, or Create Wallet)".to_string());
             return;
         }
 
         set_loading.set(true);
-        set_status.set("Requesting protected endpoint...".to_string());
+        set_status.set("Requesting /g/demo — expecting 402...".to_string());
         set_result.set(None);
         set_tx_hash.set(None);
 
@@ -267,13 +266,13 @@ fn PaymentDemo() -> impl IntoView {
                 Ok((data, settle)) => {
                     if let Some(ref s) = settle {
                         if s.success {
-                            set_status.set("Payment successful!".to_string());
+                            set_status.set("Payment settled on-chain!".to_string());
                         } else {
-                            set_status.set("Payment settled (check tx)".to_string());
+                            set_status.set("Payment sent (check transaction)".to_string());
                         }
                         set_tx_hash.set(s.transaction.clone());
                     } else {
-                        set_status.set("Response received (no payment required)".to_string());
+                        set_status.set("Response received (no settlement header)".to_string());
                     }
                     set_result.set(Some(data));
                 }
@@ -288,6 +287,9 @@ fn PaymentDemo() -> impl IntoView {
     view! {
         <div class="demo-card">
             <h3>"Make a Paid Request"</h3>
+            <p class="demo-description">
+                "Calls " <code>"/g/demo"</code> " — a paid proxy to httpbin.org ($0.001 per request)"
+            </p>
 
             <div class="demo-controls">
                 <button
@@ -295,20 +297,13 @@ fn PaymentDemo() -> impl IntoView {
                     on:click=make_request
                     disabled=move || loading.get()
                 >
-                    {move || if loading.get() { "Processing..." } else { "Pay & Request" }}
+                    {move || if loading.get() { "Signing & paying..." } else { "Pay & Request ($0.001)" }}
                 </button>
             </div>
 
             <div class="demo-status">
                 <p class="status-text">{move || status.get()}</p>
             </div>
-
-            <Show when=move || result.get().is_some() fallback=|| ()>
-                <div class="demo-result">
-                    <h4>"Response"</h4>
-                    <pre class="code-block">{move || result.get().unwrap_or_default()}</pre>
-                </div>
-            </Show>
 
             <Show when=move || tx_hash.get().is_some() fallback=|| ()>
                 <div class="demo-tx">
@@ -322,157 +317,12 @@ fn PaymentDemo() -> impl IntoView {
                     </a>
                 </div>
             </Show>
-        </div>
-    }
-}
 
-/// Gateway management page
-#[component]
-fn GatewayPage() -> impl IntoView {
-    view! {
-        <div class="page">
-            <h1>"API Gateway"</h1>
-            <p class="subtitle">
-                "Register your API endpoints and add payment rails"
-            </p>
-
-            <EndpointRegistration />
-            <EndpointList />
-        </div>
-    }
-}
-
-/// Endpoint registration form
-#[component]
-fn EndpointRegistration() -> impl IntoView {
-    let (slug, set_slug) = create_signal(String::new());
-    let (target_url, set_target_url) = create_signal(String::new());
-    let (price, set_price) = create_signal(String::from("$0.01"));
-    let (status, set_status) = create_signal(String::new());
-    let (loading, set_loading) = create_signal(false);
-
-    let register = move |_| {
-        set_loading.set(true);
-        set_status.set("Registering endpoint...".to_string());
-
-        let s = slug.get();
-        let t = target_url.get();
-        let p = price.get();
-
-        spawn_local(async move {
-            match api::register_endpoint(&s, &t, &p).await {
-                Ok(_) => {
-                    set_status.set("Endpoint registered successfully!".to_string());
-                    set_slug.set(String::new());
-                    set_target_url.set(String::new());
-                }
-                Err(e) => {
-                    set_status.set(format!("Error: {}", e));
-                }
-            }
-            set_loading.set(false);
-        });
-    };
-
-    view! {
-        <div class="card">
-            <h3>"Register New Endpoint"</h3>
-
-            <div class="form-group">
-                <label>"Slug"</label>
-                <input
-                    type="text"
-                    placeholder="my-api"
-                    prop:value=move || slug.get()
-                    on:input=move |ev| set_slug.set(event_target_value(&ev))
-                />
-            </div>
-
-            <div class="form-group">
-                <label>"Target URL"</label>
-                <input
-                    type="url"
-                    placeholder="https://api.example.com"
-                    prop:value=move || target_url.get()
-                    on:input=move |ev| set_target_url.set(event_target_value(&ev))
-                />
-            </div>
-
-            <div class="form-group">
-                <label>"Price per request"</label>
-                <input
-                    type="text"
-                    placeholder="$0.01"
-                    prop:value=move || price.get()
-                    on:input=move |ev| set_price.set(event_target_value(&ev))
-                />
-            </div>
-
-            <button
-                class="btn btn-primary"
-                on:click=register
-                disabled=move || loading.get()
-            >
-                {move || if loading.get() { "Registering..." } else { "Register (0.01 pathUSD)" }}
-            </button>
-
-            <Show when=move || !status.get().is_empty() fallback=|| ()>
-                <p class="status-text">{move || status.get()}</p>
-            </Show>
-        </div>
-    }
-}
-
-/// List of registered endpoints
-#[component]
-fn EndpointList() -> impl IntoView {
-    let (endpoints, set_endpoints) = create_signal(Vec::<serde_json::Value>::new());
-    let (loading, set_loading) = create_signal(true);
-
-    // Load endpoints on mount
-    create_effect(move |_| {
-        spawn_local(async move {
-            match api::list_endpoints().await {
-                Ok(list) => set_endpoints.set(list),
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Error: {}", e).into());
-                }
-            }
-            set_loading.set(false);
-        });
-    });
-
-    view! {
-        <div class="card">
-            <h3>"Registered Endpoints"</h3>
-
-            <Show
-                when=move || !loading.get()
-                fallback=|| view! { <p>"Loading..."</p> }
-            >
-                <Show
-                    when=move || !endpoints.get().is_empty()
-                    fallback=|| view! { <p class="empty">"No endpoints registered yet"</p> }
-                >
-                    <ul class="endpoint-list">
-                        <For
-                            each=move || endpoints.get()
-                            key=|ep| ep["slug"].as_str().unwrap_or("").to_string()
-                            children=move |ep| {
-                                let slug = ep["slug"].as_str().unwrap_or("").to_string();
-                                let price = ep["price_usd"].as_str().unwrap_or("").to_string();
-                                let target = ep["target_url"].as_str().unwrap_or("").to_string();
-                                view! {
-                                    <li class="endpoint-item">
-                                        <div class="endpoint-slug">{slug}</div>
-                                        <div class="endpoint-price">{price}</div>
-                                        <div class="endpoint-target">{target}</div>
-                                    </li>
-                                }
-                            }
-                        />
-                    </ul>
-                </Show>
+            <Show when=move || result.get().is_some() fallback=|| ()>
+                <div class="demo-result">
+                    <h4>"Proxied Response"</h4>
+                    <pre class="code-block">{move || result.get().unwrap_or_default()}</pre>
+                </div>
             </Show>
         </div>
     }
@@ -488,7 +338,7 @@ fn DocsPage() -> impl IntoView {
                 <section>
                     <h2>"Quick Start"</h2>
                     <pre class="code-block">
-    {r#"// Add to Cargo.toml
+{r#"// Add to Cargo.toml
 [dependencies]
 tempo-x402-client = "0.4"
 
@@ -508,12 +358,12 @@ let (resp, settlement) = client
                 <section>
                     <h2>"Crates"</h2>
                     <ul>
-                        <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" - Core types and crypto"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-client">"tempo-x402-client"</a>" - Client SDK"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" - Server middleware"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" - Payment settlement"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" - API gateway"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" - WASM wallet (signing + key gen)"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types and crypto"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-client">"tempo-x402-client"</a>" — Client SDK"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment settlement"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" — WASM wallet (signing + key gen)"</li>
                     </ul>
                 </section>
 
