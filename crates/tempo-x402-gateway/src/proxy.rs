@@ -41,7 +41,9 @@ const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
     "x-ratelimit-limit",
     "x-ratelimit-remaining",
     "x-ratelimit-reset",
-    "access-control-allow-origin",
+    // Note: access-control-allow-origin is intentionally excluded.
+    // The gateway's own CORS middleware is the sole authority for CORS headers.
+    // Forwarding upstream ACAO headers could conflict and cause browsers to reject responses.
 ];
 
 /// Maximum upstream response body size (10 MB).

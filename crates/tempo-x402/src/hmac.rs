@@ -40,7 +40,9 @@ mod hex {
     }
 
     pub fn decode(s: &str) -> Result<Vec<u8>, ()> {
-        if !s.len().is_multiple_of(2) || !s.is_ascii() {
+        // Use % 2 instead of is_multiple_of() for compatibility with Rust < 1.87
+        #[allow(clippy::manual_is_multiple_of)]
+        if s.len() % 2 != 0 || !s.is_ascii() {
             return Err(());
         }
         (0..s.len())

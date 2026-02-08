@@ -48,11 +48,6 @@ pub async fn register(
         .parse_price(&body.price)
         .map_err(|e| GatewayError::InvalidPrice(e.to_string()))?;
 
-    // Reserve the slug atomically BEFORE payment.
-    // This prevents a race where two concurrent registrations both pass the
-    // slug_exists check, both pay, but only one can actually create the endpoint.
-    state.db.reserve_slug(&body.slug)?;
-
     // Build platform payment requirements
     let requirements = platform_requirements(
         state.config.platform_address,
@@ -60,7 +55,19 @@ pub async fn register(
         &state.config.platform_fee_amount,
     );
 
-    // Require payment (returns 402 with requirements if no valid payment)
+    // Check for PAYMENT-SIGNATURE header first WITHOUT touching the database.
+    // This prevents DoS via rapid POST /register with no payment header, which
+    // would otherwise cause INSERT/DELETE write amplification on SQLite.
+    if crate::middleware::extract_payment_header(&req).is_none() {
+        return Ok(crate::middleware::payment_required_response(requirements));
+    }
+
+    // Reserve the slug atomically BEFORE settlement.
+    // This prevents a race where two concurrent registrations both pass the
+    // slug_exists check, both pay, but only one can actually create the endpoint.
+    state.db.reserve_slug(&body.slug)?;
+
+    // Require payment (will re-extract header and verify+settle)
     let settle = match require_payment(
         &req,
         requirements,
@@ -73,7 +80,7 @@ pub async fn register(
     {
         Ok(s) => s,
         Err(http_response) => {
-            // Payment not provided or failed — release the slug reservation
+            // Payment verification/settlement failed — release the slug reservation
             let _ = state.db.delete_reserved_slug(&body.slug);
             return Ok(http_response);
         }

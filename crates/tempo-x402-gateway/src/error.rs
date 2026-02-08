@@ -101,10 +101,13 @@ impl ResponseError for GatewayError {
                 "error": "not_owner",
                 "message": "Only the endpoint owner can modify it"
             })),
-            GatewayError::ProxyError(msg) => HttpResponse::BadGateway().json(serde_json::json!({
-                "error": "proxy_error",
-                "message": msg
-            })),
+            GatewayError::ProxyError(msg) => {
+                tracing::error!("Proxy error: {}", msg);
+                HttpResponse::BadGateway().json(serde_json::json!({
+                    "error": "proxy_error",
+                    "message": "Failed to reach upstream service"
+                }))
+            }
             GatewayError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
                 HttpResponse::InternalServerError().json(serde_json::json!({

@@ -108,7 +108,9 @@ fn random_nonce_bytes() -> [u8; 32] {
 }
 
 fn random_nonce() -> FixedBytes<32> {
-    FixedBytes::from(random_nonce_bytes())
+    // Hash through keccak256 for entropy conditioning, matching the core crate's approach.
+    // Provides defense-in-depth against CSPRNG weaknesses in browser WASM environments.
+    alloy::primitives::keccak256(random_nonce_bytes())
 }
 
 fn encode_signature_hex(sig: &alloy::primitives::Signature) -> String {

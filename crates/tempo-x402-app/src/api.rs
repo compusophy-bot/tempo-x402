@@ -101,7 +101,13 @@ pub async fn make_paid_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
-        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|s| {
+            // Handle HMAC-signed format: "base64payload.hmac_hex"
+            let payload_part = s.split('.').next().unwrap_or(s);
+            base64::engine::general_purpose::STANDARD
+                .decode(payload_part)
+                .ok()
+        })
         .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     let result_body = paid_resp
@@ -162,7 +168,12 @@ pub async fn make_paid_endpoint_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
-        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|s| {
+            let payload_part = s.split('.').next().unwrap_or(s);
+            base64::engine::general_purpose::STANDARD
+                .decode(payload_part)
+                .ok()
+        })
         .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     let result_body = paid_resp
@@ -378,7 +389,12 @@ pub async fn call_endpoint(
     let settle = resp
         .headers()
         .get("payment-response")
-        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|s| {
+            let payload_part = s.split('.').next().unwrap_or(s);
+            base64::engine::general_purpose::STANDARD
+                .decode(payload_part)
+                .ok()
+        })
         .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     Ok((body, settle))

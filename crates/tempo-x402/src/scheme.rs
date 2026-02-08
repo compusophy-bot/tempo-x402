@@ -14,6 +14,13 @@ pub trait SchemeClient: Send + Sync {
 }
 
 /// Facilitator-side scheme: verifies and settles payments.
+///
+/// # Security
+/// The `verify()` method performs on-chain balance and allowance reads.
+/// It must **never** be exposed as a standalone unauthenticated HTTP endpoint,
+/// as it would allow anyone to probe arbitrary addresses' token balances
+/// without paying or consuming a nonce. Always use `settle()` (which calls
+/// `verify()` internally) behind authentication.
 pub trait SchemeFacilitator: Send + Sync {
     /// Verify a payment payload against the requirements.
     fn verify(

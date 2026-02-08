@@ -108,9 +108,14 @@ impl<P> TempoSchemeFacilitator<P> {
                 }
 
                 // Clean up payer locks that are no longer held by anyone.
-                // A lock's Arc strong count == 1 means only the DashMap holds it.
+                // We check both strong_count (no external Arc clones) AND try_lock
+                // (no one currently holding the mutex). This prevents a race where
+                // a concurrent payer_lock() clones the Arc between our strong_count
+                // check and the retain removal, which would cause two concurrent
+                // requests for the same payer to hold different mutexes.
                 let before = payer_locks.len();
-                payer_locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+                payer_locks
+                    .retain(|_, lock| Arc::strong_count(lock) > 1 || lock.try_lock().is_err());
                 let removed = before - payer_locks.len();
                 if removed > 0 {
                     tracing::info!(removed, "cleaned up idle payer locks");
@@ -285,6 +290,20 @@ where
                 is_valid: false,
                 invalid_reason: Some("Recipient address is zero".to_string()),
                 payer: None,
+            });
+        }
+        if p.from == p.to {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Self-payment not allowed".to_string()),
+                payer: Some(p.from),
+            });
+        }
+        if p.to == self.facilitator_address {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Recipient cannot be the facilitator".to_string()),
+                payer: Some(p.from),
             });
         }
 

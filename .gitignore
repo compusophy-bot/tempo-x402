@@ -6,6 +6,7 @@ target/
 
 # Local AI context
 claude.md
+.claude/
 
 # Local cargo config (user-specific target dirs, etc.)
 .cargo/
@@ -20,4 +21,5 @@ claude.md
 # OS
 .DS_Store
 Thumbs.db
+nul
 

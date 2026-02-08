@@ -230,9 +230,16 @@ pub fn fire_webhooks(
                 }
 
                 match req.body(body.clone()).send().await {
-                    Ok(resp) if resp.status().is_success() || resp.status().is_redirection() => {
+                    Ok(resp) if resp.status().is_success() => {
                         tracing::debug!(url = %url, status = %resp.status(), "webhook delivered");
                         return;
+                    }
+                    Ok(resp) if resp.status().is_redirection() => {
+                        tracing::warn!(
+                            url = %url, status = %resp.status(),
+                            "webhook endpoint returned redirect — delivery not confirmed (redirects disabled)"
+                        );
+                        return; // Do not retry: the data was sent but may not have been processed
                     }
                     Ok(resp) => {
                         tracing::warn!(

@@ -62,6 +62,10 @@ impl Database {
             .conn
             .lock()
             .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        // Enable WAL mode for better concurrent read/write performance
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS endpoints (
@@ -344,12 +348,21 @@ impl Database {
 
     /// Reserve a slug by inserting a pending (active=0) row.
     /// Uses SQLite UNIQUE constraint to prevent race conditions.
+    /// If the slug was previously deactivated (soft-deleted), removes the old row first
+    /// to allow re-registration.
     pub fn reserve_slug(&self, slug: &str) -> Result<(), GatewayError> {
         let conn = self
             .conn
             .lock()
             .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let now = chrono::Utc::now().timestamp();
+
+        // Remove any previously deactivated endpoint with this slug to allow re-use.
+        // Active endpoints are not affected (active=0 condition).
+        conn.execute(
+            "DELETE FROM endpoints WHERE slug = ?1 AND active = 0",
+            params![slug],
+        )?;
 
         conn.execute(
             r#"
