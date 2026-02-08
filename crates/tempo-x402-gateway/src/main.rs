@@ -55,7 +55,7 @@ async fn main() -> std::io::Result<()> {
             .wallet(alloy::network::EthereumWallet::from(signer))
             .connect_http(config.rpc_url.parse().expect("invalid RPC_URL"));
 
-        // Set up nonce storage
+        // Set up nonce storage — SQLite is mandatory for replay protection
         let nonce_store: Arc<dyn x402::nonce_store::NonceStore> =
             match x402::nonce_store::SqliteNonceStore::open(&config.nonce_db_path) {
                 Ok(store) => {
@@ -63,12 +63,17 @@ async fn main() -> std::io::Result<()> {
                     Arc::new(store)
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to open SQLite nonce store at {}: {} — using in-memory",
+                    // CRITICAL: Do not fall back to in-memory. In-memory nonces are lost
+                    // on restart, enabling replay of any recently-settled payment.
+                    tracing::error!(
+                        "Failed to open SQLite nonce store at {}: {}",
                         config.nonce_db_path,
                         e
                     );
-                    Arc::new(x402::nonce_store::InMemoryNonceStore::new())
+                    tracing::error!(
+                        "Refusing to start — in-memory fallback would enable replay attacks on restart"
+                    );
+                    std::process::exit(1);
                 }
             };
 
@@ -160,7 +165,6 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/facilitator")
                     .app_data(fac_data.clone())
                     .service(x402_facilitator::routes::supported)
-                    .service(x402_facilitator::routes::verify)
                     .service(x402_facilitator::routes::verify_and_settle),
             );
         }

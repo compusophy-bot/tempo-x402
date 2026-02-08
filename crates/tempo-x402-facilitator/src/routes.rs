@@ -69,7 +69,14 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
 }
 
 #[get("/metrics")]
-pub async fn metrics_endpoint() -> HttpResponse {
+pub async fn metrics_endpoint(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    // Require HMAC authentication for metrics when a secret is configured
+    if state.hmac_secret.is_some() {
+        // Use the HMAC secret as a bearer token for metrics access
+        if let Err(resp) = validate_hmac(&req, b"metrics", &state) {
+            return resp;
+        }
+    }
     HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4")
         .body(metrics::metrics_output())

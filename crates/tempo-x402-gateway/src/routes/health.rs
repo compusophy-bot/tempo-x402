@@ -33,6 +33,18 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
+/// Constant-time byte comparison to prevent timing side-channel attacks.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 /// GET /metrics - Prometheus metrics endpoint (optionally auth-gated)
 pub async fn metrics(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     // Check bearer token if METRICS_TOKEN is configured
@@ -42,7 +54,7 @@ pub async fn metrics(req: HttpRequest, state: web::Data<AppState>) -> HttpRespon
             .get("authorization")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|token| token == expected_token)
+            .map(|token| constant_time_eq(token.as_bytes(), expected_token.as_bytes()))
             .unwrap_or(false);
 
         if !authorized {

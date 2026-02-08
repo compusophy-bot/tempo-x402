@@ -11,14 +11,43 @@ pub struct SettlementWebhook {
     pub timestamp: u64,
 }
 
-/// Validate that all webhook URLs use HTTPS. Should be called at startup.
+/// Validate that all webhook URLs use HTTPS and do not target private IPs.
+/// Should be called at startup.
 pub fn validate_webhook_urls(urls: &[String]) {
-    for url in urls {
-        if !url.starts_with("https://") {
+    for url_str in urls {
+        if !url_str.starts_with("https://") {
             tracing::warn!(
-                url = %url,
+                url = %url_str,
                 "webhook URL does not use HTTPS — payloads will be sent in cleartext"
             );
+        }
+
+        // Check for private/loopback IPs in webhook URLs
+        if let Ok(parsed) = url::Url::parse(url_str) {
+            match parsed.host() {
+                Some(url::Host::Ipv4(ip)) => {
+                    if ip.is_loopback()
+                        || ip.is_private()
+                        || ip.is_link_local()
+                        || ip.is_unspecified()
+                    {
+                        tracing::warn!(
+                            url = %url_str,
+                            "webhook URL targets a private/loopback IP — potential SSRF risk"
+                        );
+                    }
+                }
+                Some(url::Host::Domain(domain)) => {
+                    let d = domain.to_lowercase();
+                    if d == "localhost" || d.ends_with(".local") || d.ends_with(".internal") {
+                        tracing::warn!(
+                            url = %url_str,
+                            "webhook URL targets localhost/local domain — potential SSRF risk"
+                        );
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }

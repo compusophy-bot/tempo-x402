@@ -41,19 +41,19 @@ async fn test_supported_returns_scheme_and_network() {
 }
 
 #[actix_rt::test]
-async fn test_verify_requires_hmac_when_configured() {
+async fn test_verify_and_settle_requires_hmac_when_configured() {
     let state = make_state(Some(b"test-secret".to_vec()));
     let app = test::init_service(
         App::new()
             .app_data(state)
             .app_data(web::JsonConfig::default().limit(65_536))
-            .service(routes::verify),
+            .service(routes::verify_and_settle),
     )
     .await;
 
     // Send without X-Facilitator-Auth header
     let req = test::TestRequest::post()
-        .uri("/verify")
+        .uri("/verify-and-settle")
         .set_payload("{}")
         .insert_header(("Content-Type", "application/json"))
         .to_request();
@@ -65,18 +65,18 @@ async fn test_verify_requires_hmac_when_configured() {
 }
 
 #[actix_rt::test]
-async fn test_verify_rejects_bad_hmac() {
+async fn test_verify_and_settle_rejects_bad_hmac() {
     let state = make_state(Some(b"test-secret".to_vec()));
     let app = test::init_service(
         App::new()
             .app_data(state)
             .app_data(web::JsonConfig::default().limit(65_536))
-            .service(routes::verify),
+            .service(routes::verify_and_settle),
     )
     .await;
 
     let req = test::TestRequest::post()
-        .uri("/verify")
+        .uri("/verify-and-settle")
         .set_payload("{}")
         .insert_header(("Content-Type", "application/json"))
         .insert_header(("X-Facilitator-Auth", "deadbeef"))
@@ -89,13 +89,13 @@ async fn test_verify_rejects_bad_hmac() {
 }
 
 #[actix_rt::test]
-async fn test_verify_accepts_valid_hmac() {
+async fn test_verify_and_settle_accepts_valid_hmac() {
     let state = make_state(Some(b"test-secret".to_vec()));
     let app = test::init_service(
         App::new()
             .app_data(state)
             .app_data(web::JsonConfig::default().limit(65_536))
-            .service(routes::verify),
+            .service(routes::verify_and_settle),
     )
     .await;
 
@@ -104,7 +104,7 @@ async fn test_verify_accepts_valid_hmac() {
     let sig = x402::hmac::compute_hmac(b"test-secret", body_bytes);
 
     let req = test::TestRequest::post()
-        .uri("/verify")
+        .uri("/verify-and-settle")
         .set_payload(&body_bytes[..])
         .insert_header(("Content-Type", "application/json"))
         .insert_header(("X-Facilitator-Auth", sig))
@@ -116,19 +116,19 @@ async fn test_verify_accepts_valid_hmac() {
 }
 
 #[actix_rt::test]
-async fn test_verify_skips_hmac_when_no_secret() {
+async fn test_verify_and_settle_skips_hmac_when_no_secret() {
     let state = make_state(None);
     let app = test::init_service(
         App::new()
             .app_data(state)
             .app_data(web::JsonConfig::default().limit(65_536))
-            .service(routes::verify),
+            .service(routes::verify_and_settle),
     )
     .await;
 
     // No HMAC header, no secret configured -> should pass auth
     let req = test::TestRequest::post()
-        .uri("/verify")
+        .uri("/verify-and-settle")
         .set_payload("{}")
         .insert_header(("Content-Type", "application/json"))
         .to_request();

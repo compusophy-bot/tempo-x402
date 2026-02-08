@@ -394,19 +394,21 @@ where
             });
         }
 
-        // Execute transferFrom (nonce is now claimed, safe to proceed)
+        // Execute transferFrom (nonce is now claimed, safe to proceed).
+        // IMPORTANT: We do NOT release the nonce on failure. The transaction may
+        // have been submitted to the mempool but timed out waiting for confirmation.
+        // Releasing the nonce would allow replay if the tx eventually mines.
+        // The payer must sign a new authorization with a fresh nonce to retry.
         let tx_hash = match tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await
         {
             Ok(hash) => hash,
             Err(e) => {
-                // Release the nonce so the payer can retry with the same authorization
-                tracing::warn!(
+                tracing::error!(
                     nonce = %format!("{:.8}", p.nonce),
                     payer = %p.from,
                     error = %e,
-                    "transferFrom failed — releasing nonce for retry"
+                    "transferFrom failed — nonce remains claimed to prevent double-spend"
                 );
-                self.nonce_store.release(&p.nonce);
                 return Err(e);
             }
         };

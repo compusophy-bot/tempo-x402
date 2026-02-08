@@ -6,6 +6,31 @@ use crate::middleware::{endpoint_requirements, require_payment};
 use crate::proxy::proxy_request;
 use crate::state::AppState;
 
+/// Sanitize a query string to prevent CRLF injection and fragment smuggling.
+fn sanitize_query(query: &str) -> Result<String, GatewayError> {
+    // Reject CRLF injection
+    if query.contains('\r') || query.contains('\n') {
+        return Err(GatewayError::ProxyError(
+            "query string must not contain newlines".to_string(),
+        ));
+    }
+
+    // Strip fragment (everything after #) — fragments should not be sent to the server
+    let sanitized = match query.find('#') {
+        Some(idx) => &query[..idx],
+        None => query,
+    };
+
+    // Reject null bytes
+    if sanitized.contains('\0') {
+        return Err(GatewayError::ProxyError(
+            "query string must not contain null bytes".to_string(),
+        ));
+    }
+
+    Ok(sanitized.to_string())
+}
+
 /// Sanitize a proxy path segment to prevent path traversal and URL authority injection.
 fn sanitize_path(path: &str) -> Result<String, GatewayError> {
     // URL-decode the path first to catch encoded attacks (e.g. %2e%2e)
@@ -90,9 +115,14 @@ pub async fn gateway_proxy(
         rest_path
     );
 
-    // Add query string if present
+    // Add query string if present (sanitized)
     let target_url = if let Some(query) = req.uri().query() {
-        format!("{}?{}", target_url, query)
+        let query = sanitize_query(query)?;
+        if query.is_empty() {
+            target_url
+        } else {
+            format!("{}?{}", target_url, query)
+        }
     } else {
         target_url
     };
@@ -163,9 +193,14 @@ async fn gateway_proxy_no_path(
         Err(http_response) => return Ok(http_response),
     };
 
-    // Build target URL (just the base)
+    // Build target URL (just the base, with sanitized query string)
     let target_url = if let Some(query) = req.uri().query() {
-        format!("{}?{}", endpoint.target_url, query)
+        let query = sanitize_query(query)?;
+        if query.is_empty() {
+            endpoint.target_url.clone()
+        } else {
+            format!("{}?{}", endpoint.target_url, query)
+        }
     } else {
         endpoint.target_url.clone()
     };

@@ -164,6 +164,13 @@ pub async fn update_endpoint(
         Err(http_response) => return Ok(http_response),
     };
 
+    // Post-settlement ownership verification: confirm the cryptographically
+    // verified payer matches the endpoint owner (defense-in-depth against
+    // spoofed `from` fields in unsigned payloads)
+    if settle.payer != Some(owner) {
+        return Err(GatewayError::NotOwner);
+    }
+
     // Update the endpoint
     let updated = state.db.update_endpoint(
         &slug,
@@ -254,6 +261,12 @@ pub async fn delete_endpoint(
         Ok(s) => s,
         Err(http_response) => return Ok(http_response),
     };
+
+    // Post-settlement ownership verification: confirm the cryptographically
+    // verified payer matches the endpoint owner
+    if settle.payer != Some(owner) {
+        return Err(GatewayError::NotOwner);
+    }
 
     // Delete (deactivate) the endpoint
     state.db.delete_endpoint(&slug)?;

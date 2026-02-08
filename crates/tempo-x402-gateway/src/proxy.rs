@@ -4,7 +4,7 @@ use x402::SettleResponse;
 
 use crate::error::GatewayError;
 use crate::middleware::payment_response_header;
-use crate::validation::validate_resolved_ip;
+use crate::validation::validate_and_resolve_ip;
 
 /// Headers to strip from client request before proxying
 const HEADERS_TO_STRIP: &[&str] = &[
@@ -44,6 +44,9 @@ const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
     "access-control-allow-origin",
 ];
 
+/// Maximum upstream response body size (10 MB).
+const MAX_RESPONSE_BODY_SIZE: usize = 10 * 1024 * 1024;
+
 /// Proxy an HTTP request to the target URL
 pub async fn proxy_request(
     client: &reqwest::Client,
@@ -54,10 +57,30 @@ pub async fn proxy_request(
     include_payment_response: bool,
     hmac_secret: Option<&[u8]>,
 ) -> Result<HttpResponse, GatewayError> {
-    // DNS rebinding check: resolve the target hostname and reject private IPs
+    // DNS rebinding fix: resolve DNS once and rewrite the URL to the validated IP.
+    // This eliminates the TOCTOU gap where a second DNS lookup (by reqwest) could
+    // resolve to a different (private) IP.
+    let mut actual_url = target_url.to_string();
+    let mut original_host: Option<String> = None;
+
     if let Ok(parsed) = url::Url::parse(target_url) {
         if let Some(host) = parsed.host_str() {
-            validate_resolved_ip(host).await?;
+            // Skip IP-rewrite for hosts that are already IPs
+            if host.parse::<std::net::Ipv4Addr>().is_err()
+                && host.parse::<std::net::Ipv6Addr>().is_err()
+            {
+                let resolved_ip = validate_and_resolve_ip(host).await?;
+                // Rewrite URL to use the resolved IP so reqwest connects to it directly
+                let ip_str = match resolved_ip {
+                    std::net::IpAddr::V6(ip) => format!("[{}]", ip),
+                    std::net::IpAddr::V4(ip) => ip.to_string(),
+                };
+                actual_url = actual_url.replacen(host, &ip_str, 1);
+                original_host = Some(host.to_string());
+            } else {
+                // Already an IP — just validate it
+                validate_and_resolve_ip(host).await?;
+            }
         }
     }
 
@@ -78,7 +101,12 @@ pub async fn proxy_request(
         }
     };
 
-    let mut request_builder = client.request(method, target_url);
+    let mut request_builder = client.request(method, &actual_url);
+
+    // Set the Host header to the original hostname (not the resolved IP)
+    if let Some(ref host) = original_host {
+        request_builder = request_builder.header("host", host.as_str());
+    }
 
     // Copy headers from original request (except stripped ones)
     for (name, value) in original_req.headers() {
@@ -117,11 +145,29 @@ pub async fn proxy_request(
     let status = response.status();
     let headers = response.headers().clone();
 
-    // Get response body
+    // Check Content-Length before reading (fast path)
+    if let Some(cl) = response.content_length() {
+        if cl > MAX_RESPONSE_BODY_SIZE as u64 {
+            return Err(GatewayError::ProxyError(format!(
+                "upstream response too large: {} bytes (max {})",
+                cl, MAX_RESPONSE_BODY_SIZE
+            )));
+        }
+    }
+
+    // Get response body with size limit
     let body = response.bytes().await.map_err(|e| {
         tracing::error!(error = %e, "failed to read proxy response body");
         GatewayError::ProxyError("failed to read upstream response".to_string())
     })?;
+
+    if body.len() > MAX_RESPONSE_BODY_SIZE {
+        return Err(GatewayError::ProxyError(format!(
+            "upstream response too large: {} bytes (max {})",
+            body.len(),
+            MAX_RESPONSE_BODY_SIZE
+        )));
+    }
 
     // Build actix response
     let mut builder = HttpResponse::build(

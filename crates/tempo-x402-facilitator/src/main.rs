@@ -73,10 +73,13 @@ async fn main() -> std::io::Result<()> {
                 Arc::new(store)
             }
             Err(e) => {
-                tracing::warn!(
-                    "Failed to open SQLite nonce store at {nonce_db_path}: {e} — using in-memory"
+                // CRITICAL: Do not fall back to in-memory. In-memory nonces are lost
+                // on restart, enabling replay of any recently-settled payment.
+                tracing::error!("Failed to open SQLite nonce store at {nonce_db_path}: {e}");
+                tracing::error!(
+                    "Refusing to start — in-memory fallback would enable replay attacks on restart"
                 );
-                Arc::new(x402::nonce_store::InMemoryNonceStore::new())
+                std::process::exit(1);
             }
         };
 
@@ -88,19 +91,16 @@ async fn main() -> std::io::Result<()> {
 
     let hmac_secret = std::env::var("FACILITATOR_SHARED_SECRET")
         .ok()
+        .filter(|s| !s.is_empty())
         .map(|s| s.into_bytes());
 
-    let allow_insecure = std::env::var("ALLOW_UNAUTHENTICATED")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
-
     if hmac_secret.is_none() {
-        if allow_insecure {
-            tracing::warn!("FACILITATOR_SHARED_SECRET not set — HMAC auth disabled (ALLOW_UNAUTHENTICATED=true)");
-        } else {
-            tracing::error!("FACILITATOR_SHARED_SECRET not set. Set it for production, or set ALLOW_UNAUTHENTICATED=true for dev mode.");
-            std::process::exit(1);
-        }
+        tracing::error!(
+            "FACILITATOR_SHARED_SECRET is required. \
+             Set it to a secure random value (e.g. `openssl rand -hex 32`). \
+             For local development, any non-empty value will work."
+        );
+        std::process::exit(1);
     }
 
     let webhook_urls: Vec<String> = std::env::var("WEBHOOK_URLS")
@@ -143,7 +143,6 @@ async fn main() -> std::io::Result<()> {
     tracing::info!("Facilitator address: {facilitator_address}");
     tracing::info!("Rate limit: {rate_limit_rpm} req/min per IP");
     tracing::info!("  GET  http://localhost:{port}/supported");
-    tracing::info!("  POST http://localhost:{port}/verify");
     tracing::info!("  POST http://localhost:{port}/verify-and-settle");
 
     let governor_conf = GovernorConfigBuilder::default()
@@ -160,7 +159,6 @@ async fn main() -> std::io::Result<()> {
             .service(routes::health)
             .service(routes::metrics_endpoint)
             .service(routes::supported)
-            .service(routes::verify)
             .service(routes::verify_and_settle)
     })
     .bind(("0.0.0.0", port))?

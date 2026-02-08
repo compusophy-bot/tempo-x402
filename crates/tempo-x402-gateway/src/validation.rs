@@ -82,9 +82,10 @@ pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
 }
 
 /// Resolve a hostname and verify the resolved IPs are not private/loopback.
-/// Prevents DNS rebinding attacks where a domain initially resolves to a public IP
-/// but later resolves to a private IP.
-pub async fn validate_resolved_ip(host: &str) -> Result<(), GatewayError> {
+/// Returns a validated `std::net::IpAddr` that the caller should use for the
+/// actual connection — this eliminates the TOCTOU gap where a second DNS
+/// lookup could resolve to a different (private) IP.
+pub async fn validate_and_resolve_ip(host: &str) -> Result<std::net::IpAddr, GatewayError> {
     // If the host is already an IP, parse and check directly
     if let Ok(ip) = host.parse::<Ipv4Addr>() {
         if is_private_ipv4(&ip) {
@@ -92,7 +93,7 @@ pub async fn validate_resolved_ip(host: &str) -> Result<(), GatewayError> {
                 "target resolves to a private IP address".to_string(),
             ));
         }
-        return Ok(());
+        return Ok(std::net::IpAddr::V4(ip));
     }
     if let Ok(ip) = host.parse::<Ipv6Addr>() {
         if is_private_ipv6(&ip) {
@@ -100,16 +101,20 @@ pub async fn validate_resolved_ip(host: &str) -> Result<(), GatewayError> {
                 "target resolves to a private IP address".to_string(),
             ));
         }
-        return Ok(());
+        return Ok(std::net::IpAddr::V6(ip));
     }
 
     // DNS resolution — add port 443 as required by lookup_host
     let lookup = format!("{}:443", host);
-    let addrs = tokio::net::lookup_host(&lookup).await.map_err(|e| {
-        GatewayError::ProxyError(format!("DNS resolution failed for {}: {}", host, e))
-    })?;
+    let addrs: Vec<_> = tokio::net::lookup_host(&lookup)
+        .await
+        .map_err(|e| {
+            GatewayError::ProxyError(format!("DNS resolution failed for {}: {}", host, e))
+        })?
+        .collect();
 
-    for addr in addrs {
+    // Reject ALL private IPs; return the first safe one
+    for addr in &addrs {
         match addr.ip() {
             std::net::IpAddr::V4(ip) => {
                 if is_private_ipv4(&ip) {
@@ -128,7 +133,10 @@ pub async fn validate_resolved_ip(host: &str) -> Result<(), GatewayError> {
         }
     }
 
-    Ok(())
+    addrs
+        .first()
+        .map(|a| a.ip())
+        .ok_or_else(|| GatewayError::ProxyError("DNS resolution returned no addresses".to_string()))
 }
 
 #[cfg(test)]
