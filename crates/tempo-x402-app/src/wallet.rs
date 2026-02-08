@@ -1,9 +1,11 @@
-//! Wallet connection utilities using browser's Web3 provider (MetaMask, etc.)
+//! Wallet connection utilities supporting MetaMask, demo key, and embedded wallets.
 
 #![allow(dead_code, deprecated)]
 
 use crate::WalletState;
 use wasm_bindgen::prelude::*;
+
+pub use crate::WalletMode;
 
 #[wasm_bindgen]
 extern "C" {
@@ -16,7 +18,6 @@ extern "C" {
 
 /// Connect to browser wallet (MetaMask, etc.)
 pub async fn connect_wallet() -> Result<WalletState, String> {
-    // Check if ethereum provider exists
     if ETHEREUM.is_undefined() || ETHEREUM.is_null() {
         return Err("No Web3 wallet detected. Please install MetaMask.".to_string());
     }
@@ -51,10 +52,68 @@ pub async fn connect_wallet() -> Result<WalletState, String> {
         connected: true,
         address: Some(address),
         chain_id,
+        mode: WalletMode::MetaMask,
+        private_key: None,
     })
 }
 
-/// Sign a message using the connected wallet
+/// Use the pre-funded demo key for testnet demos.
+pub fn use_demo_key() -> Result<WalletState, String> {
+    let signer = x402_wallet::WalletSigner::new(x402_wallet::DEMO_PRIVATE_KEY)?;
+    Ok(WalletState {
+        connected: true,
+        address: Some(signer.address_string()),
+        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        mode: WalletMode::DemoKey,
+        private_key: Some(x402_wallet::DEMO_PRIVATE_KEY.to_string()),
+    })
+}
+
+/// Create a new embedded wallet with a random keypair.
+///
+/// After creation, the wallet needs to be funded via `tempo_fundAddress` RPC
+/// and given facilitator token allowance.
+pub fn create_embedded_wallet() -> Result<WalletState, String> {
+    let key_hex = x402_wallet::generate_random_key();
+    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    let address = signer.address_string();
+
+    Ok(WalletState {
+        connected: true,
+        address: Some(address),
+        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        mode: WalletMode::Embedded,
+        private_key: Some(key_hex),
+    })
+}
+
+/// Fund an address via the Tempo `tempo_fundAddress` RPC method.
+/// This is a WASM-compatible fetch call.
+pub async fn fund_address(address: &str) -> Result<(), String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "tempo_fundAddress",
+        "params": [address],
+        "id": 1
+    });
+
+    let resp = gloo_net::http::Request::post("https://rpc.moderato.tempo.xyz")
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&body).unwrap())
+        .map_err(|e| format!("Failed to build request: {}", e))?
+        .send()
+        .await
+        .map_err(|e| format!("Fund request failed: {}", e))?;
+
+    if !resp.ok() {
+        let err = resp.text().await.unwrap_or_default();
+        return Err(format!("Funding failed: {}", err));
+    }
+
+    Ok(())
+}
+
+/// Sign EIP-712 typed data using the connected MetaMask wallet.
 pub async fn sign_typed_data(
     address: &str,
     domain: &serde_json::Value,
@@ -65,7 +124,6 @@ pub async fn sign_typed_data(
         return Err("No wallet connected".to_string());
     }
 
-    // Build EIP-712 typed data
     let typed_data = serde_json::json!({
         "types": types,
         "primaryType": "PaymentAuthorization",
@@ -76,7 +134,6 @@ pub async fn sign_typed_data(
     let typed_data_str = serde_json::to_string(&typed_data)
         .map_err(|e| format!("Failed to serialize typed data: {}", e))?;
 
-    // Build request
     let request = js_sys::Object::new();
     js_sys::Reflect::set(&request, &"method".into(), &"eth_signTypedData_v4".into())
         .map_err(|e| format!("Failed to build request: {:?}", e))?;
@@ -96,9 +153,9 @@ pub async fn sign_typed_data(
     Ok(signature)
 }
 
-/// Get the current connected address
-pub fn get_address() -> Option<String> {
-    // This would need to check local state or make another request
-    // For now, return None - the app state tracks this
-    None
+/// Simple hex encoding (no external dep needed)
+mod hex {
+    pub fn encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
 }

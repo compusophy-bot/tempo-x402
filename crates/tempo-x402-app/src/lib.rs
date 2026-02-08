@@ -31,12 +31,35 @@ pub struct SettleResponse {
     pub payer: Option<String>,
 }
 
+/// Wallet connection mode
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum WalletMode {
+    #[default]
+    Disconnected,
+    MetaMask,
+    DemoKey,
+    Embedded,
+}
+
+impl WalletMode {
+    fn label(&self) -> &'static str {
+        match self {
+            WalletMode::Disconnected => "",
+            WalletMode::MetaMask => "MetaMask",
+            WalletMode::DemoKey => "Demo",
+            WalletMode::Embedded => "Embedded",
+        }
+    }
+}
+
 /// App state for wallet connection
 #[derive(Clone, Debug, Default)]
 pub struct WalletState {
     pub connected: bool,
     pub address: Option<String>,
     pub chain_id: Option<String>,
+    pub mode: WalletMode,
+    pub private_key: Option<String>,
 }
 
 /// Main application component
@@ -44,7 +67,6 @@ pub struct WalletState {
 pub fn App() -> impl IntoView {
     provide_meta_context();
 
-    // Wallet state
     let (wallet, set_wallet) = create_signal(WalletState::default());
     provide_context((wallet, set_wallet));
 
@@ -85,27 +107,62 @@ fn Header() -> impl IntoView {
                     <a href="/gateway">"Gateway"</a>
                     <a href="/docs">"Docs"</a>
                 </div>
-                <WalletButton wallet=wallet set_wallet=set_wallet />
+                <WalletButtons wallet=wallet set_wallet=set_wallet />
             </nav>
         </header>
     }
 }
 
-/// Wallet connect/disconnect button
+/// Wallet connect/disconnect buttons with three modes
 #[component]
-fn WalletButton(
+fn WalletButtons(
     wallet: ReadSignal<WalletState>,
     set_wallet: WriteSignal<WalletState>,
 ) -> impl IntoView {
-    let connect = move |_| {
+    let (funding, set_funding) = create_signal(false);
+
+    let connect_metamask = move |_| {
         spawn_local(async move {
             match wallet::connect_wallet().await {
                 Ok(state) => set_wallet.set(state),
                 Err(e) => {
-                    web_sys::console::error_1(&format!("Wallet error: {}", e).into());
+                    web_sys::console::error_1(&format!("MetaMask error: {}", e).into());
                 }
             }
         });
+    };
+
+    let use_demo = move |_| match wallet::use_demo_key() {
+        Ok(state) => set_wallet.set(state),
+        Err(e) => {
+            web_sys::console::error_1(&format!("Demo key error: {}", e).into());
+        }
+    };
+
+    let create_wallet = move |_| {
+        set_funding.set(true);
+        match wallet::create_embedded_wallet() {
+            Ok(state) => {
+                let address = state.address.clone().unwrap_or_default();
+                set_wallet.set(state);
+                // Fund the new wallet
+                spawn_local(async move {
+                    match wallet::fund_address(&address).await {
+                        Ok(_) => {
+                            web_sys::console::log_1(&format!("Funded wallet: {}", address).into());
+                        }
+                        Err(e) => {
+                            web_sys::console::error_1(&format!("Funding failed: {}", e).into());
+                        }
+                    }
+                    set_funding.set(false);
+                });
+            }
+            Err(e) => {
+                web_sys::console::error_1(&format!("Create wallet error: {}", e).into());
+                set_funding.set(false);
+            }
+        }
     };
 
     let disconnect = move |_| {
@@ -116,20 +173,35 @@ fn WalletButton(
         <Show
             when=move || wallet.get().connected
             fallback=move || view! {
-                <button class="btn btn-primary" on:click=connect>
-                    "Connect Wallet"
-                </button>
+                <div class="wallet-buttons">
+                    <button class="btn btn-primary" on:click=connect_metamask>
+                        "Connect Wallet"
+                    </button>
+                    <button class="btn btn-secondary" on:click=use_demo>
+                        "Demo Key"
+                    </button>
+                    <button
+                        class="btn btn-secondary"
+                        on:click=create_wallet
+                        disabled=move || funding.get()
+                    >
+                        {move || if funding.get() { "Creating..." } else { "Create Wallet" }}
+                    </button>
+                </div>
             }
         >
             {move || {
-                let addr = wallet.get().address.unwrap_or_default();
+                let w = wallet.get();
+                let addr = w.address.unwrap_or_default();
                 let short = if addr.len() > 10 {
                     format!("{}...{}", &addr[..6], &addr[addr.len()-4..])
                 } else {
                     addr
                 };
+                let mode_label = w.mode.label();
                 view! {
                     <div class="wallet-info">
+                        <span class="wallet-mode-badge">{mode_label}</span>
                         <span class="wallet-address">{short}</span>
                         <button class="btn btn-secondary" on:click=disconnect>
                             "Disconnect"
@@ -179,7 +251,8 @@ fn PaymentDemo() -> impl IntoView {
     let (loading, set_loading) = create_signal(false);
 
     let make_request = move |_| {
-        if !wallet.get().connected {
+        let w = wallet.get();
+        if !w.connected {
             set_status.set("Please connect your wallet first".to_string());
             return;
         }
@@ -190,13 +263,19 @@ fn PaymentDemo() -> impl IntoView {
         set_tx_hash.set(None);
 
         spawn_local(async move {
-            match api::make_paid_request().await {
+            match api::make_paid_request(&w).await {
                 Ok((data, settle)) => {
-                    set_status.set("Payment successful!".to_string());
-                    set_result.set(Some(data));
-                    if let Some(s) = settle {
-                        set_tx_hash.set(s.transaction);
+                    if let Some(ref s) = settle {
+                        if s.success {
+                            set_status.set("Payment successful!".to_string());
+                        } else {
+                            set_status.set("Payment settled (check tx)".to_string());
+                        }
+                        set_tx_hash.set(s.transaction.clone());
+                    } else {
+                        set_status.set("Response received (no payment required)".to_string());
                     }
+                    set_result.set(Some(data));
                 }
                 Err(e) => {
                     set_status.set(format!("Error: {}", e));
@@ -434,6 +513,7 @@ let (resp, settlement) = client
                         <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" - Server middleware"</li>
                         <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" - Payment settlement"</li>
                         <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" - API gateway"</li>
+                        <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" - WASM wallet (signing + key gen)"</li>
                     </ul>
                 </section>
 

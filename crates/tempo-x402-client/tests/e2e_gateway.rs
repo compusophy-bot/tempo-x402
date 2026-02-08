@@ -75,15 +75,34 @@ async fn e2e_full_payment_flow() {
     // ── Step 1: Check balance & allowance ──────────────────────────────
     let balance = check_balance(address).await;
     let allowance = check_allowance(address).await;
-    println!("Step 1: Balance = {} pathUSD (raw: {})", balance as f64 / 1_000_000.0, balance);
-    println!("        Allowance = {}", if allowance == u128::MAX { "MAX".to_string() } else { allowance.to_string() });
-    assert!(balance > 10_000, "Insufficient pathUSD balance for test (need > $0.01)");
+    println!(
+        "Step 1: Balance = {} pathUSD (raw: {})",
+        balance as f64 / 1_000_000.0,
+        balance
+    );
+    println!(
+        "        Allowance = {}",
+        if allowance == u128::MAX {
+            "MAX".to_string()
+        } else {
+            allowance.to_string()
+        }
+    );
+    assert!(
+        balance > 10_000,
+        "Insufficient pathUSD balance for test (need > $0.01)"
+    );
     assert!(allowance > 10_000, "Insufficient allowance for test");
 
     // ── Step 2: GET /register → expect 405 (method not allowed) or hit POST without payment → 402 ──
     println!("\nStep 2: POST /register without payment → expect 402");
-    let slug = format!("e2e-test-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs());
+    let slug = format!(
+        "e2e-test-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    );
 
     let resp = http
         .post(format!("{GATEWAY_URL}/register"))
@@ -103,7 +122,14 @@ async fn e2e_full_payment_flow() {
 
     let body_402: PaymentRequiredBody = resp.json().await.expect("parse 402 body");
     println!("        x402 version: {}", body_402.x402_version);
-    println!("        Accepts: {:?}", body_402.accepts.iter().map(|r| &r.scheme).collect::<Vec<_>>());
+    println!(
+        "        Accepts: {:?}",
+        body_402
+            .accepts
+            .iter()
+            .map(|r| &r.scheme)
+            .collect::<Vec<_>>()
+    );
 
     let requirements = body_402
         .accepts
@@ -112,7 +138,10 @@ async fn e2e_full_payment_flow() {
         .expect("no tempo-tip20 scheme in 402 response");
 
     println!("        Pay to: {}", requirements.pay_to);
-    println!("        Amount: {} (price: {})", requirements.amount, requirements.price);
+    println!(
+        "        Amount: {} (price: {})",
+        requirements.amount, requirements.price
+    );
 
     // ── Step 3: Sign payment and retry ─────────────────────────────────
     println!("\nStep 3: Sign EIP-712 payment and POST /register with PAYMENT-SIGNATURE");
@@ -136,9 +165,13 @@ async fn e2e_full_payment_flow() {
     let resp_text = resp.text().await.unwrap_or_default();
     println!("        Status: {status}");
     println!("        Body: {resp_text}");
-    assert!(status == 201 || status == 200, "Registration failed with status {status}: {resp_text}");
+    assert!(
+        status == 201 || status == 200,
+        "Registration failed with status {status}: {resp_text}"
+    );
 
-    let register_result: serde_json::Value = serde_json::from_str(&resp_text).expect("parse register response");
+    let register_result: serde_json::Value =
+        serde_json::from_str(&resp_text).expect("parse register response");
     if let Some(tx) = register_result.get("transaction") {
         println!("        Tx: {tx}");
     }
@@ -155,7 +188,10 @@ async fn e2e_full_payment_flow() {
     assert_eq!(status, 200, "Endpoint not found after registration");
 
     let endpoint_info: serde_json::Value = resp.json().await.expect("parse endpoint");
-    println!("        Endpoint: {}", serde_json::to_string_pretty(&endpoint_info).unwrap_or_default());
+    println!(
+        "        Endpoint: {}",
+        serde_json::to_string_pretty(&endpoint_info).unwrap_or_default()
+    );
 
     // ── Step 5: GET /g/{slug} without payment → 402 ───────────────────
     println!("\nStep 5: GET /g/{slug} without payment → expect 402");
@@ -174,7 +210,10 @@ async fn e2e_full_payment_flow() {
         .iter()
         .find(|r| r.scheme == SCHEME_NAME)
         .expect("no tempo-tip20 in proxy 402");
-    println!("        Price: {} (amount: {})", proxy_requirements.price, proxy_requirements.amount);
+    println!(
+        "        Price: {} (amount: {})",
+        proxy_requirements.price, proxy_requirements.amount
+    );
 
     // ── Step 6: GET /g/{slug} with payment → proxied response ─────────
     println!("\nStep 6: GET /g/{slug} with payment → expect proxied 200");
@@ -201,11 +240,17 @@ async fn e2e_full_payment_flow() {
         // Decode payment-response
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(pr) {
             if let Ok(settle) = serde_json::from_slice::<SettleResponse>(&bytes) {
-                println!("        Settlement: success={}, tx={:?}", settle.success, settle.transaction);
+                println!(
+                    "        Settlement: success={}, tx={:?}",
+                    settle.success, settle.transaction
+                );
             }
         }
     }
-    println!("        Proxied body (first 200 chars): {}", &body[..body.len().min(200)]);
+    println!(
+        "        Proxied body (first 200 chars): {}",
+        &body[..body.len().min(200)]
+    );
     assert_eq!(status, 200, "Paid proxy failed with {status}: {body}");
 
     // ── Step 7: Check post-test balance ────────────────────────────────
@@ -213,8 +258,15 @@ async fn e2e_full_payment_flow() {
     let spent = balance.saturating_sub(new_balance);
     println!("\nStep 7: Post-test balance");
     println!("        Before: {} pathUSD", balance as f64 / 1_000_000.0);
-    println!("        After:  {} pathUSD", new_balance as f64 / 1_000_000.0);
-    println!("        Spent:  {} pathUSD (raw: {})", spent as f64 / 1_000_000.0, spent);
+    println!(
+        "        After:  {} pathUSD",
+        new_balance as f64 / 1_000_000.0
+    );
+    println!(
+        "        Spent:  {} pathUSD (raw: {})",
+        spent as f64 / 1_000_000.0,
+        spent
+    );
 
     println!("\n=== E2E Test PASSED ===\n");
 }

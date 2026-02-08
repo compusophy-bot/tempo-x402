@@ -2,11 +2,10 @@
 
 #![allow(dead_code)]
 
-use crate::{PaymentRequirements, SettleResponse};
+use crate::{PaymentRequirements, SettleResponse, WalletMode, WalletState};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
-// Gateway and facilitator URLs
 const GATEWAY_URL: &str = "https://x402-gateway-production-5018.up.railway.app";
 
 /// 402 Payment Required response body
@@ -37,28 +36,238 @@ pub struct PaymentData {
     pub signature: String,
 }
 
-/// Make a paid request to the gateway demo endpoint
-pub async fn make_paid_request() -> Result<(String, Option<SettleResponse>), String> {
-    // For demo, we'll call the gateway's health endpoint which is free
-    // In a real app, you'd call a registered endpoint that requires payment
+/// Make a paid request through the gateway.
+///
+/// 1. GET the endpoint -> if 402, parse payment requirements
+/// 2. Sign payment (MetaMask for browser wallet, WalletSigner for demo/embedded)
+/// 3. Retry with PAYMENT-SIGNATURE header
+/// 4. Return body + settlement info
+pub async fn make_paid_request(
+    wallet: &WalletState,
+) -> Result<(String, Option<SettleResponse>), String> {
+    // Use the gateway health endpoint for demo (free endpoint)
+    // For a real paid request, use a registered endpoint slug
+    let url = format!("{}/health", GATEWAY_URL);
 
-    let resp = Request::get(&format!("{}/health", GATEWAY_URL))
+    let resp = Request::get(&url)
         .send()
         .await
         .map_err(|e| format!("Request failed: {}", e))?;
 
-    let body = resp
+    // If not 402, return directly (free endpoint)
+    if resp.status() != 402 {
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read body: {}", e))?;
+        return Ok((body, None));
+    }
+
+    // Parse 402 payment requirements
+    let body_text = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read body: {}", e))?;
+        .map_err(|e| format!("Failed to read 402 body: {}", e))?;
+    let payment_body: PaymentRequiredBody =
+        serde_json::from_str(&body_text).map_err(|e| format!("Failed to parse 402: {}", e))?;
 
-    // Parse settlement info from header if present
-    let settle = resp
+    if payment_body.accepts.is_empty() {
+        return Err("No payment schemes accepted".to_string());
+    }
+
+    let requirements = &payment_body.accepts[0];
+
+    // Sign the payment based on wallet mode
+    let payment_header = sign_for_wallet(wallet, requirements).await?;
+
+    // Retry with payment signature
+    let paid_resp = Request::get(&url)
+        .header("PAYMENT-SIGNATURE", &payment_header)
+        .send()
+        .await
+        .map_err(|e| format!("Paid request failed: {}", e))?;
+
+    let settle = paid_resp
         .headers()
         .get("payment-response")
         .and_then(|s| serde_json::from_str::<SettleResponse>(&s).ok());
 
-    Ok((body, settle))
+    let result_body = paid_resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    Ok((result_body, settle))
+}
+
+/// Make a paid request to a specific gateway endpoint slug.
+pub async fn make_paid_endpoint_request(
+    wallet: &WalletState,
+    slug: &str,
+    path: &str,
+) -> Result<(String, Option<SettleResponse>), String> {
+    let url = if path.is_empty() {
+        format!("{}/g/{}", GATEWAY_URL, slug)
+    } else {
+        format!("{}/g/{}/{}", GATEWAY_URL, slug, path)
+    };
+
+    let resp = Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if resp.status() != 402 {
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read body: {}", e))?;
+        let settle = None;
+        return Ok((body, settle));
+    }
+
+    // Parse 402
+    let body_text = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read 402 body: {}", e))?;
+    let payment_body: PaymentRequiredBody =
+        serde_json::from_str(&body_text).map_err(|e| format!("Failed to parse 402: {}", e))?;
+
+    if payment_body.accepts.is_empty() {
+        return Err("No payment schemes accepted".to_string());
+    }
+
+    let requirements = &payment_body.accepts[0];
+    let payment_header = sign_for_wallet(wallet, requirements).await?;
+
+    let paid_resp = Request::get(&url)
+        .header("PAYMENT-SIGNATURE", &payment_header)
+        .send()
+        .await
+        .map_err(|e| format!("Paid request failed: {}", e))?;
+
+    let settle = paid_resp
+        .headers()
+        .get("payment-response")
+        .and_then(|s| serde_json::from_str::<SettleResponse>(&s).ok());
+
+    let result_body = paid_resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    Ok((result_body, settle))
+}
+
+/// Sign a payment based on the current wallet mode.
+async fn sign_for_wallet(
+    wallet: &WalletState,
+    requirements: &PaymentRequirements,
+) -> Result<String, String> {
+    match wallet.mode {
+        WalletMode::MetaMask => sign_with_metamask(wallet, requirements).await,
+        WalletMode::DemoKey | WalletMode::Embedded => sign_with_local_key(wallet, requirements),
+        WalletMode::Disconnected => Err("Wallet not connected".to_string()),
+    }
+}
+
+/// Sign using MetaMask via browser ethereum provider.
+async fn sign_with_metamask(
+    wallet: &WalletState,
+    requirements: &PaymentRequirements,
+) -> Result<String, String> {
+    let address = wallet.address.as_deref().ok_or("No address")?;
+
+    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
+    let valid_after = now_secs.saturating_sub(60);
+    let valid_before = now_secs.saturating_add(requirements.max_timeout_seconds);
+    let nonce = random_nonce();
+
+    let domain = serde_json::json!({
+        "name": "x402-tempo",
+        "version": "1",
+        "chainId": 42431,
+        "verifyingContract": requirements.asset
+    });
+
+    let types = serde_json::json!({
+        "EIP712Domain": [
+            {"name": "name", "type": "string"},
+            {"name": "version", "type": "string"},
+            {"name": "chainId", "type": "uint256"},
+            {"name": "verifyingContract", "type": "address"}
+        ],
+        "PaymentAuthorization": [
+            {"name": "from", "type": "address"},
+            {"name": "to", "type": "address"},
+            {"name": "value", "type": "uint256"},
+            {"name": "token", "type": "address"},
+            {"name": "validAfter", "type": "uint256"},
+            {"name": "validBefore", "type": "uint256"},
+            {"name": "nonce", "type": "bytes32"}
+        ]
+    });
+
+    let message = serde_json::json!({
+        "from": address,
+        "to": requirements.pay_to,
+        "value": requirements.amount,
+        "token": requirements.asset,
+        "validAfter": valid_after.to_string(),
+        "validBefore": valid_before.to_string(),
+        "nonce": nonce
+    });
+
+    let signature = crate::wallet::sign_typed_data(address, &domain, &types, &message).await?;
+
+    // Build PaymentPayload and base64-encode it
+    let payload = PaymentPayload {
+        x402_version: 1,
+        payload: PaymentData {
+            from: address.to_string(),
+            to: requirements.pay_to.clone(),
+            value: requirements.amount.clone(),
+            token: requirements.asset.clone(),
+            valid_after,
+            valid_before,
+            nonce: nonce.clone(),
+            signature,
+        },
+    };
+
+    let json = serde_json::to_string(&payload).map_err(|e| format!("serialize failed: {}", e))?;
+    Ok(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        json,
+    ))
+}
+
+/// Sign using a local private key (demo or embedded wallet).
+fn sign_with_local_key(
+    wallet: &WalletState,
+    requirements: &PaymentRequirements,
+) -> Result<String, String> {
+    let private_key = wallet
+        .private_key
+        .as_deref()
+        .ok_or("No private key available")?;
+
+    let signer = x402_wallet::WalletSigner::new(private_key)?;
+
+    let wallet_req = x402_wallet::PaymentRequirements {
+        scheme: requirements.scheme.clone(),
+        network: requirements.network.clone(),
+        price: requirements.price.clone(),
+        asset: requirements.asset.clone(),
+        amount: requirements.amount.clone(),
+        pay_to: requirements.pay_to.clone(),
+        max_timeout_seconds: requirements.max_timeout_seconds,
+        description: requirements.description.clone(),
+    };
+
+    let now_secs = (js_sys::Date::now() / 1000.0) as u64;
+    signer.sign_payment(&wallet_req, now_secs)
 }
 
 /// Register an endpoint on the gateway
@@ -82,7 +291,6 @@ pub async fn register_endpoint(
         .map_err(|e| format!("Request failed: {}", e))?;
 
     if resp.status() == 402 {
-        // Would need to handle payment here
         return Err("Payment required - connect wallet to pay registration fee".to_string());
     }
 
@@ -129,7 +337,7 @@ pub async fn get_endpoint(slug: &str) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
-/// Call a proxied endpoint through the gateway
+/// Call a proxied endpoint through the gateway (no payment)
 pub async fn call_endpoint(
     slug: &str,
     path: &str,
@@ -146,8 +354,7 @@ pub async fn call_endpoint(
         .map_err(|e| format!("Request failed: {}", e))?;
 
     if resp.status() == 402 {
-        // Would need to sign and retry with payment
-        return Err("Payment required - implement payment flow".to_string());
+        return Err("Payment required - use make_paid_endpoint_request instead".to_string());
     }
 
     let body = resp

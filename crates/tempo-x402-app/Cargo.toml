@@ -29,8 +29,10 @@ web-sys = { version = "0.3", features = [
     "RequestMode",
     "Response",
 ] }
+x402-wallet = { path = "../tempo-x402-wallet", package = "tempo-x402-wallet" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 gloo-net = "0.6"
 gloo-timers = "0.3"
 console_error_panic_hook = "0.1"
