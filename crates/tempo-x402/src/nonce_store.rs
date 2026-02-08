@@ -87,6 +87,9 @@ pub struct SqliteNonceStore {
 
 impl SqliteNonceStore {
     /// Open (or create) a SQLite nonce database at the given path.
+    ///
+    /// On Unix systems, the database file permissions are restricted to 0600
+    /// (owner read/write only) to prevent other users from reading nonce data.
     pub fn open(path: &str) -> Result<Self, rusqlite::Error> {
         let conn = rusqlite::Connection::open(path)?;
         conn.execute_batch(
@@ -97,6 +100,24 @@ impl SqliteNonceStore {
             CREATE INDEX IF NOT EXISTS idx_nonces_recorded_at ON used_nonces(recorded_at);
             PRAGMA journal_mode=WAL;",
         )?;
+
+        // Restrict file permissions on Unix to owner-only (0600).
+        // This prevents other system users from reading the nonce database,
+        // which could reveal payment timing information.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) =
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            {
+                tracing::warn!(
+                    path = %path,
+                    error = %e,
+                    "failed to set nonce database file permissions to 0600"
+                );
+            }
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -200,6 +221,25 @@ impl NonceStore for SqliteNonceStore {
         };
         let now = unix_now();
 
+        // Guard against backward clock jumps: if now is before the earliest recorded
+        // nonce, the system clock has jumped backward. Skip purge to avoid accidentally
+        // removing valid nonces.
+        let min_recorded: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MIN(recorded_at), 0) FROM used_nonces",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if min_recorded > 0 && now < min_recorded {
+            tracing::warn!(
+                now = now,
+                min_recorded = min_recorded,
+                "clock appears to have jumped backward — skipping nonce purge"
+            );
+            return 0;
+        }
+
         // Guard against forward clock jumps: if the newest nonce was recorded recently
         // (within 2x the purge window) but now thinks it's very old, something is wrong.
         // We only check when max_recorded is "recent enough" to indicate active operation
@@ -211,13 +251,7 @@ impl NonceStore for SqliteNonceStore {
                 |row| row.get(0),
             )
             .unwrap_or(0);
-        let min_recorded: i64 = conn
-            .query_row(
-                "SELECT COALESCE(MIN(recorded_at), 0) FROM used_nonces",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+        // min_recorded already computed above for backward clock jump check.
         // If there's a wide spread between min and max recorded timestamps AND now is
         // far ahead, a clock jump may have occurred between recording and purging.
         if min_recorded > 0

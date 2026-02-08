@@ -14,16 +14,14 @@ pub struct PaymentRequest {
 }
 
 /// Validate the HMAC header on an incoming request.
-/// Returns an error response if HMAC is required but missing/invalid.
+/// HMAC authentication is always required — the secret must be set at startup.
+/// Returns an error response if the signature is missing or invalid.
 fn validate_hmac(
     req: &HttpRequest,
     body_bytes: &[u8],
     state: &AppState,
 ) -> Result<(), HttpResponse> {
-    let secret = match &state.hmac_secret {
-        Some(s) => s,
-        None => return Ok(()), // No secret configured — skip HMAC (dev mode)
-    };
+    let secret = &state.hmac_secret;
 
     let header_value = req
         .headers()
@@ -68,37 +66,44 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison that does not leak input lengths.
-/// Both inputs are hashed to fixed-length digests before comparison,
-/// so timing reveals neither the content nor the length of the secret.
+/// Constant-time byte comparison — delegates to the shared implementation
+/// in x402::security which uses the `subtle` crate.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    use sha2::{Digest, Sha256};
-    let ha = Sha256::digest(a);
-    let hb = Sha256::digest(b);
-    let mut result = 0u8;
-    for (x, y) in ha.iter().zip(hb.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
+    x402::security::constant_time_eq(a, b)
 }
 
 #[get("/metrics")]
 pub async fn metrics_endpoint(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
     // Use separate METRICS_TOKEN for metrics auth (not the HMAC shared secret).
-    if let Some(ref token) = state.metrics_token {
-        let authorized = req
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|t| constant_time_eq(t.as_bytes(), token))
-            .unwrap_or(false);
+    match &state.metrics_token {
+        Some(token) => {
+            let authorized = req
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|t| constant_time_eq(t.as_bytes(), token))
+                .unwrap_or(false);
 
-        if !authorized {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "unauthorized",
-                "message": "Valid Bearer token required for /metrics"
-            }));
+            if !authorized {
+                return HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "unauthorized",
+                    "message": "Valid Bearer token required for /metrics"
+                }));
+            }
+        }
+        None => {
+            // No token configured — metrics are protected by default.
+            // Set X402_PUBLIC_METRICS=true to explicitly opt-in to unauthenticated access.
+            let public_metrics = std::env::var("X402_PUBLIC_METRICS")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
+            if !public_metrics {
+                return HttpResponse::Forbidden().json(serde_json::json!({
+                    "error": "forbidden",
+                    "message": "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics"
+                }));
+            }
         }
     }
     HttpResponse::Ok()

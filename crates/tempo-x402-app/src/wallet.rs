@@ -4,8 +4,8 @@
 //! page refreshes and disconnects. Users can export (reveal key, download JSON)
 //! and import (paste key) to manage their wallet across devices.
 //!
-//! Key storage is plaintext localStorage (testnet only). Production would
-//! encrypt with a user-chosen password or WebAuthn-derived key.
+//! Keys are encrypted with AES-GCM-256 using a password derived via PBKDF2
+//! before being written to localStorage.
 
 #![allow(dead_code, deprecated)]
 
@@ -13,6 +13,7 @@ use crate::WalletState;
 use wasm_bindgen::prelude::*;
 
 pub use crate::WalletMode;
+use crate::wallet_crypto;
 
 const STORAGE_KEY: &str = "x402_embedded_wallet";
 
@@ -105,13 +106,87 @@ pub fn has_stored_wallet() -> bool {
     storage_get(STORAGE_KEY).is_some()
 }
 
-/// Load or create an embedded wallet.
+/// Check if the stored wallet is encrypted (needs password to unlock).
+pub fn is_wallet_encrypted() -> bool {
+    storage_get(STORAGE_KEY)
+        .map(|v| wallet_crypto::is_encrypted(&v))
+        .unwrap_or(false)
+}
+
+/// Load an encrypted embedded wallet by decrypting from localStorage.
+///
+/// If the stored key is in legacy plaintext format, it is transparently
+/// re-encrypted with the provided password.
+pub async fn load_encrypted_wallet(password: &str) -> Result<WalletState, String> {
+    let stored = storage_get(STORAGE_KEY).ok_or("No stored wallet found")?;
+
+    let key_hex = if wallet_crypto::is_encrypted(&stored) {
+        // Decrypt with password
+        wallet_crypto::decrypt_key(password, &stored).await?
+    } else {
+        // Legacy plaintext — migrate to encrypted format
+        let key = stored.clone();
+        let encrypted = wallet_crypto::encrypt_key(password, &key).await?;
+        storage_set(STORAGE_KEY, &encrypted);
+        key
+    };
+
+    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    Ok(WalletState {
+        connected: true,
+        address: Some(signer.address_string()),
+        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        mode: WalletMode::Embedded,
+        private_key: Some(key_hex),
+    })
+}
+
+/// Create a new embedded wallet, encrypt with password, and save to localStorage.
+///
+/// Returns `(wallet_state, is_new)` — caller should fund new wallets.
+pub async fn create_embedded_wallet(password: &str) -> Result<(WalletState, bool), String> {
+    if password.is_empty() {
+        return Err("Password is required for wallet encryption".to_string());
+    }
+
+    // If wallet already exists, try to load it
+    if has_stored_wallet() {
+        let state = load_encrypted_wallet(password).await?;
+        return Ok((state, false));
+    }
+
+    let key_hex = x402_wallet::generate_random_key();
+    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    let address = signer.address_string();
+
+    // Encrypt and store
+    let encrypted = wallet_crypto::encrypt_key(password, &key_hex).await?;
+    storage_set(STORAGE_KEY, &encrypted);
+
+    Ok((
+        WalletState {
+            connected: true,
+            address: Some(address),
+            chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+            mode: WalletMode::Embedded,
+            private_key: Some(key_hex),
+        },
+        true,
+    ))
+}
+
+/// Load or create an embedded wallet (legacy unencrypted path, kept for backward compat).
 ///
 /// If a key exists in localStorage, restores that wallet.
 /// Otherwise generates a new random keypair and persists it.
 /// Returns `(wallet_state, is_new)` — caller should fund new wallets.
 pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
     if let Some(key_hex) = storage_get(STORAGE_KEY) {
+        // If encrypted, can't load without password
+        if wallet_crypto::is_encrypted(&key_hex) {
+            return Err("Wallet is encrypted — enter your password to unlock".to_string());
+        }
+
         let signer = x402_wallet::WalletSigner::new(&key_hex)?;
         return Ok((
             WalletState {
@@ -143,7 +218,35 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
     ))
 }
 
-/// Import a private key as an embedded wallet. Saves to localStorage.
+/// Import a private key as an embedded wallet with password encryption.
+pub async fn import_embedded_wallet_encrypted(
+    key_hex: &str,
+    password: &str,
+) -> Result<WalletState, String> {
+    let trimmed = key_hex.trim();
+    if trimmed.is_empty() {
+        return Err("Empty private key".to_string());
+    }
+    if password.is_empty() {
+        return Err("Password is required for wallet encryption".to_string());
+    }
+
+    let signer = x402_wallet::WalletSigner::new(trimmed)?;
+    let address = signer.address_string();
+
+    let encrypted = wallet_crypto::encrypt_key(password, trimmed).await?;
+    storage_set(STORAGE_KEY, &encrypted);
+
+    Ok(WalletState {
+        connected: true,
+        address: Some(address),
+        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        mode: WalletMode::Embedded,
+        private_key: Some(trimmed.to_string()),
+    })
+}
+
+/// Import a private key as an embedded wallet (legacy unencrypted).
 pub fn import_embedded_wallet(key_hex: &str) -> Result<WalletState, String> {
     let trimmed = key_hex.trim();
     if trimmed.is_empty() {

@@ -32,6 +32,8 @@ pub const DEFAULT_TOKEN: Address = Address::new([
 /// **NOT A SECRET** — this key is publicly documented in Hardhat's source code.
 /// Any funds on this address (including testnet pathUSD) can be taken by anyone.
 /// Never use this key for real assets.
+#[cfg(feature = "demo")]
+#[deprecated(note = "Testnet only — never use for real assets")]
 pub const DEMO_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
@@ -280,8 +282,18 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "demo")]
+    #[allow(deprecated)]
     fn test_wallet_signer_from_key() {
         let w = WalletSigner::new(DEMO_PRIVATE_KEY).unwrap();
+        assert_ne!(w.address(), Address::ZERO);
+        assert_eq!(w.address_string().len(), 42); // 0x + 40 hex
+    }
+
+    #[test]
+    fn test_wallet_signer_from_random_key() {
+        let key = generate_random_key();
+        let w = WalletSigner::new(&key).unwrap();
         assert_ne!(w.address(), Address::ZERO);
         assert_eq!(w.address_string().len(), 42); // 0x + 40 hex
     }

@@ -5,7 +5,7 @@ info:
     API relay/proxy that adds x402 payment rails to any HTTP API.
 
     Users pay a platform fee to register endpoints, callers pay endpoint owners to access proxied content.
-  version: 0.2.1
+  version: 0.4.1
   contact:
     url: https://github.com/compusophy/tempo-x402
   license:

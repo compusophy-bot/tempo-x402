@@ -70,8 +70,43 @@ jobs:
           echo ""
           echo "All versions consistent: $CORE_VERSION"
 
+  # Security gate: must pass before building release artifacts
+  security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.21.0 --locked
+      - name: Dependency vulnerability scan
+        run: cargo audit
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.16.2 --locked
+      - name: Dependency policy check
+        run: cargo deny check advisories bans
+      - name: Security invariant tests
+        run: cargo test -p tempo-x402-security-audit
+      - name: Generate security report
+        run: |
+          echo "## Security Audit Report" > security-report.md
+          echo "**Version:** ${GITHUB_REF#refs/tags/}" >> security-report.md
+          echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> security-report.md
+          echo "" >> security-report.md
+          echo "### Dependency Audit" >> security-report.md
+          cargo audit 2>&1 | tail -5 >> security-report.md
+          echo "" >> security-report.md
+          echo "### Security Invariant Tests" >> security-report.md
+          cargo test -p tempo-x402-security-audit -- --format=terse 2>&1 | tail -20 >> security-report.md
+          echo "" >> security-report.md
+          echo "**Status: PASSED**" >> security-report.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-report
+          path: security-report.md
+
   build:
-    needs: [test, docs]
+    needs: [test, docs, security-gate]
     strategy:
       matrix:
         include:
@@ -108,6 +143,12 @@ jobs:
             fi
           done
 
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS-${{ matrix.target }}.txt
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binaries-${{ matrix.target }}
@@ -126,6 +167,12 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Merge checksums
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm -f SHA256SUMS-*.txt
 
       - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:

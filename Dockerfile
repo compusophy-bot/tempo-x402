@@ -40,4 +40,12 @@ ENV NONCE_DB_PATH=/data/x402-nonces.db
 
 EXPOSE 4023
 
+# Health check: verify the gateway is responsive
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -q -O /dev/null http://localhost:4023/health || exit 1
+
+# Note: For production deployments, consider using --read-only with Docker's
+# read-only root filesystem flag and mounting /data as the only writable volume:
+#   docker run --read-only --tmpfs /tmp -v gateway-data:/data x402-gateway
+
 ENTRYPOINT ["/entrypoint.sh"]

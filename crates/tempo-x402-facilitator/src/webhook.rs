@@ -36,14 +36,13 @@ fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
 }
 
 /// Validate that all webhook URLs use HTTPS and do not target private IPs.
-/// Should be called at startup.
-pub fn validate_webhook_urls(urls: &[String]) {
+/// Should be called at startup. Returns an error for any invalid URL.
+pub fn validate_webhook_urls(urls: &[String]) -> Result<(), String> {
     for url_str in urls {
         if !url_str.starts_with("https://") {
-            tracing::warn!(
-                url = %url_str,
-                "webhook URL does not use HTTPS — payloads will be sent in cleartext"
-            );
+            return Err(format!(
+                "webhook URL must use HTTPS: {url_str} — cleartext webhook delivery is not allowed"
+            ));
         }
 
         // Check for private/loopback IPs in webhook URLs
@@ -51,25 +50,24 @@ pub fn validate_webhook_urls(urls: &[String]) {
             match parsed.host() {
                 Some(url::Host::Ipv4(ip)) => {
                     if is_private_ipv4(&ip) {
-                        tracing::warn!(
-                            url = %url_str,
-                            "webhook URL targets a private/loopback IP — potential SSRF risk"
-                        );
+                        return Err(format!(
+                            "webhook URL targets a private/loopback IP: {url_str}"
+                        ));
                     }
                 }
                 Some(url::Host::Domain(domain)) => {
                     let d = domain.to_lowercase();
                     if d == "localhost" || d.ends_with(".local") || d.ends_with(".internal") {
-                        tracing::warn!(
-                            url = %url_str,
-                            "webhook URL targets localhost/local domain — potential SSRF risk"
-                        );
+                        return Err(format!(
+                            "webhook URL targets localhost/local domain: {url_str}"
+                        ));
                     }
                 }
                 _ => {}
             }
         }
     }
+    Ok(())
 }
 
 /// Resolve a webhook URL's hostname and validate the IP is not private.
@@ -168,10 +166,18 @@ pub fn webhook_client() -> reqwest::Client {
         .expect("failed to create webhook HTTP client")
 }
 
+/// Global semaphore to limit concurrent webhook deliveries.
+/// Prevents resource exhaustion from too many simultaneous webhook spawns.
+static WEBHOOK_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(50);
+
+/// Total timeout for a single webhook delivery task (including all retries).
+const WEBHOOK_TASK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Fire-and-forget POST to each webhook URL.
 /// If `hmac_secret` is provided, includes an `X-Webhook-Signature` HMAC header.
 /// Validates resolved IPs at delivery time to prevent DNS rebinding SSRF.
 /// Uses a no-redirect client to prevent redirect-based SSRF.
+/// Concurrency is limited to 50 simultaneous webhook deliveries.
 pub fn fire_webhooks(
     client: &reqwest::Client,
     urls: &[String],
@@ -193,6 +199,17 @@ pub fn fire_webhooks(
         let hmac_sig = hmac_secret.map(|secret| x402::hmac::compute_hmac(secret, &body));
 
         tokio::spawn(async move {
+            // Acquire semaphore permit to limit concurrent webhook deliveries
+            let _permit = match WEBHOOK_SEMAPHORE.acquire().await {
+                Ok(p) => p,
+                Err(_) => {
+                    tracing::error!(url = %url, "webhook semaphore closed");
+                    return;
+                }
+            };
+
+            // Wrap entire delivery in a timeout to prevent unbounded retries
+            let delivery = async {
             // Validate resolved IP at delivery time and pin it to prevent DNS rebinding.
             let pinned_url = match pin_webhook_url(&url).await {
                 Ok(u) => u,
@@ -256,6 +273,11 @@ pub fn fire_webhooks(
                 }
             }
             tracing::error!(url = %url, "webhook delivery failed after all retries");
+            }; // end async block
+
+            if tokio::time::timeout(WEBHOOK_TASK_TIMEOUT, delivery).await.is_err() {
+                tracing::error!(url = %url, "webhook delivery timed out after {:?}", WEBHOOK_TASK_TIMEOUT);
+            }
         });
     }
 }

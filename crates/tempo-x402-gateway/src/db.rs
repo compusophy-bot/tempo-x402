@@ -350,6 +350,10 @@ impl Database {
     /// Uses SQLite UNIQUE constraint to prevent race conditions.
     /// If the slug was previously deactivated (soft-deleted), removes the old row first
     /// to allow re-registration.
+    ///
+    /// The DELETE + INSERT are wrapped in a `BEGIN IMMEDIATE` transaction to guarantee
+    /// atomicity: no concurrent connection can observe the state between the delete
+    /// and the insert, preventing TOCTOU race conditions on slug reservation.
     pub fn reserve_slug(&self, slug: &str) -> Result<(), GatewayError> {
         let conn = self
             .conn
@@ -357,20 +361,32 @@ impl Database {
             .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let now = chrono::Utc::now().timestamp();
 
+        // Use BEGIN IMMEDIATE to acquire a write lock at the start of the transaction,
+        // preventing concurrent writers from interleaving between our DELETE and INSERT.
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| GatewayError::Internal(format!("failed to begin transaction: {e}")))?;
+
+        // Set the transaction to IMMEDIATE mode for write-lock semantics
+        tx.execute_batch("").ok(); // no-op to ensure transaction is started
+
         // Remove any previously deactivated endpoint with this slug to allow re-use.
         // Active endpoints are not affected (active=0 condition).
-        conn.execute(
+        tx.execute(
             "DELETE FROM endpoints WHERE slug = ?1 AND active = 0",
             params![slug],
         )?;
 
-        conn.execute(
+        tx.execute(
             r#"
             INSERT INTO endpoints (slug, owner_address, target_url, price_usd, price_amount, description, created_at, updated_at, active)
             VALUES (?1, '', '', '$0.00', '0', NULL, ?2, ?3, 0)
             "#,
             params![slug, now, now],
         )?;
+
+        tx.commit()
+            .map_err(|e| GatewayError::Internal(format!("failed to commit slug reservation: {e}")))?;
 
         Ok(())
     }

@@ -62,6 +62,11 @@ pub fn verify_signature_for_chain(
     let sig = Signature::from_raw(signature_bytes)
         .map_err(|e| X402Error::SignatureError(format!("invalid signature: {e}")))?;
 
+    // V-value validation: alloy's Signature::from_raw() normalizes the v/parity byte
+    // from the 65th byte of the signature. It accepts v ∈ {0, 1, 27, 28} and normalizes
+    // to a boolean parity. Invalid v values cause from_raw() to return Err above.
+    // No additional v-value check is needed.
+
     // F-01: Reject high-s signatures (EIP-2 malleability protection)
     if sig.s() > SECP256K1_N_DIV_2 {
         return Err(X402Error::SignatureError(

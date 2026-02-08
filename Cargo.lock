@@ -5173,6 +5173,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -5270,6 +5271,14 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "tempo-x402-security-audit"
+version = "0.4.1"
+dependencies = [
+ "regex",
+ "walkdir",
 ]
 
 [[package]]

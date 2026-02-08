@@ -64,15 +64,19 @@ impl ResponseError for GatewayError {
     fn error_response(&self) -> HttpResponse {
         match self {
             GatewayError::EndpointNotFound(slug) => {
+                tracing::debug!(slug = %slug, "endpoint not found");
                 HttpResponse::NotFound().json(serde_json::json!({
                     "error": "endpoint_not_found",
-                    "message": format!("Endpoint '{}' not found", slug)
+                    "message": "Endpoint not found"
                 }))
             }
-            GatewayError::SlugExists(slug) => HttpResponse::Conflict().json(serde_json::json!({
-                "error": "slug_exists",
-                "message": format!("Slug '{}' is already taken", slug)
-            })),
+            GatewayError::SlugExists(slug) => {
+                tracing::debug!(slug = %slug, "slug already exists");
+                HttpResponse::Conflict().json(serde_json::json!({
+                    "error": "slug_exists",
+                    "message": "Slug is already taken"
+                }))
+            }
             GatewayError::InvalidSlug(msg) => HttpResponse::BadRequest().json(serde_json::json!({
                 "error": "invalid_slug",
                 "message": msg

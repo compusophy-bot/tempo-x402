@@ -144,10 +144,14 @@ pub async fn verify_and_settle(
         .map_err(|e| GatewayError::PaymentFailed(format!("failed to read response: {}", e)))?;
 
     if !status.is_success() {
-        return Err(GatewayError::PaymentFailed(format!(
-            "facilitator returned {}: {}",
-            status, body
-        )));
+        tracing::error!(
+            status = %status,
+            body = %body,
+            "facilitator returned non-success response"
+        );
+        return Err(GatewayError::PaymentFailed(
+            "settlement failed".to_string(),
+        ));
     }
 
     let settle_response: SettleResponse = serde_json::from_str(&body)

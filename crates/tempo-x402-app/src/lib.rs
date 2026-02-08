@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 
 mod api;
 mod wallet;
+mod wallet_crypto;
 
 /// Payment requirements from 402 response
 #[derive(Clone, Debug, Serialize, Deserialize)]

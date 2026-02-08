@@ -1,0 +1,24 @@
+# cargo-deny configuration for tempo-x402
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Path to the advisory database
+db-path = "~/.cargo/advisory-db"
+# Deny any crate with a known vulnerability
+vulnerability = "deny"
+# Warn on unmaintained crates
+unmaintained = "warn"
+# Warn on crates that have been yanked
+yanked = "warn"
+
+[bans]
+# Warn when multiple versions of the same crate are pulled in
+multiple-versions = "warn"
+# Deny wildcard dependencies (e.g. version = "*")
+wildcards = "deny"
+
+[sources]
+# Deny crates from unknown registries
+unknown-registry = "deny"
+# Deny crates fetched from unknown git repositories
+unknown-git = "deny"

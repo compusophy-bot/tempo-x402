@@ -2,7 +2,7 @@
 # Bump version across ALL files at once
 # Usage: ./scripts/bump-version.sh 0.2.1
 
-set -e
+set -euo pipefail
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <new-version>"

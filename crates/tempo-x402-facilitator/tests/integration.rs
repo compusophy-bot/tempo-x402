@@ -6,8 +6,9 @@ use alloy::signers::local::PrivateKeySigner;
 use x402_facilitator::routes;
 use x402_facilitator::state::AppState;
 
-/// Build an AppState with a dummy wallet provider and configurable HMAC.
-fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
+/// Build an AppState with a dummy wallet provider and HMAC secret.
+/// HMAC is always required (no Option).
+fn make_state(hmac_secret: Vec<u8>) -> web::Data<AppState> {
     let signer = PrivateKeySigner::random();
     let facilitator_address = signer.address();
 
@@ -30,7 +31,7 @@ fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
 
 #[actix_rt::test]
 async fn test_supported_returns_scheme_and_network() {
-    let state = make_state(None);
+    let state = make_state(b"test-secret".to_vec());
     let app = test::init_service(App::new().app_data(state).service(routes::supported)).await;
 
     let req = test::TestRequest::get().uri("/supported").to_request();
@@ -44,7 +45,7 @@ async fn test_supported_returns_scheme_and_network() {
 
 #[actix_rt::test]
 async fn test_verify_and_settle_requires_hmac_when_configured() {
-    let state = make_state(Some(b"test-secret".to_vec()));
+    let state = make_state(b"test-secret".to_vec());
     let app = test::init_service(
         App::new()
             .app_data(state)
@@ -68,7 +69,7 @@ async fn test_verify_and_settle_requires_hmac_when_configured() {
 
 #[actix_rt::test]
 async fn test_verify_and_settle_rejects_bad_hmac() {
-    let state = make_state(Some(b"test-secret".to_vec()));
+    let state = make_state(b"test-secret".to_vec());
     let app = test::init_service(
         App::new()
             .app_data(state)
@@ -92,7 +93,7 @@ async fn test_verify_and_settle_rejects_bad_hmac() {
 
 #[actix_rt::test]
 async fn test_verify_and_settle_accepts_valid_hmac() {
-    let state = make_state(Some(b"test-secret".to_vec()));
+    let state = make_state(b"test-secret".to_vec());
     let app = test::init_service(
         App::new()
             .app_data(state)
@@ -118,8 +119,9 @@ async fn test_verify_and_settle_accepts_valid_hmac() {
 }
 
 #[actix_rt::test]
-async fn test_verify_and_settle_skips_hmac_when_no_secret() {
-    let state = make_state(None);
+async fn test_verify_and_settle_always_requires_hmac() {
+    // HMAC is always mandatory — even with a secret set, missing header = 401
+    let state = make_state(b"some-secret".to_vec());
     let app = test::init_service(
         App::new()
             .app_data(state)
@@ -128,7 +130,7 @@ async fn test_verify_and_settle_skips_hmac_when_no_secret() {
     )
     .await;
 
-    // No HMAC header, no secret configured -> should pass auth
+    // No HMAC header -> should be rejected with 401
     let req = test::TestRequest::post()
         .uri("/verify-and-settle")
         .set_payload("{}")
@@ -136,13 +138,15 @@ async fn test_verify_and_settle_skips_hmac_when_no_secret() {
         .to_request();
     let resp = test::call_service(&app, req).await;
 
-    // Should pass HMAC (skipped) but fail on body parse -> 400, not 401
-    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.status(), 401);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"], "authentication required");
 }
 
 #[actix_rt::test]
 async fn test_verify_and_settle_rejects_malformed_body() {
-    let state = make_state(None);
+    let secret = b"test-secret";
+    let state = make_state(secret.to_vec());
     let app = test::init_service(
         App::new()
             .app_data(state)
@@ -151,10 +155,14 @@ async fn test_verify_and_settle_rejects_malformed_body() {
     )
     .await;
 
+    let body_bytes = b"not valid json at all";
+    let sig = x402::hmac::compute_hmac(secret, body_bytes);
+
     let req = test::TestRequest::post()
         .uri("/verify-and-settle")
-        .set_payload("not valid json at all")
+        .set_payload(&body_bytes[..])
         .insert_header(("Content-Type", "application/json"))
+        .insert_header(("X-Facilitator-Auth", sig))
         .to_request();
     let resp = test::call_service(&app, req).await;
 
@@ -166,7 +174,7 @@ async fn test_verify_and_settle_rejects_malformed_body() {
 
 /// Build an AppState with separate metrics token.
 fn make_state_with_metrics_token(
-    hmac_secret: Option<Vec<u8>>,
+    hmac_secret: Vec<u8>,
     metrics_token: Option<Vec<u8>>,
 ) -> web::Data<AppState> {
     let signer = PrivateKeySigner::random();
@@ -193,7 +201,7 @@ fn make_state_with_metrics_token(
 async fn test_metrics_requires_separate_token() {
     // Configure HMAC secret AND a separate metrics token
     let state = make_state_with_metrics_token(
-        Some(b"hmac-secret".to_vec()),
+        b"hmac-secret".to_vec(),
         Some(b"metrics-token-123".to_vec()),
     );
 
@@ -223,13 +231,13 @@ async fn test_metrics_requires_separate_token() {
 }
 
 #[actix_rt::test]
-async fn test_metrics_public_when_no_token() {
-    // No metrics token configured -> public access
-    let state = make_state(Some(b"hmac-secret".to_vec()));
+async fn test_metrics_forbidden_when_no_token() {
+    // No metrics token configured -> 403 by default (requires X402_PUBLIC_METRICS=true)
+    let state = make_state(b"hmac-secret".to_vec());
     let app =
         test::init_service(App::new().app_data(state).service(routes::metrics_endpoint)).await;
 
     let req = test::TestRequest::get().uri("/metrics").to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 403);
 }

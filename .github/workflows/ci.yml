@@ -48,6 +48,49 @@ jobs:
       - run: cargo install cargo-audit --version 0.21.0 --locked
       - run: cargo audit
 
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      # Dependency policy check
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.16.2 --locked
+      - name: Check advisories
+        run: cargo deny check advisories
+      - name: Check bans
+        run: cargo deny check bans
+
+      # Security invariant tests
+      - name: Run security invariant tests
+        run: cargo test -p tempo-x402-security-audit
+
+      # Check for unsafe code
+      - name: Check for unsafe code
+        run: |
+          UNSAFE_FOUND=$(grep -rn "unsafe " crates/*/src/*.rs 2>/dev/null | grep -v "// SAFETY:" || true)
+          if [ -n "$UNSAFE_FOUND" ]; then
+            echo "::warning::Unsafe code detected — review required"
+            echo "$UNSAFE_FOUND"
+          fi
+
+      # Secret scanning
+      - name: Scan for hardcoded secrets
+        run: |
+          FOUND=$(grep -rn '0x[a-fA-F0-9]\{64\}' crates/*/src/*.rs 2>/dev/null \
+            | grep -v 'DEMO_PRIVATE_KEY' \
+            | grep -v 'SECP256K1_N_DIV_2' \
+            | grep -v '#\[cfg(test)\]' \
+            | grep -v '// test' \
+            | grep -v 'mod tests' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Potential hardcoded secret detected"
+            echo "$FOUND"
+            exit 1
+          fi
+
   docs-freshness:
     runs-on: ubuntu-latest
     steps:

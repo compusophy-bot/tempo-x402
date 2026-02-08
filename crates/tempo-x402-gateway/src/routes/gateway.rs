@@ -28,6 +28,14 @@ fn sanitize_query(query: &str) -> Result<String, GatewayError> {
         ));
     }
 
+    // Reject path traversal in query parameters (both decoded and percent-encoded)
+    let decoded = urlencoding::decode(sanitized).unwrap_or(std::borrow::Cow::Borrowed(sanitized));
+    if decoded.contains("..") {
+        return Err(GatewayError::ProxyError(
+            "query string must not contain path traversal sequences".to_string(),
+        ));
+    }
+
     Ok(sanitized.to_string())
 }
 

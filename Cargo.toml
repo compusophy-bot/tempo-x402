@@ -6,6 +6,7 @@ members = [
     "crates/tempo-x402-client",
     "crates/tempo-x402-facilitator",
     "crates/tempo-x402-gateway",
+    "crates/tempo-x402-security-audit",
     "crates/tempo-x402-server",
     "crates/tempo-x402-wallet",
 ]
@@ -35,6 +36,7 @@ lazy_static = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 hmac = "0.12"
 sha2 = "0.10"
+subtle = "2"
 chrono = "0.4"
 bytes = "1"
 url = "2"

@@ -408,9 +408,16 @@ where
         // 6. Check on-chain balance
         let balance = tip20::balance_of(&self.provider, p.token, p.from).await?;
         if balance < value {
+            tracing::info!(
+                payer = %p.from,
+                balance = %balance,
+                required = %value,
+                "payment rejected: insufficient balance"
+            );
             return Ok(VerifyResponse {
                 is_valid: false,
-                invalid_reason: Some("Insufficient balance".to_string()),
+                // Generic message — balance details are in server logs only
+                invalid_reason: Some("Payment cannot be completed".to_string()),
                 payer: Some(p.from),
             });
         }
@@ -419,9 +426,16 @@ where
         let allowance =
             tip20::allowance(&self.provider, p.token, p.from, self.facilitator_address).await?;
         if allowance < value {
+            tracing::info!(
+                payer = %p.from,
+                allowance = %allowance,
+                required = %value,
+                "payment rejected: insufficient allowance"
+            );
             return Ok(VerifyResponse {
                 is_valid: false,
-                invalid_reason: Some("Insufficient allowance -- run approve first".to_string()),
+                // Generic message — allowance details are in server logs only
+                invalid_reason: Some("Payment cannot be completed".to_string()),
                 payer: Some(p.from),
             });
         }

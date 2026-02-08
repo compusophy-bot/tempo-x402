@@ -11,17 +11,17 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
         "version": env!("CARGO_PKG_VERSION"),
     });
 
-    // If facilitator is embedded, include its health
+    // If facilitator is embedded, include its health status
+    // Block numbers and error details are not exposed to unauthenticated callers
     if let Some(ref fac) = state.facilitator {
         match fac.facilitator.health_check().await {
-            Ok(block) => {
+            Ok(_block) => {
                 response["facilitator_status"] = serde_json::json!("ok");
-                response["latestBlock"] = serde_json::json!(block.to_string());
             }
-            Err(_) => {
+            Err(e) => {
+                tracing::error!(error = %e, "facilitator health check failed");
                 response["status"] = serde_json::json!("degraded");
                 response["facilitator_status"] = serde_json::json!("degraded");
-                response["facilitator_error"] = serde_json::json!("RPC unreachable");
             }
         }
     }
@@ -33,36 +33,42 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison that does not leak input lengths.
-/// Both inputs are hashed to fixed-length digests before comparison.
+/// Constant-time byte comparison — delegates to the shared implementation
+/// in x402::security which uses the `subtle` crate.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    use sha2::{Digest, Sha256};
-    let ha = Sha256::digest(a);
-    let hb = Sha256::digest(b);
-    let mut result = 0u8;
-    for (x, y) in ha.iter().zip(hb.iter()) {
-        result |= x ^ y;
-    }
-    result == 0
+    x402::security::constant_time_eq(a, b)
 }
 
-/// GET /metrics - Prometheus metrics endpoint (optionally auth-gated)
+/// GET /metrics - Prometheus metrics endpoint (auth-gated by default)
 pub async fn metrics(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    // Check bearer token if METRICS_TOKEN is configured
-    if let Some(ref expected_token) = state.config.metrics_token {
-        let authorized = req
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|token| constant_time_eq(token.as_bytes(), expected_token.as_bytes()))
-            .unwrap_or(false);
+    match &state.config.metrics_token {
+        Some(expected_token) => {
+            let authorized = req
+                .headers()
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|token| constant_time_eq(token.as_bytes(), expected_token.as_bytes()))
+                .unwrap_or(false);
 
-        if !authorized {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "unauthorized",
-                "message": "Valid Bearer token required for /metrics"
-            }));
+            if !authorized {
+                return HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "unauthorized",
+                    "message": "Valid Bearer token required for /metrics"
+                }));
+            }
+        }
+        None => {
+            // No token configured — metrics are protected by default.
+            let public_metrics = std::env::var("X402_PUBLIC_METRICS")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
+            if !public_metrics {
+                return HttpResponse::Forbidden().json(serde_json::json!({
+                    "error": "forbidden",
+                    "message": "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics"
+                }));
+            }
         }
     }
 

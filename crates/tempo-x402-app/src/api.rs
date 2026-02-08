@@ -101,6 +101,7 @@ pub async fn make_paid_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
+        .as_ref()
         .and_then(|s| {
             // Handle HMAC-signed format: "base64payload.hmac_hex"
             let payload_part = s.split('.').next().unwrap_or(s);
@@ -168,6 +169,7 @@ pub async fn make_paid_endpoint_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
+        .as_ref()
         .and_then(|s| {
             let payload_part = s.split('.').next().unwrap_or(s);
             base64::engine::general_purpose::STANDARD
@@ -389,6 +391,7 @@ pub async fn call_endpoint(
     let settle = resp
         .headers()
         .get("payment-response")
+        .as_ref()
         .and_then(|s| {
             let payload_part = s.split('.').next().unwrap_or(s);
             base64::engine::general_purpose::STANDARD

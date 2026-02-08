@@ -24,9 +24,21 @@ impl PaymentGateConfig {
             .filter(|s| !s.is_empty())
             .map(|s| s.into_bytes());
 
-        if hmac_secret.is_none() {
+        let insecure_no_hmac = std::env::var("X402_INSECURE_NO_HMAC")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        if hmac_secret.is_none() && !insecure_no_hmac {
+            tracing::error!(
+                "FACILITATOR_SHARED_SECRET is required. \
+                 Set it to a secure random value (e.g. `openssl rand -hex 32`). \
+                 For local development only, set X402_INSECURE_NO_HMAC=true to skip."
+            );
+            std::process::exit(1);
+        } else if hmac_secret.is_none() {
             tracing::warn!(
-                "FACILITATOR_SHARED_SECRET not set — facilitator requests will be unauthenticated"
+                "⚠️  X402_INSECURE_NO_HMAC=true — facilitator requests will be UNAUTHENTICATED. \
+                 DO NOT use this in production!"
             );
         }
 

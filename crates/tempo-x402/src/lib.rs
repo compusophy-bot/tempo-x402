@@ -28,6 +28,7 @@ pub mod hmac;
 pub mod payment;
 pub mod response;
 pub mod scheme;
+pub mod security;
 
 // Tempo blockchain implementation
 pub mod eip712;

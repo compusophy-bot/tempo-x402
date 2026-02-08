@@ -98,7 +98,10 @@ async fn main() -> std::io::Result<()> {
 
         if !config.webhook_urls.is_empty() {
             tracing::info!("Webhook URLs configured: {}", config.webhook_urls.len());
-            x402_facilitator::webhook::validate_webhook_urls(&config.webhook_urls);
+            if let Err(e) = x402_facilitator::webhook::validate_webhook_urls(&config.webhook_urls) {
+                tracing::error!("Invalid webhook configuration: {e}");
+                std::process::exit(1);
+            }
         }
 
         // Derive domain-separated webhook HMAC key
@@ -109,7 +112,11 @@ async fn main() -> std::io::Result<()> {
 
         Some(Arc::new(FacilitatorState {
             facilitator,
-            hmac_secret: config.hmac_secret.clone(),
+            // HMAC is guaranteed to be set when FACILITATOR_PRIVATE_KEY is configured
+            // (enforced at lines 54-60 above).
+            hmac_secret: config.hmac_secret.clone().expect(
+                "HMAC secret must be set when embedded facilitator is enabled",
+            ),
             chain_config: x402::ChainConfig::default(),
             webhook_urls: config.webhook_urls.clone(),
             http_client: x402_facilitator::webhook::webhook_client(),
@@ -159,7 +166,15 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::default()
             .allowed_origin_fn(move |origin, _req_head| {
                 let origin_str = origin.to_str().unwrap_or("");
-                allowed.iter().any(|a| a == "*" || a == origin_str)
+                allowed.iter().any(|a| {
+                    if a == "*" {
+                        // In dev mode (X402_INSECURE_NO_HMAC), wildcard is permitted
+                        // In production, wildcard CORS is rejected at config validation
+                        true
+                    } else {
+                        a == origin_str
+                    }
+                })
             })
             .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
             .allowed_headers(vec![

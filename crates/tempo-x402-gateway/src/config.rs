@@ -167,6 +167,10 @@ impl GatewayConfig {
         // Optional: metrics token
         let metrics_token = env::var("METRICS_TOKEN").ok().filter(|s| !s.is_empty());
 
+        let insecure_no_hmac = env::var("X402_INSECURE_NO_HMAC")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
         if let Some(ref secret) = hmac_secret {
             if secret.len() < 32 {
                 tracing::warn!(
@@ -175,8 +179,29 @@ impl GatewayConfig {
                     secret.len()
                 );
             }
+        } else if insecure_no_hmac {
+            tracing::warn!(
+                "⚠️  X402_INSECURE_NO_HMAC=true — facilitator requests will be UNAUTHENTICATED. \
+                 DO NOT use this in production!"
+            );
         } else {
-            tracing::warn!("FACILITATOR_SHARED_SECRET not set — requests to facilitator will be unauthenticated");
+            tracing::error!(
+                "FACILITATOR_SHARED_SECRET is required. \
+                 Set it to a secure random value (e.g. `openssl rand -hex 32`). \
+                 For local development only, set X402_INSECURE_NO_HMAC=true to skip."
+            );
+            return Err(ConfigError::MissingRequired("FACILITATOR_SHARED_SECRET"));
+        }
+
+        // Reject wildcard CORS in production mode
+        if allowed_origins.contains(&"*".to_string()) && !insecure_no_hmac {
+            tracing::error!(
+                "Wildcard CORS origin '*' is not allowed for payment endpoints in production. \
+                 Specify explicit origins in ALLOWED_ORIGINS, or set X402_INSECURE_NO_HMAC=true for dev."
+            );
+            return Err(ConfigError::InvalidUrl(
+                "wildcard CORS origin '*' is not allowed in production".to_string(),
+            ));
         }
 
         if metrics_token.is_none() {

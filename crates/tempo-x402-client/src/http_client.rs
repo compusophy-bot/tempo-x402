@@ -105,7 +105,9 @@ impl<S: SchemeClient> X402Client<S> {
             .map_err(|e| X402Error::HttpError(format!("paid request failed: {e}")))?;
 
         // Extract settlement info from headers.
-        // Handle HMAC-signed format: "base64payload.hmac_hex"
+        // Format: "base64payload" or "base64payload.hmac_hex" (HMAC-signed).
+        // Only base64-encoded JSON is accepted — raw JSON fallback has been removed
+        // to prevent ambiguity and ensure consistent encoding.
         let settle = resp
             .headers()
             .get("payment-response")
@@ -117,8 +119,6 @@ impl<S: SchemeClient> X402Client<S> {
                     .decode(payload_part)
                     .ok()
                     .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok())
-                    // Fall back to plain JSON
-                    .or_else(|| serde_json::from_str::<SettleResponse>(s).ok())
             });
 
         Ok((resp, settle))

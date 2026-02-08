@@ -2,7 +2,7 @@
 # Sync version numbers across all docs and Cargo.toml files
 # Run this before releases or let CI catch drift
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"

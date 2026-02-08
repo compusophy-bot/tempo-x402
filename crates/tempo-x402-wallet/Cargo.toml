@@ -9,6 +9,10 @@ repository = "https://github.com/compusophy/tempo-x402"
 [lib]
 name = "x402_wallet"
 
+[features]
+default = []
+demo = []
+
 [dependencies]
 alloy = { version = "1", default-features = false, features = [
     "sol-types", "signers", "signer-local"

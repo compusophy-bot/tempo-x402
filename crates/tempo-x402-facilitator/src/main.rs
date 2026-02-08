@@ -91,19 +91,30 @@ async fn main() -> std::io::Result<()> {
     // Start background nonce cleanup
     facilitator.start_nonce_cleanup();
 
-    let hmac_secret = std::env::var("FACILITATOR_SHARED_SECRET")
+    let hmac_secret: Vec<u8> = match std::env::var("FACILITATOR_SHARED_SECRET")
         .ok()
         .filter(|s| !s.is_empty())
-        .map(|s| s.into_bytes());
-
-    if hmac_secret.is_none() {
-        tracing::error!(
-            "FACILITATOR_SHARED_SECRET is required. \
-             Set it to a secure random value (e.g. `openssl rand -hex 32`). \
-             For local development, any non-empty value will work."
-        );
-        std::process::exit(1);
-    }
+    {
+        Some(s) => {
+            let bytes = s.into_bytes();
+            if bytes.len() < 32 {
+                tracing::warn!(
+                    "FACILITATOR_SHARED_SECRET is only {} bytes (minimum 32 recommended) — \
+                     use `openssl rand -hex 32` to generate a secure secret",
+                    bytes.len()
+                );
+            }
+            bytes
+        }
+        None => {
+            tracing::error!(
+                "FACILITATOR_SHARED_SECRET is required. \
+                 Set it to a secure random value (e.g. `openssl rand -hex 32`). \
+                 For local development, any non-empty value will work."
+            );
+            std::process::exit(1);
+        }
+    };
 
     let webhook_urls: Vec<String> = std::env::var("WEBHOOK_URLS")
         .ok()
@@ -117,7 +128,10 @@ async fn main() -> std::io::Result<()> {
 
     if !webhook_urls.is_empty() {
         tracing::info!("Webhook URLs configured: {}", webhook_urls.len());
-        x402_facilitator::webhook::validate_webhook_urls(&webhook_urls);
+        if let Err(e) = x402_facilitator::webhook::validate_webhook_urls(&webhook_urls) {
+            tracing::error!("Invalid webhook configuration: {e}");
+            std::process::exit(1);
+        }
     }
 
     // Separate metrics token (falls back to HMAC secret for backward compat)
@@ -131,9 +145,9 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Derive a domain-separated webhook HMAC key from the shared secret
-    let webhook_hmac_key = hmac_secret
-        .as_ref()
-        .map(|secret| x402::hmac::compute_hmac(secret, b"x402-webhook-hmac").into_bytes());
+    let webhook_hmac_key = Some(
+        x402::hmac::compute_hmac(&hmac_secret, b"x402-webhook-hmac").into_bytes(),
+    );
 
     let state = web::Data::new(AppState {
         facilitator,
