@@ -140,22 +140,27 @@ fn WalletButtons(
 
     let create_wallet = move |_| {
         set_funding.set(true);
-        match wallet::create_embedded_wallet() {
-            Ok(state) => {
+        match wallet::load_or_create_embedded_wallet() {
+            Ok((state, is_new)) => {
                 let address = state.address.clone().unwrap_or_default();
                 set_wallet.set(state);
-                // Fund the new wallet
-                spawn_local(async move {
-                    match wallet::fund_address(&address).await {
-                        Ok(_) => {
-                            web_sys::console::log_1(&format!("Funded wallet: {}", address).into());
+                if is_new {
+                    // Only fund brand-new wallets
+                    spawn_local(async move {
+                        match wallet::fund_address(&address).await {
+                            Ok(_) => {
+                                web_sys::console::log_1(&format!("Funded new wallet: {}", address).into());
+                            }
+                            Err(e) => {
+                                web_sys::console::error_1(&format!("Funding failed: {}", e).into());
+                            }
                         }
-                        Err(e) => {
-                            web_sys::console::error_1(&format!("Funding failed: {}", e).into());
-                        }
-                    }
+                        set_funding.set(false);
+                    });
+                } else {
+                    web_sys::console::log_1(&format!("Restored wallet: {}", address).into());
                     set_funding.set(false);
-                });
+                }
             }
             Err(e) => {
                 web_sys::console::error_1(&format!("Create wallet error: {}", e).into());
@@ -165,6 +170,10 @@ fn WalletButtons(
     };
 
     let disconnect = move |_| {
+        // Clear persisted embedded wallet on disconnect
+        if wallet.get().mode == WalletMode::Embedded {
+            wallet::clear_embedded_wallet();
+        }
         set_wallet.set(WalletState::default());
     };
 
@@ -184,7 +193,7 @@ fn WalletButtons(
                         on:click=create_wallet
                         disabled=move || funding.get()
                     >
-                        {move || if funding.get() { "Creating..." } else { "Create Wallet" }}
+                        {move || if funding.get() { "Creating..." } else { "Embedded Wallet" }}
                     </button>
                 </div>
             }

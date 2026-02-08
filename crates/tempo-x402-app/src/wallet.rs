@@ -1,4 +1,8 @@
 //! Wallet connection utilities supporting MetaMask, demo key, and embedded wallets.
+//!
+//! Embedded wallets are persisted to localStorage so the same keypair survives
+//! page refreshes. The key is stored raw for now (testnet only). Production
+//! would encrypt with a user-chosen password or WebAuthn-derived key.
 
 #![allow(dead_code, deprecated)]
 
@@ -6,6 +10,8 @@ use crate::WalletState;
 use wasm_bindgen::prelude::*;
 
 pub use crate::WalletMode;
+
+const STORAGE_KEY: &str = "x402_embedded_wallet";
 
 #[wasm_bindgen]
 extern "C" {
@@ -15,6 +21,30 @@ extern "C" {
     #[wasm_bindgen(catch, js_namespace = ["window", "ethereum"], js_name = request)]
     async fn ethereum_request(args: &JsValue) -> Result<JsValue, JsValue>;
 }
+
+// --- localStorage helpers ---
+
+fn local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()?.local_storage().ok()?
+}
+
+fn storage_get(key: &str) -> Option<String> {
+    local_storage()?.get_item(key).ok()?
+}
+
+fn storage_set(key: &str, value: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.set_item(key, value);
+    }
+}
+
+fn storage_remove(key: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.remove_item(key);
+    }
+}
+
+// --- Wallet operations ---
 
 /// Connect to browser wallet (MetaMask, etc.)
 pub async fn connect_wallet() -> Result<WalletState, String> {
@@ -69,26 +99,52 @@ pub fn use_demo_key() -> Result<WalletState, String> {
     })
 }
 
-/// Create a new embedded wallet with a random keypair.
+/// Load or create an embedded wallet.
 ///
-/// After creation, the wallet needs to be funded via `tempo_fundAddress` RPC
-/// and given facilitator token allowance.
-pub fn create_embedded_wallet() -> Result<WalletState, String> {
+/// If a key exists in localStorage, restores that wallet.
+/// Otherwise generates a new random keypair and persists it.
+/// Returns `(wallet_state, is_new)` — caller should fund new wallets.
+pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
+    // Try to restore existing wallet
+    if let Some(key_hex) = storage_get(STORAGE_KEY) {
+        let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+        return Ok((
+            WalletState {
+                connected: true,
+                address: Some(signer.address_string()),
+                chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+                mode: WalletMode::Embedded,
+                private_key: Some(key_hex),
+            },
+            false,
+        ));
+    }
+
+    // Generate new wallet and persist
     let key_hex = x402_wallet::generate_random_key();
     let signer = x402_wallet::WalletSigner::new(&key_hex)?;
     let address = signer.address_string();
 
-    Ok(WalletState {
-        connected: true,
-        address: Some(address),
-        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
-        mode: WalletMode::Embedded,
-        private_key: Some(key_hex),
-    })
+    storage_set(STORAGE_KEY, &key_hex);
+
+    Ok((
+        WalletState {
+            connected: true,
+            address: Some(address),
+            chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+            mode: WalletMode::Embedded,
+            private_key: Some(key_hex),
+        },
+        true,
+    ))
+}
+
+/// Clear the persisted embedded wallet from localStorage.
+pub fn clear_embedded_wallet() {
+    storage_remove(STORAGE_KEY);
 }
 
 /// Fund an address via the Tempo `tempo_fundAddress` RPC method.
-/// This is a WASM-compatible fetch call.
 pub async fn fund_address(address: &str) -> Result<(), String> {
     let body = serde_json::json!({
         "jsonrpc": "2.0",
@@ -151,11 +207,4 @@ pub async fn sign_typed_data(
         .ok_or("Invalid signature")?;
 
     Ok(signature)
-}
-
-/// Simple hex encoding (no external dep needed)
-mod hex {
-    pub fn encode(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{:02x}", b)).collect()
-    }
 }
