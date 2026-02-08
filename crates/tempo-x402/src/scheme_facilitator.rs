@@ -123,12 +123,23 @@ impl<P> TempoSchemeFacilitator<P> {
             .map_err(|e| X402Error::ChainError(format!("health check failed: {e}")))
     }
 
+    /// Maximum number of concurrent payer locks to prevent memory exhaustion.
+    const MAX_PAYER_LOCKS: usize = 100_000;
+
     /// Get or create a per-payer mutex for atomic operations.
-    fn payer_lock(&self, payer: Address) -> Arc<Mutex<()>> {
-        self.payer_locks
+    fn payer_lock(&self, payer: Address) -> Result<Arc<Mutex<()>>, X402Error> {
+        // Prevent unbounded growth of the lock map
+        if self.payer_locks.len() >= Self::MAX_PAYER_LOCKS && !self.payer_locks.contains_key(&payer)
+        {
+            return Err(X402Error::ChainError(
+                "too many concurrent payers — try again later".to_string(),
+            ));
+        }
+        Ok(self
+            .payer_locks
             .entry(payer)
             .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone()
+            .clone())
     }
 }
 
@@ -192,7 +203,7 @@ where
                 payer: None,
             });
         }
-        if now > p.valid_before {
+        if now >= p.valid_before {
             return Ok(VerifyResponse {
                 is_valid: false,
                 invalid_reason: Some("Authorization expired".to_string()),
@@ -213,7 +224,30 @@ where
             });
         }
 
-        // 3. Verify EIP-712 signature
+        // 3. Reject zero addresses (cheap checks before expensive ecrecover)
+        if p.from == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Payer address cannot be zero".to_string()),
+                payer: Some(p.from),
+            });
+        }
+        if p.token == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Token address is zero".to_string()),
+                payer: None,
+            });
+        }
+        if p.to == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Recipient address is zero".to_string()),
+                payer: None,
+            });
+        }
+
+        // 4. Verify EIP-712 signature
         let value = p
             .value
             .parse::<U256>()
@@ -237,29 +271,6 @@ where
             return Ok(VerifyResponse {
                 is_valid: false,
                 invalid_reason: Some("Invalid signature".to_string()),
-                payer: None,
-            });
-        }
-
-        // 4. Reject zero addresses
-        if p.from == Address::ZERO {
-            return Ok(VerifyResponse {
-                is_valid: false,
-                invalid_reason: Some("Payer address cannot be zero".to_string()),
-                payer: Some(p.from),
-            });
-        }
-        if p.token == Address::ZERO {
-            return Ok(VerifyResponse {
-                is_valid: false,
-                invalid_reason: Some("Token address is zero".to_string()),
-                payer: None,
-            });
-        }
-        if p.to == Address::ZERO {
-            return Ok(VerifyResponse {
-                is_valid: false,
-                invalid_reason: Some("Recipient address is zero".to_string()),
                 payer: None,
             });
         }
@@ -352,7 +363,7 @@ where
         let p = &payload.payload;
 
         // Acquire per-payer lock to prevent TOCTOU
-        let lock = self.payer_lock(p.from);
+        let lock = self.payer_lock(p.from)?;
         let _guard = lock.lock().await;
 
         // Re-verify before settling (under the lock)

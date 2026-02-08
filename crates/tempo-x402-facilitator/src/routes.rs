@@ -68,13 +68,36 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
+/// Constant-time byte comparison to prevent timing side-channel attacks.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut result = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        result |= x ^ y;
+    }
+    result == 0
+}
+
 #[get("/metrics")]
 pub async fn metrics_endpoint(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    // Require HMAC authentication for metrics when a secret is configured
-    if state.hmac_secret.is_some() {
-        // Use the HMAC secret as a bearer token for metrics access
-        if let Err(resp) = validate_hmac(&req, b"metrics", &state) {
-            return resp;
+    // Require bearer token authentication for metrics when HMAC secret is configured.
+    // Uses the HMAC secret as a bearer token (constant-time comparison).
+    if let Some(ref secret) = state.hmac_secret {
+        let authorized = req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|token| constant_time_eq(token.as_bytes(), secret))
+            .unwrap_or(false);
+
+        if !authorized {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": "Valid Bearer token required for /metrics"
+            }));
         }
     }
     HttpResponse::Ok()
@@ -88,57 +111,6 @@ pub async fn supported(state: web::Data<AppState>) -> HttpResponse {
         "schemes": [&state.chain_config.scheme_name],
         "networks": [&state.chain_config.network],
     }))
-}
-
-#[post("/verify")]
-pub async fn verify(
-    req: HttpRequest,
-    state: web::Data<AppState>,
-    body: web::Bytes,
-) -> HttpResponse {
-    if let Err(resp) = validate_hmac(&req, &body, &state) {
-        return resp;
-    }
-
-    let parsed: PaymentRequest = match serde_json::from_slice(&body) {
-        Ok(p) => p,
-        Err(_) => {
-            return HttpResponse::BadRequest().json(serde_json::json!({
-                "isValid": false,
-                "invalidReason": "invalid request body"
-            }));
-        }
-    };
-
-    match state
-        .facilitator
-        .verify(&parsed.payment_payload, &parsed.payment_requirements)
-        .await
-    {
-        Ok(result) => {
-            if result.is_valid {
-                metrics::VERIFY_REQUESTS.with_label_values(&["valid"]).inc();
-            } else {
-                metrics::VERIFY_REQUESTS
-                    .with_label_values(&["invalid"])
-                    .inc();
-                tracing::info!(
-                    payer = ?result.payer,
-                    reason = result.invalid_reason.as_deref().unwrap_or("unknown"),
-                    "verification rejected"
-                );
-            }
-            HttpResponse::Ok().json(result)
-        }
-        Err(e) => {
-            metrics::VERIFY_REQUESTS.with_label_values(&["error"]).inc();
-            tracing::error!(error = %e, "verification internal error");
-            HttpResponse::InternalServerError().json(serde_json::json!({
-                "isValid": false,
-                "invalidReason": "verification failed",
-            }))
-        }
-    }
 }
 
 #[post("/verify-and-settle")]

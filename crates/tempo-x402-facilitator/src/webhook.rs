@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -9,6 +10,29 @@ pub struct SettlementWebhook {
     pub transaction: Option<String>,
     pub network: String,
     pub timestamp: u64,
+}
+
+/// Check if an IPv4 address is private/loopback/non-routable.
+fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
+    ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_unspecified()
+        || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64)
+}
+
+/// Check if an IPv6 address is private/loopback/non-routable.
+fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
+    ip.is_loopback() || ip.is_unspecified() || {
+        let segments = ip.segments();
+        (segments[0] & 0xFE00) == 0xFC00
+            || (segments[0] & 0xFFC0) == 0xFE80
+            || match ip.to_ipv4_mapped() {
+                Some(v4) => is_private_ipv4(&v4),
+                None => false,
+            }
+    }
 }
 
 /// Validate that all webhook URLs use HTTPS and do not target private IPs.
@@ -26,11 +50,7 @@ pub fn validate_webhook_urls(urls: &[String]) {
         if let Ok(parsed) = url::Url::parse(url_str) {
             match parsed.host() {
                 Some(url::Host::Ipv4(ip)) => {
-                    if ip.is_loopback()
-                        || ip.is_private()
-                        || ip.is_link_local()
-                        || ip.is_unspecified()
-                    {
+                    if is_private_ipv4(&ip) {
                         tracing::warn!(
                             url = %url_str,
                             "webhook URL targets a private/loopback IP — potential SSRF risk"
@@ -52,8 +72,70 @@ pub fn validate_webhook_urls(urls: &[String]) {
     }
 }
 
+/// Resolve a webhook URL's hostname and validate the IP is not private.
+/// Returns Ok(()) if safe to connect, Err with reason if not.
+async fn validate_webhook_ip(url_str: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url_str).map_err(|e| format!("invalid URL: {e}"))?;
+    let host = match parsed.host_str() {
+        Some(h) => h.to_string(),
+        None => return Err("URL has no host".to_string()),
+    };
+
+    // Direct IP check
+    if let Ok(ip) = host.parse::<Ipv4Addr>() {
+        if is_private_ipv4(&ip) {
+            return Err("resolves to private IP".to_string());
+        }
+        return Ok(());
+    }
+    if let Ok(ip) = host.parse::<Ipv6Addr>() {
+        if is_private_ipv6(&ip) {
+            return Err("resolves to private IP".to_string());
+        }
+        return Ok(());
+    }
+
+    // DNS resolution
+    let lookup = format!("{}:{}", host, parsed.port().unwrap_or(443));
+    let addrs: Vec<_> = tokio::net::lookup_host(&lookup)
+        .await
+        .map_err(|e| format!("DNS resolution failed: {e}"))?
+        .collect();
+
+    for addr in &addrs {
+        match addr.ip() {
+            std::net::IpAddr::V4(ip) => {
+                if is_private_ipv4(&ip) {
+                    return Err(format!("resolves to private IP: {ip}"));
+                }
+            }
+            std::net::IpAddr::V6(ip) => {
+                if is_private_ipv6(&ip) {
+                    return Err(format!("resolves to private IP: {ip}"));
+                }
+            }
+        }
+    }
+
+    if addrs.is_empty() {
+        return Err("DNS returned no addresses".to_string());
+    }
+    Ok(())
+}
+
+/// Create a webhook-specific HTTP client with redirects disabled.
+pub fn webhook_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("failed to create webhook HTTP client")
+}
+
 /// Fire-and-forget POST to each webhook URL.
 /// If `hmac_secret` is provided, includes an `X-Webhook-Signature` HMAC header.
+/// Validates resolved IPs at delivery time to prevent DNS rebinding SSRF.
+/// Uses a no-redirect client to prevent redirect-based SSRF.
 pub fn fire_webhooks(
     client: &reqwest::Client,
     urls: &[String],
@@ -75,6 +157,16 @@ pub fn fire_webhooks(
         let hmac_sig = hmac_secret.map(|secret| x402::hmac::compute_hmac(secret, &body));
 
         tokio::spawn(async move {
+            // Validate resolved IP at delivery time (prevents DNS rebinding)
+            if let Err(reason) = validate_webhook_ip(&url).await {
+                tracing::warn!(
+                    url = %url,
+                    reason = %reason,
+                    "webhook delivery blocked — target resolves to unsafe IP"
+                );
+                return;
+            }
+
             let mut req = client
                 .post(&url)
                 .header("content-type", "application/json")

@@ -43,6 +43,13 @@ pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
         ));
     }
 
+    // Reject URLs with userinfo (user:password@host) to prevent credential leakage
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(GatewayError::InvalidUrl(
+            "target URL must not contain userinfo credentials".to_string(),
+        ));
+    }
+
     // Prevent SSRF: validate the host is not a private/loopback address
     match parsed.host() {
         Some(url::Host::Ipv4(ip)) => {
@@ -170,5 +177,8 @@ mod tests {
         assert!(validate_target_url("https://localhost").is_err());
         assert!(validate_target_url("https://127.0.0.1").is_err());
         assert!(validate_target_url("https://192.168.1.1").is_err());
+        // Reject URLs with userinfo
+        assert!(validate_target_url("https://user:pass@api.example.com").is_err());
+        assert!(validate_target_url("https://token@api.example.com").is_err());
     }
 }

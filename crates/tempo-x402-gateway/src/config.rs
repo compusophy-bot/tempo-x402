@@ -161,7 +161,15 @@ impl GatewayConfig {
         // Optional: metrics token
         let metrics_token = env::var("METRICS_TOKEN").ok().filter(|s| !s.is_empty());
 
-        if hmac_secret.is_none() {
+        if let Some(ref secret) = hmac_secret {
+            if secret.len() < 32 {
+                tracing::warn!(
+                    "FACILITATOR_SHARED_SECRET is too short ({} bytes, minimum 32) — \
+                     use `openssl rand -hex 32` to generate a secure secret",
+                    secret.len()
+                );
+            }
+        } else {
             tracing::warn!("FACILITATOR_SHARED_SECRET not set — requests to facilitator will be unauthenticated");
         }
 

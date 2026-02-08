@@ -48,11 +48,16 @@ pub async fn transfer_from<P: Provider>(
     value: U256,
 ) -> Result<alloy::primitives::TxHash, X402Error> {
     let contract = TIP20::new(token, provider);
-    let pending = contract
-        .transferFrom(from, to, value)
-        .send()
-        .await
-        .map_err(|e| X402Error::ChainError(format!("transferFrom send failed: {e}")))?;
+    // Timeout on send() to prevent indefinite hang if the RPC is unresponsive.
+    // This holds the per-payer lock in the caller, so a hang here blocks all
+    // settlement for that payer.
+    let pending = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        contract.transferFrom(from, to, value).send(),
+    )
+    .await
+    .map_err(|_| X402Error::ChainError("transferFrom send timed out after 30s".to_string()))?
+    .map_err(|e| X402Error::ChainError(format!("transferFrom send failed: {e}")))?;
 
     let receipt = tokio::time::timeout(std::time::Duration::from_secs(60), pending.get_receipt())
         .await

@@ -60,29 +60,33 @@ pub async fn proxy_request(
     // DNS rebinding fix: resolve DNS once and rewrite the URL to the validated IP.
     // This eliminates the TOCTOU gap where a second DNS lookup (by reqwest) could
     // resolve to a different (private) IP.
-    let mut actual_url = target_url.to_string();
+    // Uses structured URL parsing (url::Url::set_host) instead of string replacement
+    // to avoid corruption when the hostname appears in the path or query.
+    let mut parsed_url = url::Url::parse(target_url)
+        .map_err(|e| GatewayError::ProxyError(format!("invalid target URL: {e}")))?;
     let mut original_host: Option<String> = None;
 
-    if let Ok(parsed) = url::Url::parse(target_url) {
-        if let Some(host) = parsed.host_str() {
-            // Skip IP-rewrite for hosts that are already IPs
-            if host.parse::<std::net::Ipv4Addr>().is_err()
-                && host.parse::<std::net::Ipv6Addr>().is_err()
-            {
-                let resolved_ip = validate_and_resolve_ip(host).await?;
-                // Rewrite URL to use the resolved IP so reqwest connects to it directly
-                let ip_str = match resolved_ip {
-                    std::net::IpAddr::V6(ip) => format!("[{}]", ip),
-                    std::net::IpAddr::V4(ip) => ip.to_string(),
-                };
-                actual_url = actual_url.replacen(host, &ip_str, 1);
-                original_host = Some(host.to_string());
-            } else {
-                // Already an IP — just validate it
-                validate_and_resolve_ip(host).await?;
-            }
+    if let Some(host) = parsed_url.host_str().map(|h| h.to_string()) {
+        // Skip IP-rewrite for hosts that are already IPs
+        if host.parse::<std::net::Ipv4Addr>().is_err()
+            && host.parse::<std::net::Ipv6Addr>().is_err()
+        {
+            let resolved_ip = validate_and_resolve_ip(&host).await?;
+            // Rewrite URL host to the resolved IP using structured URL mutation
+            let ip_host = match resolved_ip {
+                std::net::IpAddr::V6(ip) => format!("[{}]", ip),
+                std::net::IpAddr::V4(ip) => ip.to_string(),
+            };
+            parsed_url
+                .set_host(Some(&ip_host))
+                .map_err(|_| GatewayError::ProxyError("failed to set resolved IP".to_string()))?;
+            original_host = Some(host);
+        } else {
+            // Already an IP — just validate it
+            validate_and_resolve_ip(&host).await?;
         }
     }
+    let actual_url = parsed_url.to_string();
 
     // Build the proxied request
     let method = match original_req.method().as_str() {
@@ -136,7 +140,7 @@ pub async fn proxy_request(
     }
 
     // Send the request
-    let response = request_builder.send().await.map_err(|e| {
+    let mut response = request_builder.send().await.map_err(|e| {
         tracing::error!(error = %e, "proxy request failed");
         GatewayError::ProxyError("upstream request failed".to_string())
     })?;
@@ -155,19 +159,29 @@ pub async fn proxy_request(
         }
     }
 
-    // Get response body with size limit
-    let body = response.bytes().await.map_err(|e| {
+    // Stream response body with progressive size enforcement.
+    // This prevents memory exhaustion from chunked-encoded responses that
+    // lack Content-Length — we abort as soon as the limit is exceeded.
+    let mut body_buf = Vec::with_capacity(
+        response
+            .content_length()
+            .map(|cl| cl as usize)
+            .unwrap_or(8192)
+            .min(MAX_RESPONSE_BODY_SIZE),
+    );
+    while let Some(chunk) = response.chunk().await.map_err(|e| {
         tracing::error!(error = %e, "failed to read proxy response body");
         GatewayError::ProxyError("failed to read upstream response".to_string())
-    })?;
-
-    if body.len() > MAX_RESPONSE_BODY_SIZE {
-        return Err(GatewayError::ProxyError(format!(
-            "upstream response too large: {} bytes (max {})",
-            body.len(),
-            MAX_RESPONSE_BODY_SIZE
-        )));
+    })? {
+        if body_buf.len() + chunk.len() > MAX_RESPONSE_BODY_SIZE {
+            return Err(GatewayError::ProxyError(format!(
+                "upstream response too large (max {} bytes)",
+                MAX_RESPONSE_BODY_SIZE
+            )));
+        }
+        body_buf.extend_from_slice(&chunk);
     }
+    let body = bytes::Bytes::from(body_buf);
 
     // Build actix response
     let mut builder = HttpResponse::build(

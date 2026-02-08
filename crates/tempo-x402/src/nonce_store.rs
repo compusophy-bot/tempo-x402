@@ -102,12 +102,19 @@ impl SqliteNonceStore {
     }
 }
 
-/// Helper to get current unix timestamp safely (returns 0 on clock error rather than panicking).
+/// Helper to get current unix timestamp safely.
+/// On clock error, returns i64::MAX to ensure nonces are never prematurely purged
+/// (fail-secure: nonces recorded with max timestamp will survive any purge cutoff).
 fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .unwrap_or_else(|_| {
+            tracing::error!(
+                "system clock before UNIX epoch — using max timestamp for nonce safety"
+            );
+            i64::MAX
+        })
 }
 
 impl NonceStore for SqliteNonceStore {
@@ -190,7 +197,10 @@ impl NonceStore for SqliteNonceStore {
                 poisoned.into_inner()
             }
         };
-        let cutoff = unix_now() - max_age_secs as i64;
+        let now = unix_now();
+        // Saturating subtraction: if now is i64::MAX (clock error) or max_age_secs is
+        // very large, cutoff saturates instead of wrapping, preventing accidental purge.
+        let cutoff = now.saturating_sub(max_age_secs as i64);
         conn.execute(
             "DELETE FROM used_nonces WHERE recorded_at < ?1",
             rusqlite::params![cutoff],

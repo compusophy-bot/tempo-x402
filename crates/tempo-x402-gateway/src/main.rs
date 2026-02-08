@@ -46,6 +46,15 @@ async fn main() -> std::io::Result<()> {
 
     // Bootstrap embedded facilitator if FACILITATOR_PRIVATE_KEY is set
     let facilitator_state = if let Some(ref key) = config.facilitator_private_key {
+        // Require HMAC when running embedded facilitator to prevent unauthenticated
+        // access to the /facilitator/verify-and-settle endpoint
+        if config.hmac_secret.is_none() {
+            tracing::error!(
+                "FACILITATOR_SHARED_SECRET is required when FACILITATOR_PRIVATE_KEY is set. \
+                 Without HMAC, the embedded facilitator settlement endpoint is unauthenticated."
+            );
+            std::process::exit(1);
+        }
         tracing::info!("Embedded facilitator: bootstrapping in-process");
 
         let signer: PrivateKeySigner = key.parse().expect("invalid FACILITATOR_PRIVATE_KEY");
@@ -94,7 +103,7 @@ async fn main() -> std::io::Result<()> {
             hmac_secret: config.hmac_secret.clone(),
             chain_config: x402::ChainConfig::default(),
             webhook_urls: config.webhook_urls.clone(),
-            http_client: reqwest::Client::new(),
+            http_client: x402_facilitator::webhook::webhook_client(),
         }))
     } else {
         tracing::info!("Facilitator URL: {}", config.facilitator_url);
@@ -104,6 +113,13 @@ async fn main() -> std::io::Result<()> {
     // Initialize database
     let db = Database::new(&config.db_path).expect("Failed to initialize database");
     tracing::info!("Database initialized at: {}", config.db_path);
+
+    // Purge stale slug reservations from previous crashes (older than 5 minutes)
+    match db.purge_stale_reservations(300) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Purged {n} stale slug reservations from previous runs"),
+        Err(e) => tracing::warn!("Failed to purge stale reservations: {e}"),
+    }
 
     // Register Prometheus metrics
     register_metrics();

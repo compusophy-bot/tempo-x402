@@ -432,6 +432,21 @@ impl Database {
         Ok(endpoint)
     }
 
+    /// Purge stale slug reservations (active=0) older than `max_age_secs`.
+    /// Should be called periodically or at startup to reclaim permanently stuck slugs.
+    pub fn purge_stale_reservations(&self, max_age_secs: i64) -> Result<usize, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let cutoff = chrono::Utc::now().timestamp() - max_age_secs;
+        let purged = conn.execute(
+            "DELETE FROM endpoints WHERE active = 0 AND created_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(purged)
+    }
+
     /// Delete a reserved (pending) slug. Used to clean up failed registrations.
     pub fn delete_reserved_slug(&self, slug: &str) -> Result<(), GatewayError> {
         let conn = self

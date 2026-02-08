@@ -21,6 +21,7 @@ impl PaymentGateConfig {
     pub fn from_env(facilitator_url: &str) -> Self {
         let hmac_secret = std::env::var("FACILITATOR_SHARED_SECRET")
             .ok()
+            .filter(|s| !s.is_empty())
             .map(|s| s.into_bytes());
 
         if hmac_secret.is_none() {

@@ -123,7 +123,7 @@ async fn main() -> std::io::Result<()> {
         hmac_secret,
         chain_config: x402::ChainConfig::default(),
         webhook_urls,
-        http_client: reqwest::Client::new(),
+        http_client: x402_facilitator::webhook::webhook_client(),
     });
 
     let port: u16 = std::env::var("FACILITATOR_PORT")
