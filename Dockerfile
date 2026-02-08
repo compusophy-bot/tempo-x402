@@ -21,7 +21,7 @@ RUN cargo build --release --package tempo-x402-gateway
 # Stage 3: Runtime
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates gosu && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r app && useradd -r -g app -d /app app
 
@@ -30,10 +30,12 @@ COPY --from=spa-builder /app/crates/tempo-x402-app/dist /app/spa
 
 RUN chown -R app:app /app
 
+# Entrypoint: fix volume permissions then drop to non-root
+RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nexec gosu app x402-gateway "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
 
 EXPOSE 4023
 
-USER app
-CMD ["x402-gateway"]
+ENTRYPOINT ["/entrypoint.sh"]
