@@ -45,9 +45,8 @@ pub struct PaymentData {
 pub async fn make_paid_request(
     wallet: &WalletState,
 ) -> Result<(String, Option<SettleResponse>), String> {
-    // Use the gateway health endpoint for demo (free endpoint)
-    // For a real paid request, use a registered endpoint slug
-    let url = format!("{}/health", GATEWAY_URL);
+    // Use the demo endpoint (paid via gateway proxy)
+    let url = format!("{}/g/demo", GATEWAY_URL);
 
     let resp = Request::get(&url)
         .send()

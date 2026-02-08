@@ -270,3 +270,66 @@ async fn e2e_full_payment_flow() {
 
     println!("\n=== E2E Test PASSED ===\n");
 }
+
+/// Register the permanent "demo" endpoint for the SPA frontend.
+/// Idempotent — skips if already registered.
+#[tokio::test]
+async fn register_demo_endpoint() {
+    let http = reqwest::Client::new();
+
+    // Check if demo already exists
+    let resp = http
+        .get(format!("{GATEWAY_URL}/endpoints/demo"))
+        .send()
+        .await
+        .expect("request failed");
+    if resp.status().as_u16() == 200 {
+        println!("demo endpoint already registered, skipping");
+        return;
+    }
+
+    let signer = client_signer();
+    let scheme = TempoSchemeClient::new(signer);
+
+    // POST /register without payment -> 402
+    let resp = http
+        .post(format!("{GATEWAY_URL}/register"))
+        .json(&serde_json::json!({
+            "slug": "demo",
+            "target_url": "https://httpbin.org/get",
+            "price": "$0.001",
+            "description": "Demo endpoint for x402 payment flow"
+        }))
+        .send()
+        .await
+        .expect("register request failed");
+
+    assert_eq!(resp.status().as_u16(), 402);
+
+    let body_402: x402::PaymentRequiredBody = resp.json().await.expect("parse 402");
+    let requirements = body_402
+        .accepts
+        .iter()
+        .find(|r| r.scheme == SCHEME_NAME)
+        .expect("no tempo-tip20 scheme");
+
+    let payment_header = sign_payment(&scheme, requirements).await;
+
+    let resp = http
+        .post(format!("{GATEWAY_URL}/register"))
+        .header("PAYMENT-SIGNATURE", &payment_header)
+        .json(&serde_json::json!({
+            "slug": "demo",
+            "target_url": "https://httpbin.org/get",
+            "price": "$0.001",
+            "description": "Demo endpoint for x402 payment flow"
+        }))
+        .send()
+        .await
+        .expect("paid register failed");
+
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap_or_default();
+    println!("Registered demo endpoint: status={status} body={body}");
+    assert!(status == 201 || status == 200, "Failed: {status} {body}");
+}
