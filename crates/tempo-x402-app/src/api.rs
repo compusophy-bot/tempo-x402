@@ -6,7 +6,14 @@ use crate::{PaymentRequirements, SettleResponse, WalletMode, WalletState};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
-const GATEWAY_URL: &str = "https://x402-gateway-production-5018.up.railway.app";
+/// Gateway URL — empty string means same-origin (SPA served by gateway).
+/// Override at compile time via GATEWAY_URL env var for dev/testing.
+const GATEWAY_URL: &str = {
+    match option_env!("GATEWAY_URL") {
+        Some(url) => url,
+        None => "",
+    }
+};
 
 /// 402 Payment Required response body
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -283,7 +290,7 @@ pub async fn register_endpoint(
 
     let resp = Request::post(&format!("{}/register", GATEWAY_URL))
         .header("Content-Type", "application/json")
-        .body(serde_json::to_string(&body).unwrap())
+        .body(serde_json::to_string(&body).map_err(|e| format!("Failed to serialize body: {}", e))?)
         .map_err(|e| format!("Failed to build request: {}", e))?
         .send()
         .await
@@ -371,11 +378,8 @@ pub async fn call_endpoint(
 
 /// Generate random nonce (32 bytes as hex string)
 fn random_nonce() -> String {
-    use js_sys::Math;
     let mut bytes = [0u8; 32];
-    for byte in bytes.iter_mut() {
-        *byte = (Math::random() * 256.0) as u8;
-    }
+    getrandom::fill(&mut bytes).expect("getrandom failed");
     format!("0x{}", hex::encode(&bytes))
 }
 

@@ -27,8 +27,11 @@ pub const DEFAULT_TOKEN: Address = Address::new([
     0x00, 0x00, 0x00, 0x00,
 ]);
 
-/// Pre-funded demo wallet private key for testnet demos.
-/// This key has pathUSD on Tempo Moderato with facilitator allowance set.
+/// Well-known Hardhat Account #0 private key, used for testnet demos only.
+///
+/// **NOT A SECRET** — this key is publicly documented in Hardhat's source code.
+/// Any funds on this address (including testnet pathUSD) can be taken by anyone.
+/// Never use this key for real assets.
 pub const DEMO_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 

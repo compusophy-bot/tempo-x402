@@ -18,7 +18,10 @@ use base64::Engine;
 use x402::{PaymentRequiredBody, SchemeClient, SettleResponse, DEFAULT_TOKEN, SCHEME_NAME};
 use x402_client::TempoSchemeClient;
 
-const GATEWAY_URL: &str = "https://x402-gateway-production-5018.up.railway.app";
+fn gateway_url() -> String {
+    std::env::var("GATEWAY_URL")
+        .unwrap_or_else(|_| "https://x402-gateway-production-5018.up.railway.app".to_string())
+}
 const RPC_URL: &str = "https://rpc.moderato.tempo.xyz";
 const FACILITATOR_ADDR: &str = "0x00B4a967685164aF45D4E6B58bF9F19e8119CA97";
 
@@ -62,13 +65,14 @@ async fn sign_payment(
 
 #[tokio::test]
 async fn e2e_full_payment_flow() {
+    let gateway_url = gateway_url();
     let signer = client_signer();
     let address = signer.address();
     let scheme = TempoSchemeClient::new(signer);
     let http = reqwest::Client::new();
 
     println!("\n=== x402 End-to-End Payment Test ===");
-    println!("Gateway:  {GATEWAY_URL}");
+    println!("Gateway:  {gateway_url}");
     println!("Wallet:   {address}");
     println!();
 
@@ -105,7 +109,7 @@ async fn e2e_full_payment_flow() {
     );
 
     let resp = http
-        .post(format!("{GATEWAY_URL}/register"))
+        .post(format!("{gateway_url}/register"))
         .json(&serde_json::json!({
             "slug": slug,
             "target_url": "https://httpbin.org/get",
@@ -149,7 +153,7 @@ async fn e2e_full_payment_flow() {
     println!("        Signed payment ({}B base64)", payment_header.len());
 
     let resp = http
-        .post(format!("{GATEWAY_URL}/register"))
+        .post(format!("{gateway_url}/register"))
         .header("PAYMENT-SIGNATURE", &payment_header)
         .json(&serde_json::json!({
             "slug": slug,
@@ -179,7 +183,7 @@ async fn e2e_full_payment_flow() {
     // ── Step 4: Verify endpoint exists ─────────────────────────────────
     println!("\nStep 4: GET /endpoints/{slug} → verify registration");
     let resp = http
-        .get(format!("{GATEWAY_URL}/endpoints/{slug}"))
+        .get(format!("{gateway_url}/endpoints/{slug}"))
         .send()
         .await
         .expect("get endpoint failed");
@@ -196,7 +200,7 @@ async fn e2e_full_payment_flow() {
     // ── Step 5: GET /g/{slug} without payment → 402 ───────────────────
     println!("\nStep 5: GET /g/{slug} without payment → expect 402");
     let resp = http
-        .get(format!("{GATEWAY_URL}/g/{slug}"))
+        .get(format!("{gateway_url}/g/{slug}"))
         .send()
         .await
         .expect("proxy request failed");
@@ -220,7 +224,7 @@ async fn e2e_full_payment_flow() {
     let proxy_payment = sign_payment(&scheme, proxy_requirements).await;
 
     let resp = http
-        .get(format!("{GATEWAY_URL}/g/{slug}"))
+        .get(format!("{gateway_url}/g/{slug}"))
         .header("PAYMENT-SIGNATURE", &proxy_payment)
         .send()
         .await
@@ -275,11 +279,12 @@ async fn e2e_full_payment_flow() {
 /// Idempotent — skips if already registered.
 #[tokio::test]
 async fn register_demo_endpoint() {
+    let gateway_url = gateway_url();
     let http = reqwest::Client::new();
 
     // Check if demo already exists
     let resp = http
-        .get(format!("{GATEWAY_URL}/endpoints/demo"))
+        .get(format!("{gateway_url}/endpoints/demo"))
         .send()
         .await
         .expect("request failed");
@@ -293,7 +298,7 @@ async fn register_demo_endpoint() {
 
     // POST /register without payment -> 402
     let resp = http
-        .post(format!("{GATEWAY_URL}/register"))
+        .post(format!("{gateway_url}/register"))
         .json(&serde_json::json!({
             "slug": "demo",
             "target_url": "https://httpbin.org/get",
@@ -316,7 +321,7 @@ async fn register_demo_endpoint() {
     let payment_header = sign_payment(&scheme, requirements).await;
 
     let resp = http
-        .post(format!("{GATEWAY_URL}/register"))
+        .post(format!("{gateway_url}/register"))
         .header("PAYMENT-SIGNATURE", &payment_header)
         .json(&serde_json::json!({
             "slug": "demo",

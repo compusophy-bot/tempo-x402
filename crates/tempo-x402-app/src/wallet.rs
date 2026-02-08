@@ -99,7 +99,7 @@ pub async fn fund_address(address: &str) -> Result<(), String> {
 
     let resp = gloo_net::http::Request::post("https://rpc.moderato.tempo.xyz")
         .header("Content-Type", "application/json")
-        .body(serde_json::to_string(&body).unwrap())
+        .body(serde_json::to_string(&body).map_err(|e| format!("Failed to serialize: {}", e))?)
         .map_err(|e| format!("Failed to build request: {}", e))?
         .send()
         .await

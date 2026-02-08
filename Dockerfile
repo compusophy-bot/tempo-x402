@@ -23,12 +23,17 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd -r app && useradd -r -g app -d /app app
+
 COPY --from=gateway-builder /app/target/release/x402-gateway /usr/local/bin/x402-gateway
 COPY --from=spa-builder /app/crates/tempo-x402-app/dist /app/spa
+
+RUN chown -R app:app /app
 
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
 
 EXPOSE 4023
 
+USER app
 CMD ["x402-gateway"]
