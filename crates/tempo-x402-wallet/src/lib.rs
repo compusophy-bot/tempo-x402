@@ -53,12 +53,14 @@ sol! {
 // --- Payment types ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaymentPayload {
     pub x402_version: u32,
     pub payload: PaymentData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaymentData {
     pub from: String,
     pub to: String,

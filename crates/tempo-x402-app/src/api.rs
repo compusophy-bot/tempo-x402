@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 use crate::{PaymentRequirements, SettleResponse, WalletMode, WalletState};
+use base64::Engine;
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
@@ -18,13 +19,16 @@ const GATEWAY_URL: &str = {
 /// 402 Payment Required response body
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PaymentRequiredBody {
+    #[serde(rename = "x402Version")]
     pub x402_version: u32,
     pub accepts: Vec<PaymentRequirements>,
-    pub error: String,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// Payment payload to send in PAYMENT-SIGNATURE header
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaymentPayload {
     pub x402_version: u32,
     pub payload: PaymentData,
@@ -32,6 +36,7 @@ pub struct PaymentPayload {
 
 /// Payment data for EIP-712 signing
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PaymentData {
     pub from: String,
     pub to: String,
@@ -96,7 +101,8 @@ pub async fn make_paid_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
-        .and_then(|s| serde_json::from_str::<SettleResponse>(&s).ok());
+        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     let result_body = paid_resp
         .text()
@@ -156,7 +162,8 @@ pub async fn make_paid_endpoint_request(
     let settle = paid_resp
         .headers()
         .get("payment-response")
-        .and_then(|s| serde_json::from_str::<SettleResponse>(&s).ok());
+        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     let result_body = paid_resp
         .text()
@@ -371,7 +378,8 @@ pub async fn call_endpoint(
     let settle = resp
         .headers()
         .get("payment-response")
-        .and_then(|s| serde_json::from_str::<SettleResponse>(&s).ok());
+        .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok())
+        .and_then(|bytes| serde_json::from_slice::<SettleResponse>(&bytes).ok());
 
     Ok((body, settle))
 }
