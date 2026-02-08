@@ -257,14 +257,18 @@ where
             });
         }
 
-        // Enforce maximum validity window to prevent replay after nonce purge
+        // Enforce maximum validity window to prevent replay after nonce purge.
+        // Use the stricter of the facilitator's global max and the per-endpoint requirement.
+        let max_window = self
+            .max_timeout_seconds
+            .min(requirements.max_timeout_seconds + 60); // +60 for valid_after backdate
         let validity_window = p.valid_before.saturating_sub(p.valid_after);
-        if validity_window > self.max_timeout_seconds {
+        if validity_window > max_window {
             return Ok(VerifyResponse {
                 is_valid: false,
                 invalid_reason: Some(format!(
                     "Validity window too large: {}s exceeds max {}s",
-                    validity_window, self.max_timeout_seconds
+                    validity_window, max_window
                 )),
                 payer: None,
             });
@@ -464,6 +468,7 @@ where
             });
         }
 
+        // Parse value (already validated by verify() above, but needed for transferFrom)
         let value = p
             .value
             .parse::<U256>()

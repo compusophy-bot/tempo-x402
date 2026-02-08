@@ -41,6 +41,13 @@ pub async fn register(
     // Validate inputs first (before requiring payment)
     validate_slug(&body.slug)?;
     validate_target_url(&body.target_url)?;
+    if let Some(ref desc) = body.description {
+        if desc.len() > 4096 {
+            return Err(GatewayError::InvalidSlug(
+                "description must be at most 4096 characters".to_string(),
+            ));
+        }
+    }
 
     // Parse price early so we fail fast on bad input
     let scheme_server = x402::TempoSchemeServer::new();

@@ -227,9 +227,11 @@ pub fn build_payment_payload(
         .parse()
         .map_err(|e| format!("invalid amount: {e}"))?;
 
-    // Time window: 60s before now to max_timeout_seconds after now
+    // Time window: 60s before now to max_timeout_seconds after now.
+    // Cap timeout to prevent untrusted servers from requesting huge validity windows.
+    let capped_timeout = requirements.max_timeout_seconds.min(600);
     let valid_after = now_secs.saturating_sub(60);
-    let valid_before = now_secs.saturating_add(requirements.max_timeout_seconds);
+    let valid_before = now_secs.saturating_add(capped_timeout);
 
     let nonce = random_nonce();
 

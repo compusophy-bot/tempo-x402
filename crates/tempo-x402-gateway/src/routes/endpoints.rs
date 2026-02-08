@@ -96,6 +96,13 @@ pub async fn update_endpoint(
     if let Some(ref url) = body.target_url {
         crate::validation::validate_target_url(url)?;
     }
+    if let Some(ref desc) = body.description {
+        if desc.len() > 4096 {
+            return Err(GatewayError::InvalidSlug(
+                "description must be at most 4096 characters".to_string(),
+            ));
+        }
+    }
 
     // Parse new price if provided
     let (price_usd, price_amount) = if let Some(ref price) = body.price {

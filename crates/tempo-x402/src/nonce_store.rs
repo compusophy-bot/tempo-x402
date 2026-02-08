@@ -109,7 +109,7 @@ impl SqliteNonceStore {
 fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or_else(|_| {
             tracing::error!(
                 "system clock before UNIX epoch — using max timestamp for nonce safety"
