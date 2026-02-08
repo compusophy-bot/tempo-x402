@@ -115,6 +115,7 @@ async fn main() -> std::io::Result<()> {
 
     if !webhook_urls.is_empty() {
         tracing::info!("Webhook URLs configured: {}", webhook_urls.len());
+        x402_facilitator::webhook::validate_webhook_urls(&webhook_urls);
     }
 
     let state = web::Data::new(AppState {

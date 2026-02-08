@@ -1,11 +1,11 @@
 use actix_web::{web, HttpRequest, HttpResponse};
-use url::Url;
 use x402::SchemeServer;
 
 use crate::db::CreateEndpoint;
 use crate::error::GatewayError;
 use crate::middleware::{payment_response_header, platform_requirements, require_payment};
 use crate::state::AppState;
+use crate::validation::validate_target_url;
 
 /// Validate slug format
 pub fn validate_slug(slug: &str) -> Result<(), GatewayError> {
@@ -32,83 +32,6 @@ pub fn validate_slug(slug: &str) -> Result<(), GatewayError> {
     Ok(())
 }
 
-/// Check if an IPv4 address is private, loopback, or otherwise non-routable.
-fn is_private_ipv4(ip: &std::net::Ipv4Addr) -> bool {
-    ip.is_loopback()          // 127.0.0.0/8
-        || ip.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-        || ip.is_link_local() // 169.254.0.0/16
-        || ip.is_broadcast()  // 255.255.255.255
-        || ip.is_unspecified() // 0.0.0.0
-        || ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
-}
-
-/// Check if an IPv6 address is private, loopback, or otherwise non-routable.
-fn is_private_ipv6(ip: &std::net::Ipv6Addr) -> bool {
-    ip.is_loopback()       // ::1
-        || ip.is_unspecified() // ::
-        || {
-            let segments = ip.segments();
-            // fc00::/7 (unique local)
-            (segments[0] & 0xFE00) == 0xFC00
-            // fe80::/10 (link-local)
-            || (segments[0] & 0xFFC0) == 0xFE80
-            // IPv4-mapped IPv6: check the mapped IPv4 address
-            || match ip.to_ipv4_mapped() {
-                Some(v4) => is_private_ipv4(&v4),
-                None => false,
-            }
-        }
-}
-
-/// Validate target URL
-pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
-    let parsed =
-        Url::parse(url).map_err(|_| GatewayError::InvalidUrl("invalid URL format".to_string()))?;
-
-    if parsed.scheme() != "https" {
-        return Err(GatewayError::InvalidUrl(
-            "target must use HTTPS".to_string(),
-        ));
-    }
-
-    // Prevent SSRF: validate the host is not a private/loopback address
-    match parsed.host() {
-        Some(url::Host::Ipv4(ip)) => {
-            if is_private_ipv4(&ip) {
-                return Err(GatewayError::InvalidUrl(
-                    "target cannot be a private or loopback IP address".to_string(),
-                ));
-            }
-        }
-        Some(url::Host::Ipv6(ip)) => {
-            if is_private_ipv6(&ip) {
-                return Err(GatewayError::InvalidUrl(
-                    "target cannot be a private or loopback IP address".to_string(),
-                ));
-            }
-        }
-        Some(url::Host::Domain(domain)) => {
-            let domain_lower = domain.to_lowercase();
-            if domain_lower == "localhost"
-                || domain_lower.ends_with(".localhost")
-                || domain_lower.ends_with(".local")
-                || domain_lower.ends_with(".internal")
-            {
-                return Err(GatewayError::InvalidUrl(
-                    "target cannot be localhost or local domain".to_string(),
-                ));
-            }
-        }
-        None => {
-            return Err(GatewayError::InvalidUrl(
-                "target URL must have a host".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 /// POST /register - Register a new endpoint
 pub async fn register(
     req: HttpRequest,
@@ -119,16 +42,16 @@ pub async fn register(
     validate_slug(&body.slug)?;
     validate_target_url(&body.target_url)?;
 
-    // Check if slug already exists
-    if state.db.slug_exists(&body.slug)? {
-        return Err(GatewayError::SlugExists(body.slug.clone()));
-    }
-
-    // Parse price
+    // Parse price early so we fail fast on bad input
     let scheme_server = x402::TempoSchemeServer::new();
     let (price_amount, _) = scheme_server
         .parse_price(&body.price)
         .map_err(|e| GatewayError::InvalidPrice(e.to_string()))?;
+
+    // Reserve the slug atomically BEFORE payment.
+    // This prevents a race where two concurrent registrations both pass the
+    // slug_exists check, both pay, but only one can actually create the endpoint.
+    state.db.reserve_slug(&body.slug)?;
 
     // Build platform payment requirements
     let requirements = platform_requirements(
@@ -149,27 +72,46 @@ pub async fn register(
     .await
     {
         Ok(s) => s,
-        Err(http_response) => return Ok(http_response), // Already a proper 402 response
+        Err(http_response) => {
+            // Payment not provided or failed — release the slug reservation
+            let _ = state.db.delete_reserved_slug(&body.slug);
+            return Ok(http_response);
+        }
     };
 
     // Extract payer address from settlement response
-    let owner_address = settle
-        .payer
-        .ok_or_else(|| GatewayError::Internal("settlement missing payer address".to_string()))?;
+    let owner_address = match settle.payer {
+        Some(addr) => addr,
+        None => {
+            let _ = state.db.delete_reserved_slug(&body.slug);
+            return Err(GatewayError::Internal(
+                "settlement missing payer address".to_string(),
+            ));
+        }
+    };
 
-    // Create the endpoint
-    let endpoint = state.db.create_endpoint(
+    // Activate the reserved slug with full endpoint data
+    let endpoint = match state.db.activate_endpoint(
         &body.slug,
         &format!("{:#x}", owner_address),
         &body.target_url,
         &body.price,
         &price_amount,
         body.description.as_deref(),
-    )?;
+    ) {
+        Ok(ep) => ep,
+        Err(e) => {
+            let _ = state.db.delete_reserved_slug(&body.slug);
+            return Err(e);
+        }
+    };
 
     // Return success with payment response header
     Ok(HttpResponse::Created()
-        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
+        .insert_header((
+            "PAYMENT-RESPONSE",
+            payment_response_header(&settle, state.config.hmac_secret.as_deref()),
+        ))
         .json(serde_json::json!({
             "success": true,
             "endpoint": endpoint,

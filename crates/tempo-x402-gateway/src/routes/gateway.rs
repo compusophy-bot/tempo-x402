@@ -6,6 +6,36 @@ use crate::middleware::{endpoint_requirements, require_payment};
 use crate::proxy::proxy_request;
 use crate::state::AppState;
 
+/// Sanitize a proxy path segment to prevent path traversal and URL authority injection.
+fn sanitize_path(path: &str) -> Result<String, GatewayError> {
+    // URL-decode the path first to catch encoded attacks (e.g. %2e%2e)
+    let decoded = urlencoding::decode(path)
+        .map_err(|_| GatewayError::ProxyError("invalid URL encoding in path".to_string()))?;
+
+    // Reject path traversal
+    if decoded.contains("..") {
+        return Err(GatewayError::ProxyError(
+            "path traversal not allowed".to_string(),
+        ));
+    }
+
+    // Reject leading slashes (prevents //host authority injection)
+    if decoded.starts_with('/') {
+        return Err(GatewayError::ProxyError(
+            "path must not start with /".to_string(),
+        ));
+    }
+
+    // Reject @ (URL authority injection: user@host)
+    if decoded.contains('@') {
+        return Err(GatewayError::ProxyError(
+            "path must not contain @".to_string(),
+        ));
+    }
+
+    Ok(decoded.into_owned())
+}
+
 /// ANY /g/{slug}/{path:.*} - Proxy to target API with payment
 pub async fn gateway_proxy(
     req: HttpRequest,
@@ -14,6 +44,9 @@ pub async fn gateway_proxy(
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
     let (slug, rest_path) = path.into_inner();
+
+    // Sanitize the rest path
+    let rest_path = sanitize_path(&rest_path)?;
 
     // Look up the endpoint
     let endpoint = state
@@ -65,8 +98,16 @@ pub async fn gateway_proxy(
     };
 
     // Proxy the request (includes PAYMENT-RESPONSE header)
-    let response =
-        proxy_request(&state.http_client, &req, &target_url, body, &settle, true).await?;
+    let response = proxy_request(
+        &state.http_client,
+        &req,
+        &target_url,
+        body,
+        &settle,
+        true,
+        state.config.hmac_secret.as_deref(),
+    )
+    .await?;
 
     Ok(response)
 }
@@ -130,8 +171,16 @@ async fn gateway_proxy_no_path(
     };
 
     // Proxy the request (includes PAYMENT-RESPONSE header)
-    let response =
-        proxy_request(&state.http_client, &req, &target_url, body, &settle, true).await?;
+    let response = proxy_request(
+        &state.http_client,
+        &req,
+        &target_url,
+        body,
+        &settle,
+        true,
+        state.config.hmac_secret.as_deref(),
+    )
+    .await?;
 
     Ok(response)
 }

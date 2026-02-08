@@ -4,6 +4,7 @@ use x402::SettleResponse;
 
 use crate::error::GatewayError;
 use crate::middleware::payment_response_header;
+use crate::validation::validate_resolved_ip;
 
 /// Headers to strip from client request before proxying
 const HEADERS_TO_STRIP: &[&str] = &[
@@ -25,6 +26,24 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "x-x402-network",
 ];
 
+/// Allowlist of response headers to forward from the upstream.
+/// Prevents leaking internal upstream headers (e.g. Server, X-Powered-By).
+const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
+    "content-type",
+    "content-length",
+    "content-encoding",
+    "cache-control",
+    "etag",
+    "last-modified",
+    "date",
+    "vary",
+    "x-request-id",
+    "x-ratelimit-limit",
+    "x-ratelimit-remaining",
+    "x-ratelimit-reset",
+    "access-control-allow-origin",
+];
+
 /// Proxy an HTTP request to the target URL
 pub async fn proxy_request(
     client: &reqwest::Client,
@@ -33,7 +52,15 @@ pub async fn proxy_request(
     body: Bytes,
     settle: &SettleResponse,
     include_payment_response: bool,
+    hmac_secret: Option<&[u8]>,
 ) -> Result<HttpResponse, GatewayError> {
+    // DNS rebinding check: resolve the target hostname and reject private IPs
+    if let Ok(parsed) = url::Url::parse(target_url) {
+        if let Some(host) = parsed.host_str() {
+            validate_resolved_ip(host).await?;
+        }
+    }
+
     // Build the proxied request
     let method = match original_req.method().as_str() {
         "GET" => reqwest::Method::GET,
@@ -102,21 +129,22 @@ pub async fn proxy_request(
             .unwrap_or(actix_web::http::StatusCode::OK),
     );
 
-    // Copy response headers
+    // Copy only allowlisted response headers from upstream
     for (name, value) in headers.iter() {
-        // Skip hop-by-hop headers
         let name_lower = name.as_str().to_lowercase();
-        if name_lower == "transfer-encoding" || name_lower == "connection" {
-            continue;
-        }
-        if let Ok(value_str) = value.to_str() {
-            builder.insert_header((name.as_str(), value_str));
+        if ALLOWED_RESPONSE_HEADERS.contains(&name_lower.as_str()) {
+            if let Ok(value_str) = value.to_str() {
+                builder.insert_header((name.as_str(), value_str));
+            }
         }
     }
 
     // Add payment response header if requested
     if include_payment_response {
-        builder.insert_header(("PAYMENT-RESPONSE", payment_response_header(settle)));
+        builder.insert_header((
+            "PAYMENT-RESPONSE",
+            payment_response_header(settle, hmac_secret),
+        ));
     }
 
     Ok(builder.body(body))
@@ -131,5 +159,13 @@ mod tests {
         assert!(HEADERS_TO_STRIP.contains(&"host"));
         assert!(HEADERS_TO_STRIP.contains(&"payment-signature"));
         assert!(!HEADERS_TO_STRIP.contains(&"content-type"));
+    }
+
+    #[test]
+    fn test_allowed_response_headers() {
+        assert!(ALLOWED_RESPONSE_HEADERS.contains(&"content-type"));
+        assert!(ALLOWED_RESPONSE_HEADERS.contains(&"cache-control"));
+        assert!(!ALLOWED_RESPONSE_HEADERS.contains(&"server"));
+        assert!(!ALLOWED_RESPONSE_HEADERS.contains(&"x-powered-by"));
     }
 }

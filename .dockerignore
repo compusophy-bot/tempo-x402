@@ -2,5 +2,9 @@ target/
 .git/
 .github/
 .claude/
+.cargo/
+.env
+.env.*
 *.md
 nul
+railway_schema.json

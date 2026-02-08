@@ -242,6 +242,13 @@ where
         }
 
         // 4. Reject zero addresses
+        if p.from == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Payer address cannot be zero".to_string()),
+                payer: Some(p.from),
+            });
+        }
         if p.token == Address::ZERO {
             return Ok(VerifyResponse {
                 is_valid: false,
@@ -278,6 +285,22 @@ where
             .amount
             .parse::<U256>()
             .map_err(|e| X402Error::InvalidPayment(format!("invalid required amount: {e}")))?;
+
+        if value.is_zero() {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Payment value must be non-zero".to_string()),
+                payer: Some(p.from),
+            });
+        }
+        if required_amount.is_zero() {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Required amount must be non-zero".to_string()),
+                payer: Some(p.from),
+            });
+        }
+
         if value < required_amount {
             return Ok(VerifyResponse {
                 is_valid: false,

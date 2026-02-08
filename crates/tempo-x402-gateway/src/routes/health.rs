@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 
 use crate::metrics::REGISTRY;
 use crate::state::AppState;
@@ -33,8 +33,26 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// GET /metrics - Prometheus metrics endpoint
-pub async fn metrics() -> HttpResponse {
+/// GET /metrics - Prometheus metrics endpoint (optionally auth-gated)
+pub async fn metrics(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
+    // Check bearer token if METRICS_TOKEN is configured
+    if let Some(ref expected_token) = state.config.metrics_token {
+        let authorized = req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(|token| token == expected_token)
+            .unwrap_or(false);
+
+        if !authorized {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": "Valid Bearer token required for /metrics"
+            }));
+        }
+    }
+
     use prometheus::Encoder;
 
     let encoder = prometheus::TextEncoder::new();

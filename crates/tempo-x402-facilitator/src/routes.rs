@@ -195,6 +195,7 @@ pub async fn verify_and_settle(
                             network: result.network.clone(),
                             timestamp: now,
                         },
+                        state.hmac_secret.as_deref(),
                     );
                 }
             } else {

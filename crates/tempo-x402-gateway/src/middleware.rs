@@ -203,17 +203,24 @@ pub async fn require_payment(
     }
 }
 
-/// Build the PAYMENT-RESPONSE header value
-pub fn payment_response_header(settle: &SettleResponse) -> String {
+/// Build the PAYMENT-RESPONSE header value.
+/// If `hmac_secret` is provided, appends an HMAC signature: `base64.hmac_hex`.
+pub fn payment_response_header(settle: &SettleResponse, hmac_secret: Option<&[u8]>) -> String {
     let response = serde_json::json!({
         "success": settle.success,
         "transaction": settle.transaction,
         "network": settle.network,
     });
-    base64::Engine::encode(
+    let encoded = base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
         response.to_string(),
-    )
+    );
+    if let Some(secret) = hmac_secret {
+        let mac = compute_hmac(secret, encoded.as_bytes());
+        format!("{}.{}", encoded, mac)
+    } else {
+        encoded
+    }
 }
 
 #[cfg(test)]

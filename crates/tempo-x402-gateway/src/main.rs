@@ -81,6 +81,7 @@ async fn main() -> std::io::Result<()> {
 
         if !config.webhook_urls.is_empty() {
             tracing::info!("Webhook URLs configured: {}", config.webhook_urls.len());
+            x402_facilitator::webhook::validate_webhook_urls(&config.webhook_urls);
         }
 
         Some(Arc::new(FacilitatorState {
@@ -144,6 +145,7 @@ async fn main() -> std::io::Result<()> {
 
         let mut app = App::new()
             .app_data(state_data.clone())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024)) // 10MB body limit
             .wrap(Logger::default())
             .wrap(cors)
             .wrap(Governor::new(&governor_conf))

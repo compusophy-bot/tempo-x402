@@ -23,6 +23,12 @@ impl PaymentGateConfig {
             .ok()
             .map(|s| s.into_bytes());
 
+        if hmac_secret.is_none() {
+            tracing::warn!(
+                "FACILITATOR_SHARED_SECRET not set — facilitator requests will be unauthenticated"
+            );
+        }
+
         let rate_limit_rpm: u64 = std::env::var("RATE_LIMIT_RPM")
             .ok()
             .and_then(|r| r.parse().ok())

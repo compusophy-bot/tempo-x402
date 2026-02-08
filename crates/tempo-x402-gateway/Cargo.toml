@@ -40,3 +40,4 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 bytes = { workspace = true }
 url = { workspace = true }
+urlencoding = { workspace = true }

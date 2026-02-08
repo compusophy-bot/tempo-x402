@@ -326,7 +326,7 @@ impl Database {
         Ok(())
     }
 
-    /// Check if slug exists (only active endpoints, allowing reuse of deleted slugs)
+    /// Check if slug exists (includes pending reservations to prevent races)
     pub fn slug_exists(&self, slug: &str) -> Result<bool, GatewayError> {
         let conn = self
             .conn
@@ -334,12 +334,117 @@ impl Database {
             .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
 
         let count: i32 = conn.query_row(
-            "SELECT COUNT(*) FROM endpoints WHERE slug = ?1 AND active = 1",
+            "SELECT COUNT(*) FROM endpoints WHERE slug = ?1",
             params![slug],
             |row| row.get(0),
         )?;
 
         Ok(count > 0)
+    }
+
+    /// Reserve a slug by inserting a pending (active=0) row.
+    /// Uses SQLite UNIQUE constraint to prevent race conditions.
+    pub fn reserve_slug(&self, slug: &str) -> Result<(), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            r#"
+            INSERT INTO endpoints (slug, owner_address, target_url, price_usd, price_amount, description, created_at, updated_at, active)
+            VALUES (?1, '', '', '$0.00', '0', NULL, ?2, ?3, 0)
+            "#,
+            params![slug, now, now],
+        )?;
+
+        Ok(())
+    }
+
+    /// Activate a previously reserved slug with full endpoint data.
+    pub fn activate_endpoint(
+        &self,
+        slug: &str,
+        owner_address: &str,
+        target_url: &str,
+        price_usd: &str,
+        price_amount: &str,
+        description: Option<&str>,
+    ) -> Result<Endpoint, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let now = chrono::Utc::now().timestamp();
+
+        let rows_affected = conn.execute(
+            r#"
+            UPDATE endpoints
+            SET owner_address = ?2, target_url = ?3, price_usd = ?4, price_amount = ?5,
+                description = ?6, updated_at = ?7, active = 1
+            WHERE slug = ?1 AND active = 0
+            "#,
+            params![
+                slug,
+                owner_address,
+                target_url,
+                price_usd,
+                price_amount,
+                description,
+                now
+            ],
+        )?;
+
+        if rows_affected == 0 {
+            return Err(GatewayError::Internal(
+                "failed to activate reserved slug".to_string(),
+            ));
+        }
+
+        // Fetch the activated endpoint
+        let endpoint = conn
+            .query_row(
+                r#"
+                SELECT id, slug, owner_address, target_url, price_usd, price_amount, description, created_at, updated_at, active
+                FROM endpoints
+                WHERE slug = ?1 AND active = 1
+                "#,
+                params![slug],
+                |row| {
+                    Ok(Endpoint {
+                        id: row.get(0)?,
+                        slug: row.get(1)?,
+                        owner_address: row.get(2)?,
+                        target_url: row.get(3)?,
+                        price_usd: row.get(4)?,
+                        price_amount: row.get(5)?,
+                        description: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                        active: row.get::<_, i32>(9)? == 1,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| GatewayError::Internal("activated endpoint not found".to_string()))?;
+
+        Ok(endpoint)
+    }
+
+    /// Delete a reserved (pending) slug. Used to clean up failed registrations.
+    pub fn delete_reserved_slug(&self, slug: &str) -> Result<(), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        conn.execute(
+            "DELETE FROM endpoints WHERE slug = ?1 AND active = 0",
+            params![slug],
+        )?;
+
+        Ok(())
     }
 }
 

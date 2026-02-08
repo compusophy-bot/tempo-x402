@@ -94,7 +94,7 @@ pub async fn update_endpoint(
 
     // Validate new target URL if provided
     if let Some(ref url) = body.target_url {
-        super::register::validate_target_url(url)?;
+        crate::validation::validate_target_url(url)?;
     }
 
     // Parse new price if provided
@@ -174,7 +174,10 @@ pub async fn update_endpoint(
     )?;
 
     Ok(HttpResponse::Ok()
-        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
+        .insert_header((
+            "PAYMENT-RESPONSE",
+            payment_response_header(&settle, state.config.hmac_secret.as_deref()),
+        ))
         .json(serde_json::json!({
             "success": true,
             "endpoint": updated,
@@ -256,7 +259,10 @@ pub async fn delete_endpoint(
     state.db.delete_endpoint(&slug)?;
 
     Ok(HttpResponse::Ok()
-        .insert_header(("PAYMENT-RESPONSE", payment_response_header(&settle)))
+        .insert_header((
+            "PAYMENT-RESPONSE",
+            payment_response_header(&settle, state.config.hmac_secret.as_deref()),
+        ))
         .json(serde_json::json!({
             "success": true,
             "message": format!("Endpoint '{}' has been deactivated", slug),

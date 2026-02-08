@@ -8,7 +8,7 @@ const DEFAULT_PLATFORM_FEE: &str = "$0.01";
 const DEFAULT_DB_PATH: &str = "./gateway.db";
 const DEFAULT_RATE_LIMIT_RPM: u32 = 60;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GatewayConfig {
     /// Platform fee recipient address
     pub platform_address: Address,
@@ -38,6 +38,39 @@ pub struct GatewayConfig {
     pub rpc_url: String,
     /// Directory to serve SPA static files from (None = don't serve SPA)
     pub spa_dir: Option<String>,
+    /// Bearer token required for /metrics endpoint (None = public)
+    pub metrics_token: Option<String>,
+}
+
+impl std::fmt::Debug for GatewayConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GatewayConfig")
+            .field("platform_address", &self.platform_address)
+            .field("facilitator_url", &self.facilitator_url)
+            .field(
+                "hmac_secret",
+                &self.hmac_secret.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("db_path", &self.db_path)
+            .field("port", &self.port)
+            .field("platform_fee", &self.platform_fee)
+            .field("platform_fee_amount", &self.platform_fee_amount)
+            .field("allowed_origins", &self.allowed_origins)
+            .field("rate_limit_rpm", &self.rate_limit_rpm)
+            .field(
+                "facilitator_private_key",
+                &self.facilitator_private_key.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("nonce_db_path", &self.nonce_db_path)
+            .field("webhook_urls", &self.webhook_urls)
+            .field("rpc_url", &self.rpc_url)
+            .field("spa_dir", &self.spa_dir)
+            .field(
+                "metrics_token",
+                &self.metrics_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .finish()
+    }
 }
 
 impl GatewayConfig {
@@ -125,6 +158,17 @@ impl GatewayConfig {
         // Optional: SPA directory
         let spa_dir = env::var("SPA_DIR").ok().filter(|s| !s.is_empty());
 
+        // Optional: metrics token
+        let metrics_token = env::var("METRICS_TOKEN").ok().filter(|s| !s.is_empty());
+
+        if hmac_secret.is_none() {
+            tracing::warn!("FACILITATOR_SHARED_SECRET not set — requests to facilitator will be unauthenticated");
+        }
+
+        if metrics_token.is_none() {
+            tracing::warn!("METRICS_TOKEN not set — /metrics endpoint is publicly accessible");
+        }
+
         Ok(Self {
             platform_address,
             facilitator_url,
@@ -140,6 +184,7 @@ impl GatewayConfig {
             webhook_urls,
             rpc_url,
             spa_dir,
+            metrics_token,
         })
     }
 }

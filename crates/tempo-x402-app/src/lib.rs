@@ -149,7 +149,9 @@ fn WalletButtons(
                     spawn_local(async move {
                         match wallet::fund_address(&address).await {
                             Ok(_) => {
-                                web_sys::console::log_1(&format!("Funded new wallet: {}", address).into());
+                                web_sys::console::log_1(
+                                    &format!("Funded new wallet: {}", address).into(),
+                                );
                             }
                             Err(e) => {
                                 web_sys::console::error_1(&format!("Funding failed: {}", e).into());
@@ -406,7 +408,9 @@ fn HomePage() -> impl IntoView {
 #[component]
 fn PaymentDemo() -> impl IntoView {
     let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
-    let (status, set_status) = create_signal(String::from("Ready — connect a wallet and click Pay & Request"));
+    let (status, set_status) = create_signal(String::from(
+        "Ready — connect a wallet and click Pay & Request",
+    ));
     let (result, set_result) = create_signal(None::<String>);
     let (tx_hash, set_tx_hash) = create_signal(None::<String>);
     let (loading, set_loading) = create_signal(false);
@@ -414,7 +418,8 @@ fn PaymentDemo() -> impl IntoView {
     let make_request = move |_| {
         let w = wallet.get();
         if !w.connected {
-            set_status.set("Connect a wallet first (MetaMask, Demo Key, or Create Wallet)".to_string());
+            set_status
+                .set("Connect a wallet first (MetaMask, Demo Key, or Create Wallet)".to_string());
             return;
         }
 
@@ -494,13 +499,13 @@ fn PaymentDemo() -> impl IntoView {
 #[component]
 fn DocsPage() -> impl IntoView {
     view! {
-            <div class="page docs">
-                <h1>"Documentation"</h1>
+                <div class="page docs">
+                    <h1>"Documentation"</h1>
 
-                <section>
-                    <h2>"Quick Start"</h2>
-                    <pre class="code-block">
-{r#"// Add to Cargo.toml
+                    <section>
+                        <h2>"Quick Start"</h2>
+                        <pre class="code-block">
+    {r#"// Add to Cargo.toml
 [dependencies]
 tempo-x402-client = "0.4"
 
@@ -514,30 +519,30 @@ let (resp, settlement) = client
     .fetch("https://api.example.com/data", Method::GET)
     .await?;
 "#}
-                    </pre>
-                </section>
+                        </pre>
+                    </section>
 
-                <section>
-                    <h2>"Crates"</h2>
-                    <ul>
-                        <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types and crypto"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-client">"tempo-x402-client"</a>" — Client SDK"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment settlement"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway"</li>
-                        <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" — WASM wallet (signing + key gen)"</li>
-                    </ul>
-                </section>
+                    <section>
+                        <h2>"Crates"</h2>
+                        <ul>
+                            <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types and crypto"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-client">"tempo-x402-client"</a>" — Client SDK"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment settlement"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" — WASM wallet (signing + key gen)"</li>
+                        </ul>
+                    </section>
 
-                <section>
-                    <h2>"Links"</h2>
-                    <ul>
-                        <li><a href="https://github.com/compusophy/tempo-x402">"GitHub"</a></li>
-                        <li><a href="https://explore.moderato.tempo.xyz">"Block Explorer"</a></li>
-                    </ul>
-                </section>
-            </div>
-        }
+                    <section>
+                        <h2>"Links"</h2>
+                        <ul>
+                            <li><a href="https://github.com/compusophy/tempo-x402">"GitHub"</a></li>
+                            <li><a href="https://explore.moderato.tempo.xyz">"Block Explorer"</a></li>
+                        </ul>
+                    </section>
+                </div>
+            }
 }
 
 /// Footer
