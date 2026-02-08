@@ -69,15 +69,19 @@ impl GatewayConfig {
         let platform_fee_amount = parse_price_to_amount(&platform_fee)?;
 
         // Optional: allowed origins
-        let allowed_origins = env::var("ALLOWED_ORIGINS")
+        let mut allowed_origins: Vec<String> = env::var("ALLOWED_ORIGINS")
             .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_else(|_| {
                 vec![
                     "http://localhost:3000".to_string(),
                     "http://localhost:5173".to_string(),
-                    "https://tempo-x402-app.vercel.app".to_string(),
                 ]
             });
+        // Always allow the official demo app
+        let demo_origin = "https://tempo-x402-app.vercel.app".to_string();
+        if !allowed_origins.contains(&demo_origin) {
+            allowed_origins.push(demo_origin);
+        }
 
         // Optional: rate limit
         let rate_limit_rpm = env::var("RATE_LIMIT_RPM")
