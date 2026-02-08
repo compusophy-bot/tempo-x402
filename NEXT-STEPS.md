@@ -5,7 +5,7 @@ Living document. Revisit each session. Strike items when done, add new ones as t
 ## Completed (v0.1.x - v0.3.x)
 
 - [x] **End-to-end test on deployed infra** — run `x402-client` against the Railway server+facilitator with real testnet funds, confirm a full payment round-trip (402 -> sign -> pay -> 200 + tx hash)
-- [x] **Demo project** — https://tempo-x402-demo.vercel.app ([repo](https://github.com/compusophy/tempo-x402-demo))
+- [x] **Demo project** — https://tempo-x402-app.vercel.app ([repo](https://github.com/compusophy/tempo-x402-demo))
 - [x] **Documentation** — crate-level rustdoc + llms.txt
 - [x] **CI hardening** — release workflow has test gate (test job must pass before build)
 - [x] **Docs CI** — version consistency validation on push/release (never stale again)

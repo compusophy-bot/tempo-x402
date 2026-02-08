@@ -2,7 +2,7 @@
 
 Pay-per-request APIs on the Tempo blockchain.
 
-**[Live Demo](https://tempo-x402-demo.vercel.app)** | **[Documentation](https://tempo-x402-demo.vercel.app/docs)** | **[crates.io](https://crates.io/crates/tempo-x402)**
+**[Live Demo](https://tempo-x402-app.vercel.app)** | **[Documentation](https://tempo-x402-app.vercel.app/docs)** | **[crates.io](https://crates.io/crates/tempo-x402)**
 
 ## How It Works
 
@@ -91,7 +91,7 @@ async fn main() {
 
 | Service | URL |
 |---------|-----|
-| Demo | https://tempo-x402-demo.vercel.app |
+| Demo | https://tempo-x402-app.vercel.app |
 | Server | https://x402-server-production.up.railway.app |
 | Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
 | Gateway | https://x402-gateway-production-5018.up.railway.app |

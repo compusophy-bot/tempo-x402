@@ -50,7 +50,7 @@ async fn main() {
 
 ## Documentation
 
-See the [full documentation](https://tempo-x402-demo.vercel.app/docs) or [llms.txt](https://github.com/compusophy/tempo-x402/blob/main/llms.txt).
+See the [full documentation](https://tempo-x402-app.vercel.app/docs) or [llms.txt](https://github.com/compusophy/tempo-x402/blob/main/llms.txt).
 
 ## License
 
