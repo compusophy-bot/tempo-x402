@@ -35,6 +35,8 @@ RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nexec gosu app
 
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
+ENV DB_PATH=/data/gateway.db
+ENV NONCE_DB_PATH=/data/x402-nonces.db
 
 EXPOSE 4023
 
