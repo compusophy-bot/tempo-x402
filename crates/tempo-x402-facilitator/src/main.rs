@@ -34,14 +34,16 @@ fn build_cors(origins: &[String]) -> Cors {
                     .unwrap_or(false)
             })
             .allow_any_method()
-            .allow_any_header()
+            .allowed_headers(vec!["content-type", "authorization", "x-facilitator-auth"])
             .max_age(3600)
     } else {
         let mut cors = Cors::default();
         for origin in origins {
             cors = cors.allowed_origin(origin);
         }
-        cors.allow_any_method().allow_any_header().max_age(3600)
+        cors.allow_any_method()
+            .allowed_headers(vec!["content-type", "authorization", "x-facilitator-auth"])
+            .max_age(3600)
     }
 }
 
@@ -118,12 +120,29 @@ async fn main() -> std::io::Result<()> {
         x402_facilitator::webhook::validate_webhook_urls(&webhook_urls);
     }
 
+    // Separate metrics token (falls back to HMAC secret for backward compat)
+    let metrics_token = std::env::var("METRICS_TOKEN")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.into_bytes());
+
+    if metrics_token.is_none() {
+        tracing::warn!("METRICS_TOKEN not set — /metrics endpoint is publicly accessible");
+    }
+
+    // Derive a domain-separated webhook HMAC key from the shared secret
+    let webhook_hmac_key = hmac_secret
+        .as_ref()
+        .map(|secret| x402::hmac::compute_hmac(secret, b"x402-webhook-hmac").into_bytes());
+
     let state = web::Data::new(AppState {
         facilitator,
         hmac_secret,
         chain_config: x402::ChainConfig::default(),
         webhook_urls,
         http_client: x402_facilitator::webhook::webhook_client(),
+        metrics_token,
+        webhook_hmac_key,
     });
 
     let port: u16 = std::env::var("FACILITATOR_PORT")

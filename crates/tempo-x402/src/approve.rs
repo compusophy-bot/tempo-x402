@@ -28,12 +28,23 @@ async fn main() {
             .parse::<U256>()
             .expect("invalid APPROVE_AMOUNT -- must be a valid U256"),
         Err(_) => {
-            tracing::warn!(
-                "APPROVE_AMOUNT not set -- using U256::MAX. \
-                 This grants unlimited spend authority to the facilitator."
+            eprintln!(
+                "ERROR: APPROVE_AMOUNT is required.\n\
+                 Set it to the token amount to approve (e.g. 1000000000 for 1000 tokens at 6 decimals).\n\
+                 To grant unlimited approval (NOT recommended), set APPROVE_AMOUNT=MAX."
             );
-            U256::MAX
+            std::process::exit(1);
         }
+    };
+    // Allow "MAX" as a convenience alias for U256::MAX
+    let approve_amount = if std::env::var("APPROVE_AMOUNT").as_deref() == Ok("MAX") {
+        tracing::warn!(
+            "APPROVE_AMOUNT=MAX — granting unlimited spend authority to the facilitator. \
+             This is NOT recommended for production."
+        );
+        U256::MAX
+    } else {
+        approve_amount
     };
 
     let signer: PrivateKeySigner = client_key.parse().expect("invalid EVM_PRIVATE_KEY");

@@ -26,11 +26,14 @@ async fn main() -> std::io::Result<()> {
         .init();
 
     // Load configuration
-    let config = GatewayConfig::from_env().expect("Failed to load configuration");
+    let mut config = GatewayConfig::from_env().expect("Failed to load configuration");
     let port = config.port;
     let allowed_origins = config.allowed_origins.clone();
     let rate_limit_rpm = config.rate_limit_rpm;
     let spa_dir = config.spa_dir.clone();
+
+    // Extract the private key early to minimize copies of key material in memory.
+    let facilitator_private_key = config.facilitator_private_key.take();
 
     tracing::info!("Starting x402-gateway on port {}", port);
     tracing::info!("Platform address: {:#x}", config.platform_address);
@@ -45,7 +48,7 @@ async fn main() -> std::io::Result<()> {
     );
 
     // Bootstrap embedded facilitator if FACILITATOR_PRIVATE_KEY is set
-    let facilitator_state = if let Some(ref key) = config.facilitator_private_key {
+    let facilitator_state = if let Some(ref key) = facilitator_private_key {
         // Require HMAC when running embedded facilitator to prevent unauthenticated
         // access to the /facilitator/verify-and-settle endpoint
         if config.hmac_secret.is_none() {
@@ -98,12 +101,20 @@ async fn main() -> std::io::Result<()> {
             x402_facilitator::webhook::validate_webhook_urls(&config.webhook_urls);
         }
 
+        // Derive domain-separated webhook HMAC key
+        let webhook_hmac_key = config
+            .hmac_secret
+            .as_ref()
+            .map(|secret| x402::hmac::compute_hmac(secret, b"x402-webhook-hmac").into_bytes());
+
         Some(Arc::new(FacilitatorState {
             facilitator,
             hmac_secret: config.hmac_secret.clone(),
             chain_config: x402::ChainConfig::default(),
             webhook_urls: config.webhook_urls.clone(),
             http_client: x402_facilitator::webhook::webhook_client(),
+            metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
+            webhook_hmac_key,
         }))
     } else {
         tracing::info!("Facilitator URL: {}", config.facilitator_url);

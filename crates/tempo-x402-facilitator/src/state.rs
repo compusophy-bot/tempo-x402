@@ -25,4 +25,8 @@ pub struct AppState {
     pub chain_config: x402::ChainConfig,
     pub webhook_urls: Vec<String>,
     pub http_client: reqwest::Client,
+    /// Separate bearer token for /metrics endpoint (not the HMAC secret).
+    pub metrics_token: Option<Vec<u8>>,
+    /// Derived key for webhook HMAC signing (domain-separated from auth secret).
+    pub webhook_hmac_key: Option<Vec<u8>>,
 }

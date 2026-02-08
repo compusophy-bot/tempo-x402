@@ -68,13 +68,15 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison to prevent timing side-channel attacks.
+/// Constant-time byte comparison that does not leak input lengths.
+/// Both inputs are hashed to fixed-length digests before comparison,
+/// so timing reveals neither the content nor the length of the secret.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
+    use sha2::{Digest, Sha256};
+    let ha = Sha256::digest(a);
+    let hb = Sha256::digest(b);
     let mut result = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
+    for (x, y) in ha.iter().zip(hb.iter()) {
         result |= x ^ y;
     }
     result == 0
@@ -82,15 +84,14 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 #[get("/metrics")]
 pub async fn metrics_endpoint(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    // Require bearer token authentication for metrics when HMAC secret is configured.
-    // Uses the HMAC secret as a bearer token (constant-time comparison).
-    if let Some(ref secret) = state.hmac_secret {
+    // Use separate METRICS_TOKEN for metrics auth (not the HMAC shared secret).
+    if let Some(ref token) = state.metrics_token {
         let authorized = req
             .headers()
             .get("authorization")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
-            .map(|token| constant_time_eq(token.as_bytes(), secret))
+            .map(|t| constant_time_eq(t.as_bytes(), token))
             .unwrap_or(false);
 
         if !authorized {
@@ -174,7 +175,7 @@ pub async fn verify_and_settle(
                             network: result.network.clone(),
                             timestamp: now,
                         },
-                        state.hmac_secret.as_deref(),
+                        state.webhook_hmac_key.as_deref(),
                     );
                 }
             } else {

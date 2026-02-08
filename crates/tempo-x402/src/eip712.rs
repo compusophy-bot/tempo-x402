@@ -36,14 +36,39 @@ pub fn signing_hash(auth: &PaymentAuthorization) -> B256 {
     signing_hash_for_chain(auth, &ChainConfig::default())
 }
 
+/// secp256k1 curve order N / 2 — signatures with s > this are malleable (EIP-2).
+const SECP256K1_N_DIV_2: U256 = U256::from_limbs([
+    0xBFD25E8CD0364140,
+    0xBAAEDCE6AF48A03B,
+    0xFFFFFFFFFFFFFFFE,
+    0x7FFFFFFFFFFFFFFF,
+]);
+
 /// Verify an EIP-712 signature for a given chain config.
+/// Rejects high-s signatures to prevent malleability (EIP-2).
 pub fn verify_signature_for_chain(
     auth: &PaymentAuthorization,
     signature_bytes: &[u8],
     config: &ChainConfig,
 ) -> Result<Address, X402Error> {
+    // F-03: Validate signature length before parsing
+    if signature_bytes.len() != 65 {
+        return Err(X402Error::SignatureError(format!(
+            "signature must be 65 bytes, got {}",
+            signature_bytes.len()
+        )));
+    }
+
     let sig = Signature::from_raw(signature_bytes)
         .map_err(|e| X402Error::SignatureError(format!("invalid signature: {e}")))?;
+
+    // F-01: Reject high-s signatures (EIP-2 malleability protection)
+    if sig.s() > SECP256K1_N_DIV_2 {
+        return Err(X402Error::SignatureError(
+            "high-s signature rejected (EIP-2 malleability)".to_string(),
+        ));
+    }
+
     let hash = signing_hash_for_chain(auth, config);
     sig.recover_address_from_prehash(&hash)
         .map_err(|e| X402Error::SignatureError(format!("recovery failed: {e}")))
@@ -58,10 +83,11 @@ pub fn verify_signature(
 }
 
 /// Generate a random 32-byte nonce (keccak256 of 32 random bytes).
+/// Uses `rand::fill` which delegates to the OS CSPRNG (cryptographically secure).
 pub fn random_nonce() -> FixedBytes<32> {
     use alloy::primitives::keccak256;
     let mut bytes = [0u8; 32];
-    rand::fill(&mut bytes);
+    rand::fill(&mut bytes); // CSPRNG via ThreadRng -> OsRng
     keccak256(bytes)
 }
 

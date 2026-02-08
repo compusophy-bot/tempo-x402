@@ -21,14 +21,26 @@ fn build_cors(origins: &[String]) -> Cors {
                     .unwrap_or(false)
             })
             .allow_any_method()
-            .allow_any_header()
+            .allowed_headers(vec![
+                "content-type",
+                "authorization",
+                "payment-signature",
+                "x-facilitator-auth",
+            ])
             .max_age(3600)
     } else {
         let mut cors = Cors::default();
         for origin in origins {
             cors = cors.allowed_origin(origin);
         }
-        cors.allow_any_method().allow_any_header().max_age(3600)
+        cors.allow_any_method()
+            .allowed_headers(vec![
+                "content-type",
+                "authorization",
+                "payment-signature",
+                "x-facilitator-auth",
+            ])
+            .max_age(3600)
     }
 }
 

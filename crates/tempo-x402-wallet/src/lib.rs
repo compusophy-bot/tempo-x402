@@ -311,6 +311,37 @@ mod tests {
         assert_eq!(payload.payload.signature.len(), 132); // 0x + 130 hex
     }
 
+    /// Cross-validate wallet constants against the core crate to prevent silent EIP-712 mismatches.
+    #[test]
+    fn test_constants_match_core_crate() {
+        assert_eq!(
+            TEMPO_CHAIN_ID,
+            x402::TEMPO_CHAIN_ID,
+            "TEMPO_CHAIN_ID mismatch"
+        );
+        assert_eq!(TEMPO_NETWORK, x402::TEMPO_NETWORK, "TEMPO_NETWORK mismatch");
+        assert_eq!(SCHEME_NAME, x402::SCHEME_NAME, "SCHEME_NAME mismatch");
+        assert_eq!(
+            TOKEN_DECIMALS,
+            x402::TOKEN_DECIMALS,
+            "TOKEN_DECIMALS mismatch"
+        );
+        assert_eq!(
+            format!("{}", DEFAULT_TOKEN),
+            format!("{}", x402::DEFAULT_TOKEN),
+            "DEFAULT_TOKEN mismatch"
+        );
+        let core_config = x402::ChainConfig::default();
+        assert_eq!(
+            EIP712_DOMAIN_NAME, core_config.eip712_domain_name,
+            "EIP712_DOMAIN_NAME mismatch"
+        );
+        assert_eq!(
+            EIP712_DOMAIN_VERSION, core_config.eip712_domain_version,
+            "EIP712_DOMAIN_VERSION mismatch"
+        );
+    }
+
     #[test]
     fn test_build_payment_payload() {
         let w = WalletSigner::random();

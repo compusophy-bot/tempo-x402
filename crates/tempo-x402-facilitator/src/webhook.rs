@@ -123,6 +123,42 @@ async fn validate_webhook_ip(url_str: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolve webhook URL DNS, validate IP, and rewrite URL to the resolved IP.
+/// This pins the IP to prevent DNS rebinding between validation and connection.
+async fn pin_webhook_url(url_str: &str) -> Result<String, String> {
+    validate_webhook_ip(url_str).await?;
+
+    let mut parsed = url::Url::parse(url_str).map_err(|e| format!("invalid URL: {e}"))?;
+    let host = match parsed.host_str() {
+        Some(h) => h.to_string(),
+        None => return Err("URL has no host".to_string()),
+    };
+
+    // If already an IP, no rewrite needed
+    if host.parse::<Ipv4Addr>().is_ok() || host.parse::<Ipv6Addr>().is_ok() {
+        return Ok(url_str.to_string());
+    }
+
+    // Resolve and rewrite
+    let lookup = format!("{}:{}", host, parsed.port().unwrap_or(443));
+    let addr = tokio::net::lookup_host(&lookup)
+        .await
+        .map_err(|e| format!("DNS resolution failed: {e}"))?
+        .next()
+        .ok_or_else(|| "DNS returned no addresses".to_string())?;
+
+    let ip_host = match addr.ip() {
+        std::net::IpAddr::V6(ip) => format!("[{}]", ip),
+        std::net::IpAddr::V4(ip) => ip.to_string(),
+    };
+
+    parsed
+        .set_host(Some(&ip_host))
+        .map_err(|_| "failed to set resolved IP in webhook URL".to_string())?;
+
+    Ok(parsed.to_string())
+}
+
 /// Create a webhook-specific HTTP client with redirects disabled.
 pub fn webhook_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -157,32 +193,62 @@ pub fn fire_webhooks(
         let hmac_sig = hmac_secret.map(|secret| x402::hmac::compute_hmac(secret, &body));
 
         tokio::spawn(async move {
-            // Validate resolved IP at delivery time (prevents DNS rebinding)
-            if let Err(reason) = validate_webhook_ip(&url).await {
-                tracing::warn!(
-                    url = %url,
-                    reason = %reason,
-                    "webhook delivery blocked — target resolves to unsafe IP"
-                );
-                return;
-            }
-
-            let mut req = client
-                .post(&url)
-                .header("content-type", "application/json")
-                .timeout(std::time::Duration::from_secs(5));
-
-            if let Some(ref sig) = hmac_sig {
-                req = req.header("X-Webhook-Signature", sig.as_str());
-            }
-
-            let result = req.body(body).send().await;
-            match result {
-                Ok(resp) => {
-                    tracing::debug!(url = %url, status = %resp.status(), "webhook delivered")
+            // Validate resolved IP at delivery time and pin it to prevent DNS rebinding.
+            let pinned_url = match pin_webhook_url(&url).await {
+                Ok(u) => u,
+                Err(reason) => {
+                    tracing::warn!(
+                        url = %url,
+                        reason = %reason,
+                        "webhook delivery blocked — target resolves to unsafe IP"
+                    );
+                    return;
                 }
-                Err(e) => tracing::warn!(url = %url, error = %e, "webhook delivery failed"),
+            };
+
+            let original_host = url::Url::parse(&url)
+                .ok()
+                .and_then(|u| u.host_str().map(|h| h.to_string()));
+
+            // Retry with exponential backoff: 1s, 5s, 15s
+            let delays = [1, 5, 15];
+            for (attempt, delay_secs) in std::iter::once(&0u64).chain(delays.iter()).enumerate() {
+                if *delay_secs > 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(*delay_secs)).await;
+                }
+
+                let mut req = client
+                    .post(&pinned_url)
+                    .header("content-type", "application/json")
+                    .timeout(std::time::Duration::from_secs(5));
+
+                if let Some(ref host) = original_host {
+                    req = req.header("host", host.as_str());
+                }
+                if let Some(ref sig) = hmac_sig {
+                    req = req.header("X-Webhook-Signature", sig.as_str());
+                }
+
+                match req.body(body.clone()).send().await {
+                    Ok(resp) if resp.status().is_success() || resp.status().is_redirection() => {
+                        tracing::debug!(url = %url, status = %resp.status(), "webhook delivered");
+                        return;
+                    }
+                    Ok(resp) => {
+                        tracing::warn!(
+                            url = %url, status = %resp.status(), attempt = attempt + 1,
+                            "webhook delivery failed (non-success status)"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            url = %url, error = %e, attempt = attempt + 1,
+                            "webhook delivery failed"
+                        );
+                    }
+                }
             }
+            tracing::error!(url = %url, "webhook delivery failed after all retries");
         });
     }
 }

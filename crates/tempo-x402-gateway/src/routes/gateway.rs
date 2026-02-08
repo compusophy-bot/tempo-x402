@@ -32,8 +32,10 @@ fn sanitize_query(query: &str) -> Result<String, GatewayError> {
 }
 
 /// Sanitize a proxy path segment to prevent path traversal and URL authority injection.
+/// Validates against the decoded form but returns the original (still-encoded) path
+/// to prevent query/fragment injection from decoded URL-special characters.
 fn sanitize_path(path: &str) -> Result<String, GatewayError> {
-    // URL-decode the path first to catch encoded attacks (e.g. %2e%2e)
+    // URL-decode the path to catch encoded attacks (e.g. %2e%2e)
     let decoded = urlencoding::decode(path)
         .map_err(|_| GatewayError::ProxyError("invalid URL encoding in path".to_string()))?;
 
@@ -58,7 +60,9 @@ fn sanitize_path(path: &str) -> Result<String, GatewayError> {
         ));
     }
 
-    Ok(decoded.into_owned())
+    // Return the original (still-encoded) path to prevent query/fragment injection.
+    // E.g. %3F stays as %3F, not decoded to ? which would alter the target URL.
+    Ok(path.to_string())
 }
 
 /// ANY /g/{slug}/{path:.*} - Proxy to target API with payment

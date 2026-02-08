@@ -23,6 +23,8 @@ fn make_state(hmac_secret: Option<Vec<u8>>) -> web::Data<AppState> {
         chain_config: x402::ChainConfig::default(),
         webhook_urls: vec![],
         http_client: reqwest::Client::new(),
+        metrics_token: None,
+        webhook_hmac_key: None,
     })
 }
 
@@ -160,4 +162,74 @@ async fn test_verify_and_settle_rejects_malformed_body() {
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["success"], false);
     assert!(body["errorReason"].as_str().unwrap().contains("invalid"));
+}
+
+/// Build an AppState with separate metrics token.
+fn make_state_with_metrics_token(
+    hmac_secret: Option<Vec<u8>>,
+    metrics_token: Option<Vec<u8>>,
+) -> web::Data<AppState> {
+    let signer = PrivateKeySigner::random();
+    let facilitator_address = signer.address();
+
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::from(signer))
+        .connect_http("http://localhost:1".parse().unwrap());
+
+    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address);
+
+    web::Data::new(AppState {
+        facilitator,
+        hmac_secret,
+        chain_config: x402::ChainConfig::default(),
+        webhook_urls: vec![],
+        http_client: reqwest::Client::new(),
+        metrics_token,
+        webhook_hmac_key: None,
+    })
+}
+
+#[actix_rt::test]
+async fn test_metrics_requires_separate_token() {
+    // Configure HMAC secret AND a separate metrics token
+    let state = make_state_with_metrics_token(
+        Some(b"hmac-secret".to_vec()),
+        Some(b"metrics-token-123".to_vec()),
+    );
+
+    let app =
+        test::init_service(App::new().app_data(state).service(routes::metrics_endpoint)).await;
+
+    // No bearer token -> 401
+    let req = test::TestRequest::get().uri("/metrics").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401);
+
+    // Wrong bearer token (the HMAC secret, not the metrics token) -> 401
+    let req = test::TestRequest::get()
+        .uri("/metrics")
+        .insert_header(("Authorization", "Bearer hmac-secret"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401);
+
+    // Correct metrics token -> 200
+    let req = test::TestRequest::get()
+        .uri("/metrics")
+        .insert_header(("Authorization", "Bearer metrics-token-123"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_rt::test]
+async fn test_metrics_public_when_no_token() {
+    // No metrics token configured -> public access
+    let state = make_state(Some(b"hmac-secret".to_vec()));
+    let app =
+        test::init_service(App::new().app_data(state).service(routes::metrics_endpoint)).await;
+
+    let req = test::TestRequest::get().uri("/metrics").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
 }

@@ -26,10 +26,18 @@ pub struct TempoSchemeFacilitator<P> {
     payer_locks: Arc<DashMap<Address, Arc<Mutex<()>>>>,
     /// Maximum payment timeout in seconds (used for nonce expiry).
     max_timeout_seconds: u64,
+    /// Accepted token addresses. Empty = accept any token.
+    accepted_tokens: Vec<Address>,
+    /// Maximum per-settlement amount (0 = no limit).
+    max_settle_amount: U256,
 }
 
 impl<P> TempoSchemeFacilitator<P> {
     /// Create a new facilitator with Tempo Moderato defaults and in-memory nonce store.
+    ///
+    /// # Warning
+    /// The default in-memory nonce store loses all nonces on restart, enabling
+    /// replay attacks. For production use, chain `.with_nonce_store(sqlite_store)`.
     pub fn new(provider: P, facilitator_address: Address) -> Self {
         Self {
             provider,
@@ -38,6 +46,8 @@ impl<P> TempoSchemeFacilitator<P> {
             nonce_store: Arc::new(InMemoryNonceStore::new()),
             payer_locks: Arc::new(DashMap::new()),
             max_timeout_seconds: 300, // 5 minutes default
+            accepted_tokens: vec![],
+            max_settle_amount: U256::ZERO,
         }
     }
 
@@ -54,12 +64,28 @@ impl<P> TempoSchemeFacilitator<P> {
             nonce_store: Arc::new(InMemoryNonceStore::new()),
             payer_locks: Arc::new(DashMap::new()),
             max_timeout_seconds: 300,
+            accepted_tokens: vec![],
+            max_settle_amount: U256::ZERO,
         }
     }
 
     /// Set a custom nonce store (e.g. SqliteNonceStore for persistence).
     pub fn with_nonce_store(mut self, store: Arc<dyn NonceStore>) -> Self {
         self.nonce_store = store;
+        self
+    }
+
+    /// Restrict accepted token addresses. When non-empty, payments for tokens
+    /// not in this list are rejected.
+    pub fn with_accepted_tokens(mut self, tokens: Vec<Address>) -> Self {
+        self.accepted_tokens = tokens;
+        self
+    }
+
+    /// Set a maximum per-settlement amount. Payments exceeding this are rejected.
+    /// Set to U256::ZERO (default) to disable the limit.
+    pub fn with_max_settle_amount(mut self, max: U256) -> Self {
+        self.max_settle_amount = max;
         self
     }
 
@@ -127,6 +153,9 @@ impl<P> TempoSchemeFacilitator<P> {
     const MAX_PAYER_LOCKS: usize = 100_000;
 
     /// Get or create a per-payer mutex for atomic operations.
+    /// Note: the len() + contains_key() check is not atomic with entry(), so the cap
+    /// can be overshot by up to the number of concurrent worker threads. This is
+    /// acceptable since the cleanup task reclaims idle locks periodically.
     fn payer_lock(&self, payer: Address) -> Result<Arc<Mutex<()>>, X402Error> {
         // Prevent unbounded growth of the lock map
         if self.payer_locks.len() >= Self::MAX_PAYER_LOCKS && !self.payer_locks.contains_key(&payer)
@@ -152,9 +181,21 @@ where
         payload: &PaymentPayload,
         requirements: &PaymentRequirements,
     ) -> Result<VerifyResponse, X402Error> {
+        // 0a. Validate x402 protocol version
+        if payload.x402_version != 1 {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some(format!(
+                    "Unsupported x402 version: {} (expected 1)",
+                    payload.x402_version
+                )),
+                payer: None,
+            });
+        }
+
         let p = &payload.payload;
 
-        // 0. Validate scheme and network match this facilitator
+        // 0b. Validate scheme and network match this facilitator
         if requirements.scheme != self.config.scheme_name {
             return Ok(VerifyResponse {
                 is_valid: false,
@@ -316,6 +357,27 @@ where
             return Ok(VerifyResponse {
                 is_valid: false,
                 invalid_reason: Some("Payment amount below required".to_string()),
+                payer: Some(p.from),
+            });
+        }
+
+        // 5b. Token allowlist check
+        if !self.accepted_tokens.is_empty() && !self.accepted_tokens.contains(&p.token) {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Token not in facilitator's accepted token list".to_string()),
+                payer: Some(p.from),
+            });
+        }
+
+        // 5c. Per-settlement amount cap
+        if !self.max_settle_amount.is_zero() && value > self.max_settle_amount {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some(format!(
+                    "Payment amount exceeds maximum per-settlement cap ({})",
+                    self.max_settle_amount
+                )),
                 payer: Some(p.from),
             });
         }

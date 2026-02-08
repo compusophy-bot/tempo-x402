@@ -120,10 +120,16 @@ impl GatewayConfig {
                     "http://localhost:5173".to_string(),
                 ]
             });
-        // Always allow the official demo app
-        let demo_origin = "https://tempo-x402-app.vercel.app".to_string();
-        if !allowed_origins.contains(&demo_origin) {
-            allowed_origins.push(demo_origin);
+        // Include the demo app origin only when opted in via INCLUDE_DEMO_ORIGIN=true
+        // or when ALLOWED_ORIGINS is not explicitly set (development default).
+        let include_demo = env::var("INCLUDE_DEMO_ORIGIN")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or_else(|_| env::var("ALLOWED_ORIGINS").is_err());
+        if include_demo {
+            let demo_origin = "https://tempo-x402-app.vercel.app".to_string();
+            if !allowed_origins.contains(&demo_origin) {
+                allowed_origins.push(demo_origin);
+            }
         }
 
         // Optional: rate limit

@@ -5234,6 +5234,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tempo-x402",
  "tokio",
  "tracing",
@@ -5260,6 +5261,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tempo-x402",
  "tempo-x402-facilitator",
  "thiserror 2.0.18",
@@ -5286,6 +5288,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "tempo-x402",
  "tokio",
  "tokio-stream",
@@ -5302,6 +5305,7 @@ dependencies = [
  "getrandom 0.3.4",
  "serde",
  "serde_json",
+ "tempo-x402",
 ]
 
 [[package]]

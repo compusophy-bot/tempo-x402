@@ -33,13 +33,14 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison to prevent timing side-channel attacks.
+/// Constant-time byte comparison that does not leak input lengths.
+/// Both inputs are hashed to fixed-length digests before comparison.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
+    use sha2::{Digest, Sha256};
+    let ha = Sha256::digest(a);
+    let hb = Sha256::digest(b);
     let mut result = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
+    for (x, y) in ha.iter().zip(hb.iter()) {
         result |= x ^ y;
     }
     result == 0

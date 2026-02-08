@@ -94,6 +94,7 @@ impl SqliteNonceStore {
                 nonce BLOB PRIMARY KEY,
                 recorded_at INTEGER NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_nonces_recorded_at ON used_nonces(recorded_at);
             PRAGMA journal_mode=WAL;",
         )?;
         Ok(Self {
@@ -198,6 +199,41 @@ impl NonceStore for SqliteNonceStore {
             }
         };
         let now = unix_now();
+
+        // Guard against forward clock jumps: if the newest nonce was recorded recently
+        // (within 2x the purge window) but now thinks it's very old, something is wrong.
+        // We only check when max_recorded is "recent enough" to indicate active operation
+        // — if all entries are genuinely ancient, normal purging should proceed.
+        let max_recorded: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(recorded_at), 0) FROM used_nonces",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let min_recorded: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MIN(recorded_at), 0) FROM used_nonces",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        // If there's a wide spread between min and max recorded timestamps AND now is
+        // far ahead, a clock jump may have occurred between recording and purging.
+        if min_recorded > 0
+            && max_recorded > 0
+            && max_recorded > min_recorded
+            && now.saturating_sub(max_recorded) > (max_age_secs as i64) * 2
+        {
+            tracing::warn!(
+                now = now,
+                max_recorded = max_recorded,
+                min_recorded = min_recorded,
+                "clock appears to have jumped forward — skipping nonce purge"
+            );
+            return 0;
+        }
+
         // Saturating subtraction: if now is i64::MAX (clock error) or max_age_secs is
         // very large, cutoff saturates instead of wrapping, preventing accidental purge.
         let cutoff = now.saturating_sub(max_age_secs as i64);
