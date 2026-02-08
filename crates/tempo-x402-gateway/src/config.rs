@@ -75,6 +75,7 @@ impl GatewayConfig {
                 vec![
                     "http://localhost:3000".to_string(),
                     "http://localhost:5173".to_string(),
+                    "https://tempo-x402-app.vercel.app".to_string(),
                 ]
             });
 

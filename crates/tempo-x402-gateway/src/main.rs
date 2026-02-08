@@ -72,10 +72,12 @@ async fn main() -> std::io::Result<()> {
                 actix_web::http::header::ACCEPT,
                 actix_web::http::header::CONTENT_TYPE,
                 actix_web::http::header::HeaderName::from_static("x-payment"),
+                actix_web::http::header::HeaderName::from_static("payment-signature"),
             ])
-            .expose_headers(vec![actix_web::http::header::HeaderName::from_static(
-                "x-payment-response",
-            )])
+            .expose_headers(vec![
+                actix_web::http::header::HeaderName::from_static("x-payment-response"),
+                actix_web::http::header::HeaderName::from_static("payment-response"),
+            ])
             .max_age(3600);
 
         App::new()
