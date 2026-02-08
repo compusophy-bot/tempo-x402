@@ -26,7 +26,7 @@ pub struct PaymentRequirements {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleResponse {
     pub success: bool,
-    pub transaction: String,
+    pub transaction: Option<String>,
     pub network: String,
     pub payer: Option<String>,
 }
@@ -195,7 +195,7 @@ fn PaymentDemo() -> impl IntoView {
                     set_status.set("Payment successful!".to_string());
                     set_result.set(Some(data));
                     if let Some(s) = settle {
-                        set_tx_hash.set(Some(s.transaction));
+                        set_tx_hash.set(s.transaction);
                     }
                 }
                 Err(e) => {

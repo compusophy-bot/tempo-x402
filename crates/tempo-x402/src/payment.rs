@@ -2,7 +2,7 @@ use alloy::primitives::{Address, FixedBytes};
 use serde::{Deserialize, Serialize};
 
 /// Core payment data that gets signed via EIP-712.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TempoPaymentData {
     pub from: Address,
@@ -16,7 +16,7 @@ pub struct TempoPaymentData {
 }
 
 /// Wire-format payment payload (sent in PAYMENT-SIGNATURE header, base64-encoded JSON).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentPayload {
     pub x402_version: u32,
@@ -24,7 +24,7 @@ pub struct PaymentPayload {
 }
 
 /// A single entry in the `accepts` array of a 402 response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRequirements {
     pub scheme: String,
@@ -41,7 +41,7 @@ pub struct PaymentRequirements {
 }
 
 /// The 402 response body returned by the resource server.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentRequiredBody {
     pub x402_version: u32,

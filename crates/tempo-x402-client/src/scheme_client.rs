@@ -49,7 +49,7 @@ impl SchemeClient for TempoSchemeClient {
             .as_secs();
 
         let valid_after = now.saturating_sub(60);
-        let valid_before = now + requirements.max_timeout_seconds;
+        let valid_before = now.saturating_add(requirements.max_timeout_seconds);
 
         let nonce = random_nonce();
 

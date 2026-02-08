@@ -58,7 +58,10 @@ impl Database {
     }
 
     fn init_schema(&self) -> Result<(), GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS endpoints (
@@ -102,7 +105,10 @@ impl Database {
         price_amount: &str,
         description: Option<&str>,
     ) -> Result<Endpoint, GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -131,7 +137,10 @@ impl Database {
 
     /// Get endpoint by slug
     pub fn get_endpoint(&self, slug: &str) -> Result<Option<Endpoint>, GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
 
         let endpoint = conn
             .query_row(
@@ -161,9 +170,14 @@ impl Database {
         Ok(endpoint)
     }
 
-    /// List all active endpoints
-    pub fn list_endpoints(&self) -> Result<Vec<Endpoint>, GatewayError> {
-        let conn = self.conn.lock().unwrap();
+    /// List active endpoints with pagination.
+    /// `limit` defaults to 100, max 500. `offset` defaults to 0.
+    pub fn list_endpoints(&self, limit: u32, offset: u32) -> Result<Vec<Endpoint>, GatewayError> {
+        let limit = limit.clamp(1, 500);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"
@@ -171,11 +185,12 @@ impl Database {
             FROM endpoints
             WHERE active = 1
             ORDER BY created_at DESC
+            LIMIT ?1 OFFSET ?2
             "#,
         )?;
 
         let endpoints = stmt
-            .query_map([], |row| {
+            .query_map(params![limit, offset], |row| {
                 Ok(Endpoint {
                     id: row.get(0)?,
                     slug: row.get(1)?,
@@ -203,7 +218,10 @@ impl Database {
         price_amount: Option<&str>,
         description: Option<&str>,
     ) -> Result<Endpoint, GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let now = chrono::Utc::now().timestamp();
 
         // Build update query dynamically
@@ -258,14 +276,42 @@ impl Database {
             return Err(GatewayError::EndpointNotFound(slug.to_string()));
         }
 
-        // Fetch updated endpoint
-        self.get_endpoint(slug)?
-            .ok_or_else(|| GatewayError::EndpointNotFound(slug.to_string()))
+        // Fetch updated endpoint using the already-held connection (avoids deadlock)
+        let endpoint = conn
+            .query_row(
+                r#"
+                SELECT id, slug, owner_address, target_url, price_usd, price_amount, description, created_at, updated_at, active
+                FROM endpoints
+                WHERE slug = ?1 AND active = 1
+                "#,
+                params![slug],
+                |row| {
+                    Ok(Endpoint {
+                        id: row.get(0)?,
+                        slug: row.get(1)?,
+                        owner_address: row.get(2)?,
+                        target_url: row.get(3)?,
+                        price_usd: row.get(4)?,
+                        price_amount: row.get(5)?,
+                        description: row.get(6)?,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
+                        active: row.get::<_, i32>(9)? == 1,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| GatewayError::EndpointNotFound(slug.to_string()))?;
+
+        Ok(endpoint)
     }
 
     /// Deactivate an endpoint (soft delete)
     pub fn delete_endpoint(&self, slug: &str) -> Result<(), GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let now = chrono::Utc::now().timestamp();
 
         let rows_affected = conn.execute(
@@ -282,7 +328,10 @@ impl Database {
 
     /// Check if slug exists (only active endpoints, allowing reuse of deleted slugs)
     pub fn slug_exists(&self, slug: &str) -> Result<bool, GatewayError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
 
         let count: i32 = conn.query_row(
             "SELECT COUNT(*) FROM endpoints WHERE slug = ?1 AND active = 1",
@@ -344,7 +393,7 @@ mod tests {
         )
         .unwrap();
 
-        let endpoints = db.list_endpoints().unwrap();
+        let endpoints = db.list_endpoints(100, 0).unwrap();
         assert_eq!(endpoints.len(), 2);
     }
 

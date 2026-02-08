@@ -20,6 +20,10 @@ pub trait NonceStore: Send + Sync {
     /// This is the preferred method for replay protection as it's atomic.
     fn try_use(&self, nonce: FixedBytes<32>) -> bool;
 
+    /// Release a previously claimed nonce (e.g., when settlement fails after nonce claim).
+    /// This allows the payer to retry with the same signed authorization.
+    fn release(&self, nonce: &FixedBytes<32>);
+
     /// Purge nonces older than `max_age_secs`. Returns number purged.
     fn purge_expired(&self, max_age_secs: u64) -> usize;
 }
@@ -62,6 +66,10 @@ impl NonceStore for InMemoryNonceStore {
                 true // Successfully claimed
             }
         }
+    }
+
+    fn release(&self, nonce: &FixedBytes<32>) {
+        self.nonces.remove(nonce);
     }
 
     fn purge_expired(&self, max_age_secs: u64) -> usize {
@@ -156,6 +164,22 @@ impl NonceStore for SqliteNonceStore {
             rusqlite::params![nonce.as_slice(), now],
         )
         .is_ok()
+    }
+
+    fn release(&self, nonce: &FixedBytes<32>) {
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(poisoned) => {
+                tracing::error!("nonce store mutex poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
+        if let Err(e) = conn.execute(
+            "DELETE FROM used_nonces WHERE nonce = ?1",
+            rusqlite::params![nonce.as_slice()],
+        ) {
+            tracing::error!(error = %e, "failed to release nonce — it will remain consumed");
+        }
     }
 
     fn purge_expired(&self, max_age_secs: u64) -> usize {

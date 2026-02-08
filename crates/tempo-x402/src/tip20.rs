@@ -37,6 +37,9 @@ pub async fn allowance<P: Provider>(
 
 /// Execute `transferFrom(from, to, value)` on the TIP-20 contract.
 /// Returns the transaction hash.
+///
+/// Includes a 60-second timeout on receipt confirmation to prevent indefinite hangs
+/// when the chain is congested or gas price is too low.
 pub async fn transfer_from<P: Provider>(
     provider: &P,
     token: Address,
@@ -51,9 +54,9 @@ pub async fn transfer_from<P: Provider>(
         .await
         .map_err(|e| X402Error::ChainError(format!("transferFrom send failed: {e}")))?;
 
-    let receipt = pending
-        .get_receipt()
+    let receipt = tokio::time::timeout(std::time::Duration::from_secs(60), pending.get_receipt())
         .await
+        .map_err(|_| X402Error::ChainError("transferFrom receipt timed out after 60s".to_string()))?
         .map_err(|e| X402Error::ChainError(format!("transferFrom receipt failed: {e}")))?;
 
     if !receipt.status() {
@@ -65,6 +68,8 @@ pub async fn transfer_from<P: Provider>(
 
 /// Execute `approve(spender, amount)` on the TIP-20 contract.
 /// Returns the transaction hash.
+///
+/// Includes a 60-second timeout on receipt confirmation.
 pub async fn approve<P: Provider>(
     provider: &P,
     token: Address,
@@ -78,9 +83,9 @@ pub async fn approve<P: Provider>(
         .await
         .map_err(|e| X402Error::ChainError(format!("approve send failed: {e}")))?;
 
-    let receipt = pending
-        .get_receipt()
+    let receipt = tokio::time::timeout(std::time::Duration::from_secs(60), pending.get_receipt())
         .await
+        .map_err(|_| X402Error::ChainError("approve receipt timed out after 60s".to_string()))?
         .map_err(|e| X402Error::ChainError(format!("approve receipt failed: {e}")))?;
 
     if !receipt.status() {

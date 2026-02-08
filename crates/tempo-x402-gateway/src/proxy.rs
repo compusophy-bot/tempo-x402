@@ -13,6 +13,11 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "transfer-encoding",
     "payment-signature",
     "content-length", // Will be recalculated
+    // Strip authentication headers to prevent credential leakage to upstream
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "x-api-key",
     // Strip x402 verification headers to prevent client spoofing
     "x-x402-verified",
     "x-x402-payer",
@@ -65,7 +70,9 @@ pub async fn proxy_request(
         request_builder = request_builder.header("X-X402-Payer", format!("{:#x}", payer));
     }
 
-    request_builder = request_builder.header("X-X402-TxHash", &settle.transaction);
+    if let Some(ref tx) = settle.transaction {
+        request_builder = request_builder.header("X-X402-TxHash", tx);
+    }
     request_builder = request_builder.header("X-X402-Network", &settle.network);
 
     // Add body if present

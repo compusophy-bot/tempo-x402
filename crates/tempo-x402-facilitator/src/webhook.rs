@@ -6,7 +6,7 @@ pub struct SettlementWebhook {
     pub event: String,
     pub payer: String,
     pub amount: String,
-    pub transaction: String,
+    pub transaction: Option<String>,
     pub network: String,
     pub timestamp: u64,
 }

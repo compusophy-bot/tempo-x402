@@ -63,12 +63,13 @@ impl<P> TempoSchemeFacilitator<P> {
         self
     }
 
-    /// Start a background task that purges expired nonces every 60 seconds.
+    /// Start a background task that purges expired nonces and stale payer locks every 60 seconds.
     pub fn start_nonce_cleanup(&self)
     where
         P: Send + Sync + 'static,
     {
         let store = Arc::clone(&self.nonce_store);
+        let payer_locks = Arc::clone(&self.payer_locks);
         let expiry_secs = self.max_timeout_seconds + 60;
 
         tokio::spawn(async move {
@@ -78,6 +79,15 @@ impl<P> TempoSchemeFacilitator<P> {
                 let purged = store.purge_expired(expiry_secs);
                 if purged > 0 {
                     tracing::info!(purged, "purged expired nonces");
+                }
+
+                // Clean up payer locks that are no longer held by anyone.
+                // A lock's Arc strong count == 1 means only the DashMap holds it.
+                let before = payer_locks.len();
+                payer_locks.retain(|_, lock| Arc::strong_count(lock) > 1);
+                let removed = before - payer_locks.len();
+                if removed > 0 {
+                    tracing::info!(removed, "cleaned up idle payer locks");
                 }
             }
         });
@@ -134,13 +144,12 @@ where
         let p = &payload.payload;
 
         // 0. Validate scheme and network match this facilitator
-        if requirements.scheme != crate::SCHEME_NAME {
+        if requirements.scheme != self.config.scheme_name {
             return Ok(VerifyResponse {
                 is_valid: false,
                 invalid_reason: Some(format!(
                     "Scheme mismatch: expected '{}', got '{}'",
-                    crate::SCHEME_NAME,
-                    requirements.scheme
+                    self.config.scheme_name, requirements.scheme
                 )),
                 payer: None,
             });
@@ -232,7 +241,23 @@ where
             });
         }
 
-        // 4. Verify payment details match requirements
+        // 4. Reject zero addresses
+        if p.token == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Token address is zero".to_string()),
+                payer: None,
+            });
+        }
+        if p.to == Address::ZERO {
+            return Ok(VerifyResponse {
+                is_valid: false,
+                invalid_reason: Some("Recipient address is zero".to_string()),
+                payer: None,
+            });
+        }
+
+        // 5. Verify payment details match requirements
         if p.token != requirements.asset {
             return Ok(VerifyResponse {
                 is_valid: false,
@@ -261,7 +286,7 @@ where
             });
         }
 
-        // 5. Check on-chain balance
+        // 6. Check on-chain balance
         let balance = tip20::balance_of(&self.provider, p.token, p.from).await?;
         if balance < value {
             return Ok(VerifyResponse {
@@ -271,7 +296,7 @@ where
             });
         }
 
-        // 6. Check on-chain allowance to facilitator
+        // 7. Check on-chain allowance to facilitator
         let allowance =
             tip20::allowance(&self.provider, p.token, p.from, self.facilitator_address).await?;
         if allowance < value {
@@ -319,7 +344,7 @@ where
                 success: false,
                 error_reason: check.invalid_reason,
                 payer: check.payer,
-                transaction: String::new(),
+                transaction: None,
                 network: self.config.network.clone(),
             });
         }
@@ -341,13 +366,27 @@ where
                 success: false,
                 error_reason: Some("Nonce already used (concurrent request)".to_string()),
                 payer: Some(p.from),
-                transaction: String::new(),
+                transaction: None,
                 network: self.config.network.clone(),
             });
         }
 
         // Execute transferFrom (nonce is now claimed, safe to proceed)
-        let tx_hash = tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await?;
+        let tx_hash = match tip20::transfer_from(&self.provider, p.token, p.from, p.to, value).await
+        {
+            Ok(hash) => hash,
+            Err(e) => {
+                // Release the nonce so the payer can retry with the same authorization
+                tracing::warn!(
+                    nonce = %format!("{:.8}", p.nonce),
+                    payer = %p.from,
+                    error = %e,
+                    "transferFrom failed — releasing nonce for retry"
+                );
+                self.nonce_store.release(&p.nonce);
+                return Err(e);
+            }
+        };
 
         tracing::info!(
             payer = %p.from,
@@ -361,7 +400,7 @@ where
             success: true,
             error_reason: None,
             payer: Some(p.from),
-            transaction: format!("{tx_hash}"),
+            transaction: Some(format!("{tx_hash}")),
             network: self.config.network.clone(),
         })
     }

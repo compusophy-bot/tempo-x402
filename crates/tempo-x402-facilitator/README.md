@@ -6,7 +6,7 @@ Payment verification and settlement service for the x402 protocol.
 
 ```toml
 [dependencies]
-tempo-x402-facilitator = "0.2"
+tempo-x402-facilitator = "0.4"
 ```
 
 ## Features
@@ -38,7 +38,6 @@ cargo run
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/supported` | Supported schemes and networks |
 | POST | `/verify` | Verify payment (no settlement) |
-| POST | `/settle` | Verify and settle payment |
 | POST | `/verify-and-settle` | Atomic verify + settle |
 
 ## Environment Variables
@@ -49,9 +48,10 @@ cargo run
 | `FACILITATOR_SHARED_SECRET` | No | - | HMAC auth secret |
 | `FACILITATOR_PORT` or `PORT` | No | 4022 | Server port |
 | `RPC_URL` | No | Tempo RPC | Chain RPC URL |
-| `NONCE_DB_PATH` | No | `/data/nonces.db` | SQLite nonce store |
+| `NONCE_DB_PATH` | No | `./x402-nonces.db` | SQLite nonce store |
 | `ALLOWED_ORIGINS` | No | localhost | CORS origins |
-| `RATE_LIMIT_RPM` | No | 60 | Rate limit per IP |
+| `RATE_LIMIT_RPM` | No | 120 | Rate limit per IP |
+| `WEBHOOK_URLS` | No | - | Comma-separated webhook URLs |
 
 ## Deployed
 

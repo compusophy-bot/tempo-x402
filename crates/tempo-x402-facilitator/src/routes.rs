@@ -150,7 +150,7 @@ pub async fn verify_and_settle(
             return HttpResponse::BadRequest().json(serde_json::json!({
                 "success": false,
                 "errorReason": "invalid request body",
-                "transaction": "",
+                "transaction": null,
                 "network": &state.chain_config.network,
             }));
         }
@@ -174,7 +174,7 @@ pub async fn verify_and_settle(
                     .observe(elapsed);
                 tracing::info!(
                     payer = ?result.payer,
-                    tx = %result.transaction,
+                    tx = ?result.transaction,
                     "settlement completed"
                 );
 
@@ -222,7 +222,7 @@ pub async fn verify_and_settle(
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,
                 "errorReason": "settlement failed",
-                "transaction": "",
+                "transaction": null,
                 "network": &state.chain_config.network,
             }))
         }

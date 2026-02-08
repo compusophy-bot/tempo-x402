@@ -26,15 +26,38 @@ impl Default for TempoSchemeServer {
 
 impl SchemeServer for TempoSchemeServer {
     fn parse_price(&self, price: &str) -> Result<(String, Address), X402Error> {
-        // Strip non-numeric characters (except '.') -- handles "$0.001", "0.01", "$1", etc.
-        let cleaned: String = price
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == '.')
-            .collect();
+        // Validate input: only allow optional leading '$', digits, and a single '.'
+        let stripped = price.strip_prefix('$').unwrap_or(price);
+        if stripped.is_empty() {
+            return Err(X402Error::InvalidPayment(format!(
+                "invalid price '{price}': no numeric content"
+            )));
+        }
+        // Reject any characters that aren't digits or '.'
+        if !stripped.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            return Err(X402Error::InvalidPayment(format!(
+                "invalid price '{price}': contains invalid characters (only digits, '.', and optional leading '$' allowed)"
+            )));
+        }
+        // Reject multiple decimal points
+        if stripped.matches('.').count() > 1 {
+            return Err(X402Error::InvalidPayment(format!(
+                "invalid price '{price}': multiple decimal points"
+            )));
+        }
+        let cleaned = stripped.to_string();
 
         if cleaned.is_empty() {
             return Err(X402Error::InvalidPayment(format!(
                 "invalid price '{price}': no numeric content"
+            )));
+        }
+
+        // Validate token_decimals is safe for u64 arithmetic
+        if self.config.token_decimals > 18 {
+            return Err(X402Error::ConfigError(format!(
+                "token_decimals {} exceeds maximum 18",
+                self.config.token_decimals
             )));
         }
 

@@ -36,7 +36,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           FAILED=0
 
-          for crate in tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+          for crate in tempo-x402-client tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
             CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
             if [ "$CRATE_VERSION" != "$VERSION" ]; then
               echo "❌ crates/$crate version ($CRATE_VERSION) != core ($VERSION)"

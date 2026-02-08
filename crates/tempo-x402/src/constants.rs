@@ -26,7 +26,7 @@ pub const EXPLORER_BASE: &str = "https://explore.moderato.tempo.xyz";
 
 /// Runtime chain configuration. Decouples scheme implementations from
 /// compile-time constants, enabling multi-chain support.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainConfig {
     pub chain_id: u64,
     pub network: String,

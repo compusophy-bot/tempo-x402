@@ -6,7 +6,7 @@ Resource server with payment middleware for the x402 protocol.
 
 ```toml
 [dependencies]
-tempo-x402-server = "0.2"
+tempo-x402-server = "0.4"
 ```
 
 ## Features

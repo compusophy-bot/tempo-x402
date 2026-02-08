@@ -20,7 +20,7 @@
 //!     .unwrap();
 //!
 //! if let Some(s) = settlement {
-//!     println!("Paid via tx: {}", s.transaction);
+//!     println!("Paid via tx: {}", s.transaction.as_deref().unwrap_or("pending"));
 //! }
 //! # }
 //! ```

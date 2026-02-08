@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check docs match Cargo.toml version
         run: |
-          VERSION=$(grep '^version' crates/x402/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          VERSION=$(grep '^version' crates/tempo-x402/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           echo "Cargo.toml version: $VERSION"
 
           # README must reference the crate names

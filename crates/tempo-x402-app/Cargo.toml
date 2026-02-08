@@ -5,6 +5,7 @@ edition = "2021"
 description = "x402 kitchen sink web app - demo all payment features"
 license = "MIT"
 repository = "https://github.com/compusophy/tempo-x402"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]

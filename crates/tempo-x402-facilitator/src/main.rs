@@ -27,7 +27,10 @@ fn build_cors(origins: &[String]) -> Cors {
             .allowed_origin_fn(|origin, _| {
                 origin
                     .to_str()
-                    .map(|o| o.starts_with("http://localhost"))
+                    .map(|o| {
+                        // Match http://localhost or http://localhost:PORT exactly
+                        o == "http://localhost" || o.starts_with("http://localhost:")
+                    })
                     .unwrap_or(false)
             })
             .allow_any_method()
@@ -87,8 +90,17 @@ async fn main() -> std::io::Result<()> {
         .ok()
         .map(|s| s.into_bytes());
 
+    let allow_insecure = std::env::var("ALLOW_UNAUTHENTICATED")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
     if hmac_secret.is_none() {
-        tracing::warn!("FACILITATOR_SHARED_SECRET not set — HMAC auth disabled (dev mode)");
+        if allow_insecure {
+            tracing::warn!("FACILITATOR_SHARED_SECRET not set — HMAC auth disabled (ALLOW_UNAUTHENTICATED=true)");
+        } else {
+            tracing::error!("FACILITATOR_SHARED_SECRET not set. Set it for production, or set ALLOW_UNAUTHENTICATED=true for dev mode.");
+            std::process::exit(1);
+        }
     }
 
     let webhook_urls: Vec<String> = std::env::var("WEBHOOK_URLS")

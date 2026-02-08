@@ -32,6 +32,34 @@ pub fn validate_slug(slug: &str) -> Result<(), GatewayError> {
     Ok(())
 }
 
+/// Check if an IPv4 address is private, loopback, or otherwise non-routable.
+fn is_private_ipv4(ip: &std::net::Ipv4Addr) -> bool {
+    ip.is_loopback()          // 127.0.0.0/8
+        || ip.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+        || ip.is_link_local() // 169.254.0.0/16
+        || ip.is_broadcast()  // 255.255.255.255
+        || ip.is_unspecified() // 0.0.0.0
+        || ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
+}
+
+/// Check if an IPv6 address is private, loopback, or otherwise non-routable.
+fn is_private_ipv6(ip: &std::net::Ipv6Addr) -> bool {
+    ip.is_loopback()       // ::1
+        || ip.is_unspecified() // ::
+        || {
+            let segments = ip.segments();
+            // fc00::/7 (unique local)
+            (segments[0] & 0xFE00) == 0xFC00
+            // fe80::/10 (link-local)
+            || (segments[0] & 0xFFC0) == 0xFE80
+            // IPv4-mapped IPv6: check the mapped IPv4 address
+            || match ip.to_ipv4_mapped() {
+                Some(v4) => is_private_ipv4(&v4),
+                None => false,
+            }
+        }
+}
+
 /// Validate target URL
 pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
     let parsed =
@@ -43,31 +71,37 @@ pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {
         ));
     }
 
-    // Prevent SSRF to localhost/private IPs
-    if let Some(host) = parsed.host_str() {
-        let host_lower = host.to_lowercase();
-        if host_lower == "localhost"
-            || host_lower.starts_with("127.")
-            || host_lower.starts_with("10.")
-            || host_lower.starts_with("192.168.")
-            || host_lower.starts_with("172.16.")
-            || host_lower.starts_with("172.17.")
-            || host_lower.starts_with("172.18.")
-            || host_lower.starts_with("172.19.")
-            || host_lower.starts_with("172.2")
-            || host_lower.starts_with("172.30.")
-            || host_lower.starts_with("172.31.")
-            || host_lower.starts_with("169.254.") // link-local
-            || host_lower == "0.0.0.0"
-            || host_lower == "[::]"
-            || host_lower == "[::1]"
-            || host_lower.starts_with("[fc") // IPv6 private fc00::/7
-            || host_lower.starts_with("[fd") // IPv6 private
-            || host_lower.starts_with("[fe80")
-        // IPv6 link-local
-        {
+    // Prevent SSRF: validate the host is not a private/loopback address
+    match parsed.host() {
+        Some(url::Host::Ipv4(ip)) => {
+            if is_private_ipv4(&ip) {
+                return Err(GatewayError::InvalidUrl(
+                    "target cannot be a private or loopback IP address".to_string(),
+                ));
+            }
+        }
+        Some(url::Host::Ipv6(ip)) => {
+            if is_private_ipv6(&ip) {
+                return Err(GatewayError::InvalidUrl(
+                    "target cannot be a private or loopback IP address".to_string(),
+                ));
+            }
+        }
+        Some(url::Host::Domain(domain)) => {
+            let domain_lower = domain.to_lowercase();
+            if domain_lower == "localhost"
+                || domain_lower.ends_with(".localhost")
+                || domain_lower.ends_with(".local")
+                || domain_lower.ends_with(".internal")
+            {
+                return Err(GatewayError::InvalidUrl(
+                    "target cannot be localhost or local domain".to_string(),
+                ));
+            }
+        }
+        None => {
             return Err(GatewayError::InvalidUrl(
-                "target cannot be localhost or private IP".to_string(),
+                "target URL must have a host".to_string(),
             ));
         }
     }

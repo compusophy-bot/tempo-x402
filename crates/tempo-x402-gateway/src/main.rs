@@ -52,10 +52,8 @@ async fn main() -> std::io::Result<()> {
     let state_data = web::Data::new(state);
 
     // Configure rate limiter
-    #[allow(deprecated)]
     let governor_conf = GovernorConfigBuilder::default()
-        .per_second(rate_limit_rpm as u64 / 60)
-        .burst_size(rate_limit_rpm)
+        .requests_per_minute(rate_limit_rpm as u64)
         .finish()
         .expect("Failed to create rate limiter config");
 

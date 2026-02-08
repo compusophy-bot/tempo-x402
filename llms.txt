@@ -12,13 +12,13 @@ Crates: https://crates.io/crates/tempo-x402
 
 ```toml
 [dependencies]
-tempo-x402 = "0.2"
+tempo-x402 = "0.4"
 ```
 
 The crate is published as `tempo-x402` but the library name is `x402`:
 
 ```rust
-use x402::{TempoSchemeClient, X402Client};
+use x402::{TempoSchemeServer, SchemeServer};
 ```
 
 ## The Flow
@@ -72,7 +72,7 @@ Step by step:
 
 ```rust
 use alloy::signers::local::PrivateKeySigner;
-use x402::{TempoSchemeClient, X402Client};
+use x402::{TempoSchemeServer, SchemeServer};
 
 #[tokio::main]
 async fn main() {
@@ -295,4 +295,4 @@ OpenAPI 3.1 specifications are available in the `openapi/` directory:
 
 ## Version
 
-0.3.1
+0.4.1

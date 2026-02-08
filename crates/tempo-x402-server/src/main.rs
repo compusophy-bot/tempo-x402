@@ -14,7 +14,10 @@ fn build_cors(origins: &[String]) -> Cors {
             .allowed_origin_fn(|origin, _| {
                 origin
                     .to_str()
-                    .map(|o| o.starts_with("http://localhost"))
+                    .map(|o| {
+                        // Match http://localhost or http://localhost:PORT exactly
+                        o == "http://localhost" || o.starts_with("http://localhost:")
+                    })
                     .unwrap_or(false)
             })
             .allow_any_method()
@@ -64,6 +67,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(build_cors(&cors_origins))
             .wrap(Governor::new(&governor_conf))
+            .app_data(web::JsonConfig::default().limit(65_536))
             .app_data(provider.clone())
             .service(routes::metrics_endpoint)
             .service(routes::health)

@@ -17,9 +17,25 @@ pub struct EndpointInfo {
     pub created_at: i64,
 }
 
-/// GET /endpoints - List all active endpoints
-pub async fn list_endpoints(state: web::Data<AppState>) -> Result<HttpResponse, GatewayError> {
-    let endpoints = state.db.list_endpoints()?;
+/// Pagination query parameters
+#[derive(Debug, serde::Deserialize)]
+pub struct PaginationParams {
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub offset: u32,
+}
+
+fn default_limit() -> u32 {
+    100
+}
+
+/// GET /endpoints - List active endpoints (paginated)
+pub async fn list_endpoints(
+    query: web::Query<PaginationParams>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, GatewayError> {
+    let endpoints = state.db.list_endpoints(query.limit, query.offset)?;
 
     let public_endpoints: Vec<EndpointInfo> = endpoints
         .into_iter()
@@ -35,6 +51,8 @@ pub async fn list_endpoints(state: web::Data<AppState>) -> Result<HttpResponse, 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "endpoints": public_endpoints,
         "count": public_endpoints.len(),
+        "limit": query.limit.clamp(1, 500),
+        "offset": query.offset,
     })))
 }
 
@@ -90,6 +108,39 @@ pub async fn update_endpoint(
         (None, None)
     };
 
+    // Extract payer address from the payment header BEFORE settling,
+    // so we can verify ownership without risking irreversible payment loss.
+    let payment_header = req
+        .headers()
+        .get("PAYMENT-SIGNATURE")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
+
+    // Decode the payment to extract the payer address for ownership check
+    let decoded: x402::PaymentPayload = {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(payment_header)
+            .or_else(|_| {
+                serde_json::from_str::<serde_json::Value>(payment_header)
+                    .map(|_| payment_header.as_bytes().to_vec())
+            })
+            .map_err(|_| GatewayError::Internal("invalid payment header encoding".to_string()))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|_| GatewayError::Internal("invalid payment payload".to_string()))?
+    };
+
+    // Verify ownership BEFORE settling payment (prevents money loss on NotOwner)
+    let claimed_payer = decoded.payload.from;
+    let owner: Address = endpoint
+        .owner_address
+        .parse()
+        .map_err(|_| GatewayError::Internal("invalid stored owner address".to_string()))?;
+
+    if claimed_payer != owner {
+        return Err(GatewayError::NotOwner);
+    }
+
     // Build platform payment requirements
     let requirements = platform_requirements(
         state.config.platform_address,
@@ -97,8 +148,8 @@ pub async fn update_endpoint(
         &state.config.platform_fee_amount,
     );
 
-    // Settle payment first, then verify ownership using the cryptographically
-    // verified payer address from the SettleResponse (not the unsigned header)
+    // Now settle payment (ownership pre-verified, facilitator will cryptographically
+    // verify the signature matches the claimed payer)
     let settle = match require_payment(
         &req,
         requirements,
@@ -111,20 +162,6 @@ pub async fn update_endpoint(
         Ok(s) => s,
         Err(http_response) => return Ok(http_response),
     };
-
-    // Use the verified payer from settlement (cryptographically proven via EIP-712)
-    let verified_payer = settle
-        .payer
-        .ok_or_else(|| GatewayError::Internal("settlement missing payer address".to_string()))?;
-
-    let owner: Address = endpoint
-        .owner_address
-        .parse()
-        .map_err(|_| GatewayError::Internal("invalid stored owner address".to_string()))?;
-
-    if verified_payer != owner {
-        return Err(GatewayError::NotOwner);
-    }
 
     // Update the endpoint
     let updated = state.db.update_endpoint(
@@ -158,6 +195,39 @@ pub async fn delete_endpoint(
         .get_endpoint(&slug)?
         .ok_or_else(|| GatewayError::EndpointNotFound(slug.clone()))?;
 
+    // Extract payer address from the payment header BEFORE settling,
+    // so we can verify ownership without risking irreversible payment loss.
+    let payment_header = req
+        .headers()
+        .get("PAYMENT-SIGNATURE")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
+
+    // Decode the payment to extract the payer address for ownership check
+    let decoded: x402::PaymentPayload = {
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(payment_header)
+            .or_else(|_| {
+                serde_json::from_str::<serde_json::Value>(payment_header)
+                    .map(|_| payment_header.as_bytes().to_vec())
+            })
+            .map_err(|_| GatewayError::Internal("invalid payment header encoding".to_string()))?;
+        serde_json::from_slice(&bytes)
+            .map_err(|_| GatewayError::Internal("invalid payment payload".to_string()))?
+    };
+
+    // Verify ownership BEFORE settling payment (prevents money loss on NotOwner)
+    let claimed_payer = decoded.payload.from;
+    let owner: Address = endpoint
+        .owner_address
+        .parse()
+        .map_err(|_| GatewayError::Internal("invalid stored owner address".to_string()))?;
+
+    if claimed_payer != owner {
+        return Err(GatewayError::NotOwner);
+    }
+
     // Build platform payment requirements
     let requirements = platform_requirements(
         state.config.platform_address,
@@ -165,8 +235,8 @@ pub async fn delete_endpoint(
         &state.config.platform_fee_amount,
     );
 
-    // Settle payment first, then verify ownership using the cryptographically
-    // verified payer address from the SettleResponse (not the unsigned header)
+    // Now settle payment (ownership pre-verified, facilitator will cryptographically
+    // verify the signature matches the claimed payer)
     let settle = match require_payment(
         &req,
         requirements,
@@ -179,20 +249,6 @@ pub async fn delete_endpoint(
         Ok(s) => s,
         Err(http_response) => return Ok(http_response),
     };
-
-    // Use the verified payer from settlement (cryptographically proven via EIP-712)
-    let verified_payer = settle
-        .payer
-        .ok_or_else(|| GatewayError::Internal("settlement missing payer address".to_string()))?;
-
-    let owner: Address = endpoint
-        .owner_address
-        .parse()
-        .map_err(|_| GatewayError::Internal("invalid stored owner address".to_string()))?;
-
-    if verified_payer != owner {
-        return Err(GatewayError::NotOwner);
-    }
 
     // Delete (deactivate) the endpoint
     state.db.delete_endpoint(&slug)?;

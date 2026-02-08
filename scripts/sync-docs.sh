@@ -27,7 +27,7 @@ else
 fi
 
 # Verify all crate versions match core version
-CRATES=("tempo-x402" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway")
+CRATES=("tempo-x402" "tempo-x402-client" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway" "tempo-x402-app")
 for crate in "${CRATES[@]}"; do
     CRATE_TOML="$ROOT_DIR/crates/$crate/Cargo.toml"
     if [ -f "$CRATE_TOML" ]; then
