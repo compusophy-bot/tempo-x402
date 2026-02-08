@@ -170,10 +170,8 @@ fn WalletButtons(
     };
 
     let disconnect = move |_| {
-        // Clear persisted embedded wallet on disconnect
-        if wallet.get().mode == WalletMode::Embedded {
-            wallet::clear_embedded_wallet();
-        }
+        // Disconnect only clears session state — the stored key remains in localStorage.
+        // Users must explicitly "Delete Wallet" to remove the key.
         set_wallet.set(WalletState::default());
     };
 
@@ -193,7 +191,15 @@ fn WalletButtons(
                         on:click=create_wallet
                         disabled=move || funding.get()
                     >
-                        {move || if funding.get() { "Creating..." } else { "Embedded Wallet" }}
+                        {move || {
+                            if funding.get() {
+                                "Creating..."
+                            } else if wallet::has_stored_wallet() {
+                                "Restore Wallet"
+                            } else {
+                                "Create Wallet"
+                            }
+                        }}
                     </button>
                 </div>
             }
@@ -221,6 +227,152 @@ fn WalletButtons(
     }
 }
 
+/// Wallet management panel — export, import, delete for embedded wallets.
+#[component]
+fn WalletManagement() -> impl IntoView {
+    let (wallet, set_wallet) =
+        expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+
+    let (show_key, set_show_key) = create_signal(false);
+    let (show_import, set_show_import) = create_signal(false);
+    let (import_value, set_import_value) = create_signal(String::new());
+    let (import_error, set_import_error) = create_signal(None::<String>);
+    let (confirm_delete, set_confirm_delete) = create_signal(false);
+    let (copied, set_copied) = create_signal(false);
+
+    let toggle_reveal = move |_| {
+        set_show_key.update(|v| *v = !*v);
+        set_copied.set(false);
+    };
+
+    let copy_key = move |_| {
+        if let Some(key) = wallet.get().private_key {
+            wallet::copy_to_clipboard(&key);
+            set_copied.set(true);
+        }
+    };
+
+    let download_json = move |_| {
+        let w = wallet.get();
+        if let (Some(key), Some(addr)) = (w.private_key, w.address) {
+            let json = wallet::export_wallet_json(&key, &addr);
+            let filename = format!("x402-wallet-{}.json", &addr[..8]);
+            if let Err(e) = wallet::trigger_download(&filename, &json) {
+                web_sys::console::error_1(&format!("Download failed: {}", e).into());
+            }
+        }
+    };
+
+    let toggle_import = move |_| {
+        set_show_import.update(|v| *v = !*v);
+        set_import_error.set(None);
+        set_import_value.set(String::new());
+    };
+
+    let do_import = move |_| {
+        let key = import_value.get();
+        match wallet::import_embedded_wallet(&key) {
+            Ok(state) => {
+                set_wallet.set(state);
+                set_show_import.set(false);
+                set_import_error.set(None);
+            }
+            Err(e) => {
+                set_import_error.set(Some(e));
+            }
+        }
+    };
+
+    let do_delete = move |_| {
+        wallet::delete_embedded_wallet();
+        set_wallet.set(WalletState::default());
+        set_confirm_delete.set(false);
+    };
+
+    view! {
+        <Show when=move || wallet.get().mode == WalletMode::Embedded fallback=|| ()>
+            <div class="wallet-management">
+                <h4>"Wallet Management"</h4>
+
+                <div class="wallet-actions">
+                    // --- Reveal / Copy ---
+                    <button class="btn btn-secondary btn-sm" on:click=toggle_reveal>
+                        {move || if show_key.get() { "Hide Key" } else { "Reveal Key" }}
+                    </button>
+
+                    <Show when=move || show_key.get() fallback=|| ()>
+                        <div class="key-reveal">
+                            <code class="private-key">{move || wallet.get().private_key.unwrap_or_default()}</code>
+                            <button class="btn btn-secondary btn-sm" on:click=copy_key>
+                                {move || if copied.get() { "Copied!" } else { "Copy" }}
+                            </button>
+                        </div>
+                    </Show>
+
+                    // --- Download JSON ---
+                    <button class="btn btn-secondary btn-sm" on:click=download_json>
+                        "Download Backup"
+                    </button>
+
+                    // --- Import ---
+                    <button class="btn btn-secondary btn-sm" on:click=toggle_import>
+                        {move || if show_import.get() { "Cancel Import" } else { "Import Key" }}
+                    </button>
+
+                    <Show when=move || show_import.get() fallback=|| ()>
+                        <div class="import-form">
+                            <input
+                                type="password"
+                                class="input"
+                                placeholder="Paste private key (0x...)"
+                                prop:value=move || import_value.get()
+                                on:input=move |ev| {
+                                    set_import_value.set(event_target_value(&ev));
+                                    set_import_error.set(None);
+                                }
+                            />
+                            <button class="btn btn-primary btn-sm" on:click=do_import>
+                                "Import"
+                            </button>
+                            <Show when=move || import_error.get().is_some() fallback=|| ()>
+                                <p class="error-text">{move || import_error.get().unwrap_or_default()}</p>
+                            </Show>
+                        </div>
+                    </Show>
+
+                    // --- Delete (destructive) ---
+                    <Show
+                        when=move || confirm_delete.get()
+                        fallback=move || view! {
+                            <button
+                                class="btn btn-danger btn-sm"
+                                on:click=move |_| set_confirm_delete.set(true)
+                            >
+                                "Delete Wallet"
+                            </button>
+                        }
+                    >
+                        <div class="delete-confirm">
+                            <p class="warning-text">
+                                "This permanently deletes your private key. Make sure you have a backup!"
+                            </p>
+                            <button class="btn btn-danger btn-sm" on:click=do_delete>
+                                "Yes, Delete Forever"
+                            </button>
+                            <button
+                                class="btn btn-secondary btn-sm"
+                                on:click=move |_| set_confirm_delete.set(false)
+                            >
+                                "Cancel"
+                            </button>
+                        </div>
+                    </Show>
+                </div>
+            </div>
+        </Show>
+    }
+}
+
 /// Home page with payment demo
 #[component]
 fn HomePage() -> impl IntoView {
@@ -232,6 +384,7 @@ fn HomePage() -> impl IntoView {
             </p>
 
             <PaymentDemo />
+            <WalletManagement />
 
             <div class="info-section">
                 <h2>"How it works"</h2>

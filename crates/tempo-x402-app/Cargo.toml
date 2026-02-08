@@ -23,12 +23,22 @@ web-sys = { version = "0.3", features = [
     "Document",
     "Element",
     "HtmlElement",
+    "HtmlAnchorElement",
+    "HtmlInputElement",
     "Headers",
     "Request",
     "RequestInit",
     "RequestMode",
     "Response",
     "Storage",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "FileReader",
+    "File",
+    "FileList",
+    "Clipboard",
+    "Navigator",
 ] }
 x402-wallet = { path = "../tempo-x402-wallet", package = "tempo-x402-wallet" }
 serde = { version = "1", features = ["derive"] }

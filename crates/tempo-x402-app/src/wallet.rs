@@ -1,8 +1,11 @@
 //! Wallet connection utilities supporting MetaMask, demo key, and embedded wallets.
 //!
-//! Embedded wallets are persisted to localStorage so the same keypair survives
-//! page refreshes. The key is stored raw for now (testnet only). Production
-//! would encrypt with a user-chosen password or WebAuthn-derived key.
+//! Embedded wallets are persisted to localStorage. The private key survives
+//! page refreshes and disconnects. Users can export (reveal key, download JSON)
+//! and import (paste key) to manage their wallet across devices.
+//!
+//! Key storage is plaintext localStorage (testnet only). Production would
+//! encrypt with a user-chosen password or WebAuthn-derived key.
 
 #![allow(dead_code, deprecated)]
 
@@ -52,7 +55,6 @@ pub async fn connect_wallet() -> Result<WalletState, String> {
         return Err("No Web3 wallet detected. Please install MetaMask.".to_string());
     }
 
-    // Request accounts
     let request = js_sys::Object::new();
     js_sys::Reflect::set(&request, &"method".into(), &"eth_requestAccounts".into())
         .map_err(|e| format!("Failed to build request: {:?}", e))?;
@@ -68,7 +70,6 @@ pub async fn connect_wallet() -> Result<WalletState, String> {
 
     let address = accounts_array.get(0).as_string().ok_or("Invalid address")?;
 
-    // Get chain ID
     let chain_request = js_sys::Object::new();
     js_sys::Reflect::set(&chain_request, &"method".into(), &"eth_chainId".into())
         .map_err(|e| format!("Failed to build chain request: {:?}", e))?;
@@ -99,13 +100,17 @@ pub fn use_demo_key() -> Result<WalletState, String> {
     })
 }
 
+/// Check if an embedded wallet exists in localStorage.
+pub fn has_stored_wallet() -> bool {
+    storage_get(STORAGE_KEY).is_some()
+}
+
 /// Load or create an embedded wallet.
 ///
 /// If a key exists in localStorage, restores that wallet.
 /// Otherwise generates a new random keypair and persists it.
 /// Returns `(wallet_state, is_new)` — caller should fund new wallets.
 pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
-    // Try to restore existing wallet
     if let Some(key_hex) = storage_get(STORAGE_KEY) {
         let signer = x402_wallet::WalletSigner::new(&key_hex)?;
         return Ok((
@@ -120,7 +125,6 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
         ));
     }
 
-    // Generate new wallet and persist
     let key_hex = x402_wallet::generate_random_key();
     let signer = x402_wallet::WalletSigner::new(&key_hex)?;
     let address = signer.address_string();
@@ -139,9 +143,87 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
     ))
 }
 
-/// Clear the persisted embedded wallet from localStorage.
-pub fn clear_embedded_wallet() {
+/// Import a private key as an embedded wallet. Saves to localStorage.
+pub fn import_embedded_wallet(key_hex: &str) -> Result<WalletState, String> {
+    let trimmed = key_hex.trim();
+    if trimmed.is_empty() {
+        return Err("Empty private key".to_string());
+    }
+
+    let signer = x402_wallet::WalletSigner::new(trimmed)?;
+    let address = signer.address_string();
+
+    storage_set(STORAGE_KEY, trimmed);
+
+    Ok(WalletState {
+        connected: true,
+        address: Some(address),
+        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        mode: WalletMode::Embedded,
+        private_key: Some(trimmed.to_string()),
+    })
+}
+
+/// Get the stored private key for export (without connecting).
+pub fn get_stored_key() -> Option<String> {
+    storage_get(STORAGE_KEY)
+}
+
+/// Delete the embedded wallet from localStorage. Destructive — key is gone.
+pub fn delete_embedded_wallet() {
     storage_remove(STORAGE_KEY);
+}
+
+/// Build a JSON keystore export for download.
+pub fn export_wallet_json(key_hex: &str, address: &str) -> String {
+    let export = serde_json::json!({
+        "version": 1,
+        "type": "x402-embedded-wallet",
+        "network": "eip155:42431",
+        "chain": "Tempo Moderato",
+        "address": address,
+        "privateKey": key_hex,
+        "warning": "This file contains your private key in plaintext. Anyone with this key can control your funds. Store it securely."
+    });
+    serde_json::to_string_pretty(&export).unwrap_or_default()
+}
+
+/// Trigger a browser file download with the given content.
+pub fn trigger_download(filename: &str, content: &str) -> Result<(), String> {
+    let window = web_sys::window().ok_or("No window")?;
+    let document = window.document().ok_or("No document")?;
+
+    let parts = js_sys::Array::new();
+    parts.push(&JsValue::from_str(content));
+
+    let mut opts = web_sys::BlobPropertyBag::new();
+    opts.type_("application/json");
+    let blob = web_sys::Blob::new_with_str_sequence_and_options(&parts, &opts)
+        .map_err(|e| format!("Blob error: {:?}", e))?;
+
+    let url = web_sys::Url::create_object_url_with_blob(&blob)
+        .map_err(|e| format!("URL error: {:?}", e))?;
+
+    let a: web_sys::HtmlAnchorElement = document
+        .create_element("a")
+        .map_err(|e| format!("Element error: {:?}", e))?
+        .dyn_into()
+        .map_err(|_| "Not an anchor element".to_string())?;
+
+    a.set_href(&url);
+    a.set_download(filename);
+    a.click();
+
+    let _ = web_sys::Url::revoke_object_url(&url);
+    Ok(())
+}
+
+/// Copy text to clipboard.
+pub fn copy_to_clipboard(text: &str) {
+    if let Some(window) = web_sys::window() {
+        let clipboard = window.navigator().clipboard();
+        let _ = clipboard.write_text(text);
+    }
 }
 
 /// Fund an address via the Tempo `tempo_fundAddress` RPC method.
