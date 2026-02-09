@@ -86,7 +86,7 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.21.0 --locked
       - name: Dependency vulnerability scan
-        run: cargo audit
+        run: cargo audit || (sleep 15 && cargo audit)
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.16.2 --locked
       - name: Dependency policy check

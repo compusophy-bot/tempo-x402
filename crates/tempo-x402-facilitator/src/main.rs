@@ -145,9 +145,8 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Derive a domain-separated webhook HMAC key from the shared secret
-    let webhook_hmac_key = Some(
-        x402::hmac::compute_hmac(&hmac_secret, b"x402-webhook-hmac").into_bytes(),
-    );
+    let webhook_hmac_key =
+        Some(x402::hmac::compute_hmac(&hmac_secret, b"x402-webhook-hmac").into_bytes());
 
     let state = web::Data::new(AppState {
         facilitator,

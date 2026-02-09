@@ -200,10 +200,8 @@ fn make_state_with_metrics_token(
 #[actix_rt::test]
 async fn test_metrics_requires_separate_token() {
     // Configure HMAC secret AND a separate metrics token
-    let state = make_state_with_metrics_token(
-        b"hmac-secret".to_vec(),
-        Some(b"metrics-token-123".to_vec()),
-    );
+    let state =
+        make_state_with_metrics_token(b"hmac-secret".to_vec(), Some(b"metrics-token-123".to_vec()));
 
     let app =
         test::init_service(App::new().app_data(state).service(routes::metrics_endpoint)).await;

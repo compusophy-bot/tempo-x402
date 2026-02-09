@@ -12,8 +12,8 @@
 use crate::WalletState;
 use wasm_bindgen::prelude::*;
 
-pub use crate::WalletMode;
 use crate::wallet_crypto;
+pub use crate::WalletMode;
 
 const STORAGE_KEY: &str = "x402_embedded_wallet";
 

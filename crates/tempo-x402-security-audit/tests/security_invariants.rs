@@ -19,10 +19,7 @@ fn production_source_files() -> Vec<(String, String)> {
     let crates_dir = root.join("crates");
     let mut files = Vec::new();
 
-    for entry in WalkDir::new(&crates_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(&crates_dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
 
         // Only .rs files
@@ -100,7 +97,9 @@ fn no_hardcoded_private_keys_in_production_code() {
             assert!(
                 is_allowed,
                 "Potential hardcoded secret found at {}:{}: {}",
-                path, line_num, line.trim()
+                path,
+                line_num,
+                line.trim()
             );
         }
     }

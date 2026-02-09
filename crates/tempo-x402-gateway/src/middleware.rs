@@ -149,9 +149,7 @@ pub async fn verify_and_settle(
             body = %body,
             "facilitator returned non-success response"
         );
-        return Err(GatewayError::PaymentFailed(
-            "settlement failed".to_string(),
-        ));
+        return Err(GatewayError::PaymentFailed("settlement failed".to_string()));
     }
 
     let settle_response: SettleResponse = serde_json::from_str(&body)

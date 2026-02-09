@@ -385,8 +385,9 @@ impl Database {
             params![slug, now, now],
         )?;
 
-        tx.commit()
-            .map_err(|e| GatewayError::Internal(format!("failed to commit slug reservation: {e}")))?;
+        tx.commit().map_err(|e| {
+            GatewayError::Internal(format!("failed to commit slug reservation: {e}"))
+        })?;
 
         Ok(())
     }

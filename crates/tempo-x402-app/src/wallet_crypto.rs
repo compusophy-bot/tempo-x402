@@ -72,12 +72,8 @@ async fn derive_key(
     let derived_algo = js_sys::Object::new();
     js_sys::Reflect::set(&derived_algo, &"name".into(), &"AES-GCM".into())
         .map_err(|e| format!("set derived name: {:?}", e))?;
-    js_sys::Reflect::set(
-        &derived_algo,
-        &"length".into(),
-        &JsValue::from_f64(256.0),
-    )
-    .map_err(|e| format!("set derived length: {:?}", e))?;
+    js_sys::Reflect::set(&derived_algo, &"length".into(), &JsValue::from_f64(256.0))
+        .map_err(|e| format!("set derived length: {:?}", e))?;
 
     let derive_usages = js_sys::Array::new();
     derive_usages.push(&"encrypt".into());
@@ -154,11 +150,8 @@ pub async fn encrypt_key(password: &str, plaintext_key: &str) -> Result<String, 
 
 /// Decrypt a previously encrypted private key with the password.
 pub async fn decrypt_key(password: &str, encrypted_blob: &str) -> Result<String, String> {
-    let packed = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        encrypted_blob,
-    )
-    .map_err(|_| "Invalid encrypted data (base64 decode failed)".to_string())?;
+    let packed = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encrypted_blob)
+        .map_err(|_| "Invalid encrypted data (base64 decode failed)".to_string())?;
 
     if packed.is_empty() {
         return Err("Empty encrypted data".to_string());
@@ -192,11 +185,7 @@ pub async fn decrypt_key(password: &str, encrypted_blob: &str) -> Result<String,
 
     let plaintext = JsFuture::from(
         subtle
-            .decrypt_with_object_and_buffer_source(
-                &decrypt_params,
-                &key,
-                &ciphertext_array,
-            )
+            .decrypt_with_object_and_buffer_source(&decrypt_params, &key, &ciphertext_array)
             .map_err(|_| "Decryption failed — wrong password or corrupted data".to_string())?,
     )
     .await
@@ -205,8 +194,7 @@ pub async fn decrypt_key(password: &str, encrypted_blob: &str) -> Result<String,
     let plaintext_array = js_sys::Uint8Array::new(&plaintext);
     let plaintext_bytes = plaintext_array.to_vec();
 
-    String::from_utf8(plaintext_bytes)
-        .map_err(|_| "Decrypted data is not valid UTF-8".to_string())
+    String::from_utf8(plaintext_bytes).map_err(|_| "Decrypted data is not valid UTF-8".to_string())
 }
 
 /// Check if a stored value looks like it's encrypted (base64 with version prefix).
@@ -219,10 +207,7 @@ pub fn is_encrypted(stored: &str) -> bool {
         return false;
     }
     // Try to decode as base64 and check version
-    base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        stored,
-    )
-    .map(|bytes| !bytes.is_empty() && bytes[0] == CURRENT_VERSION)
-    .unwrap_or(false)
+    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, stored)
+        .map(|bytes| !bytes.is_empty() && bytes[0] == CURRENT_VERSION)
+        .unwrap_or(false)
 }

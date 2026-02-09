@@ -210,72 +210,76 @@ pub fn fire_webhooks(
 
             // Wrap entire delivery in a timeout to prevent unbounded retries
             let delivery = async {
-            // Validate resolved IP at delivery time and pin it to prevent DNS rebinding.
-            let pinned_url = match pin_webhook_url(&url).await {
-                Ok(u) => u,
-                Err(reason) => {
-                    tracing::warn!(
-                        url = %url,
-                        reason = %reason,
-                        "webhook delivery blocked — target resolves to unsafe IP"
-                    );
-                    return;
-                }
-            };
-
-            let original_host = url::Url::parse(&url)
-                .ok()
-                .and_then(|u| u.host_str().map(|h| h.to_string()));
-
-            // Retry with exponential backoff: 1s, 5s, 15s
-            let delays = [1, 5, 15];
-            for (attempt, delay_secs) in std::iter::once(&0u64).chain(delays.iter()).enumerate() {
-                if *delay_secs > 0 {
-                    tokio::time::sleep(std::time::Duration::from_secs(*delay_secs)).await;
-                }
-
-                let mut req = client
-                    .post(&pinned_url)
-                    .header("content-type", "application/json")
-                    .timeout(std::time::Duration::from_secs(5));
-
-                if let Some(ref host) = original_host {
-                    req = req.header("host", host.as_str());
-                }
-                if let Some(ref sig) = hmac_sig {
-                    req = req.header("X-Webhook-Signature", sig.as_str());
-                }
-
-                match req.body(body.clone()).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        tracing::debug!(url = %url, status = %resp.status(), "webhook delivered");
+                // Validate resolved IP at delivery time and pin it to prevent DNS rebinding.
+                let pinned_url = match pin_webhook_url(&url).await {
+                    Ok(u) => u,
+                    Err(reason) => {
+                        tracing::warn!(
+                            url = %url,
+                            reason = %reason,
+                            "webhook delivery blocked — target resolves to unsafe IP"
+                        );
                         return;
                     }
-                    Ok(resp) if resp.status().is_redirection() => {
-                        tracing::warn!(
-                            url = %url, status = %resp.status(),
-                            "webhook endpoint returned redirect — delivery not confirmed (redirects disabled)"
-                        );
-                        return; // Do not retry: the data was sent but may not have been processed
+                };
+
+                let original_host = url::Url::parse(&url)
+                    .ok()
+                    .and_then(|u| u.host_str().map(|h| h.to_string()));
+
+                // Retry with exponential backoff: 1s, 5s, 15s
+                let delays = [1, 5, 15];
+                for (attempt, delay_secs) in std::iter::once(&0u64).chain(delays.iter()).enumerate()
+                {
+                    if *delay_secs > 0 {
+                        tokio::time::sleep(std::time::Duration::from_secs(*delay_secs)).await;
                     }
-                    Ok(resp) => {
-                        tracing::warn!(
-                            url = %url, status = %resp.status(), attempt = attempt + 1,
-                            "webhook delivery failed (non-success status)"
-                        );
+
+                    let mut req = client
+                        .post(&pinned_url)
+                        .header("content-type", "application/json")
+                        .timeout(std::time::Duration::from_secs(5));
+
+                    if let Some(ref host) = original_host {
+                        req = req.header("host", host.as_str());
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            url = %url, error = %e, attempt = attempt + 1,
-                            "webhook delivery failed"
-                        );
+                    if let Some(ref sig) = hmac_sig {
+                        req = req.header("X-Webhook-Signature", sig.as_str());
+                    }
+
+                    match req.body(body.clone()).send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            tracing::debug!(url = %url, status = %resp.status(), "webhook delivered");
+                            return;
+                        }
+                        Ok(resp) if resp.status().is_redirection() => {
+                            tracing::warn!(
+                                url = %url, status = %resp.status(),
+                                "webhook endpoint returned redirect — delivery not confirmed (redirects disabled)"
+                            );
+                            return; // Do not retry: the data was sent but may not have been processed
+                        }
+                        Ok(resp) => {
+                            tracing::warn!(
+                                url = %url, status = %resp.status(), attempt = attempt + 1,
+                                "webhook delivery failed (non-success status)"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                url = %url, error = %e, attempt = attempt + 1,
+                                "webhook delivery failed"
+                            );
+                        }
                     }
                 }
-            }
-            tracing::error!(url = %url, "webhook delivery failed after all retries");
+                tracing::error!(url = %url, "webhook delivery failed after all retries");
             }; // end async block
 
-            if tokio::time::timeout(WEBHOOK_TASK_TIMEOUT, delivery).await.is_err() {
+            if tokio::time::timeout(WEBHOOK_TASK_TIMEOUT, delivery)
+                .await
+                .is_err()
+            {
                 tracing::error!(url = %url, "webhook delivery timed out after {:?}", WEBHOOK_TASK_TIMEOUT);
             }
         });

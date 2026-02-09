@@ -114,9 +114,10 @@ async fn main() -> std::io::Result<()> {
             facilitator,
             // HMAC is guaranteed to be set when FACILITATOR_PRIVATE_KEY is configured
             // (enforced at lines 54-60 above).
-            hmac_secret: config.hmac_secret.clone().expect(
-                "HMAC secret must be set when embedded facilitator is enabled",
-            ),
+            hmac_secret: config
+                .hmac_secret
+                .clone()
+                .expect("HMAC secret must be set when embedded facilitator is enabled"),
             chain_config: x402::ChainConfig::default(),
             webhook_urls: config.webhook_urls.clone(),
             http_client: x402_facilitator::webhook::webhook_client(),
