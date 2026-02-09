@@ -2,22 +2,13 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-# Path to the advisory database
 db-path = "~/.cargo/advisory-db"
-# Warn (don't error) on unmaintained transitive deps we can't control
-unmaintained = "warn"
-yanked = "warn"
 
 [bans]
-# Warn when multiple versions of the same crate are pulled in
 multiple-versions = "warn"
-# Deny wildcard dependencies (e.g. version = "*")
 wildcards = "deny"
-# Allow workspace path deps without version (app/wallet are internal)
 allow-wildcard-paths = true
 
 [sources]
-# Deny crates from unknown registries
 unknown-registry = "deny"
-# Deny crates fetched from unknown git repositories
 unknown-git = "deny"
