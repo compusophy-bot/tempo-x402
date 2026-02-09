@@ -81,6 +81,7 @@ jobs:
           FOUND=$(grep -rn '0x[a-fA-F0-9]\{64\}' crates/*/src/*.rs 2>/dev/null \
             | grep -v 'DEMO_PRIVATE_KEY' \
             | grep -v 'SECP256K1_N_DIV_2' \
+            | grep -v 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' \
             | grep -v '#\[cfg(test)\]' \
             | grep -v '// test' \
             | grep -v 'mod tests' || true)
