@@ -18,7 +18,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
       - run: cargo build --workspace
-      - run: cargo test --workspace
+      - name: Run tests
+        env:
+          EVM_PRIVATE_KEY: ${{ secrets.EVM_PRIVATE_KEY }}
+          EVM_ADDRESS: ${{ secrets.EVM_ADDRESS }}
+          FACILITATOR_URL: ${{ secrets.FACILITATOR_URL }}
+          FACILITATOR_PRIVATE_KEY: ${{ secrets.FACILITATOR_PRIVATE_KEY }}
+          FACILITATOR_ADDRESS: ${{ secrets.FACILITATOR_ADDRESS }}
+        run: cargo test --workspace
 
   clippy:
     runs-on: ubuntu-latest
