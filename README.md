@@ -46,6 +46,7 @@ Pay-per-request APIs on the Tempo blockchain. Security-hardened.
 | **Server** | Gates endpoints, returns 402 | `tempo-x402-server` |
 | **Facilitator** | Verifies signatures, settles on-chain | `tempo-x402-facilitator` |
 | **Gateway** | Proxy any API with payment rails | `tempo-x402-gateway` |
+| **Wallet** | WASM-compatible signing & key generation | `tempo-x402-wallet` |
 
 The facilitator holds no funds — it just has approval to call `transferFrom` on behalf of clients who have pre-approved it.
 
@@ -86,6 +87,7 @@ async fn main() {
 | [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
 | [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and settlement |
 | [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API relay/proxy with endpoint registration |
+| [`tempo-x402-wallet`](https://crates.io/crates/tempo-x402-wallet) | WASM-compatible wallet — key generation, EIP-712 signing |
 
 ## Deployed Services
 
