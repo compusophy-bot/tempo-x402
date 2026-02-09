@@ -127,6 +127,18 @@ pub fn bootstrap(identity_path: &str) -> Result<InstanceIdentity, IdentityError>
             .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 
         let parent_url = env::var("PARENT_URL").ok().filter(|s| !s.is_empty());
+
+        // Validate PARENT_URL uses HTTPS (prevent SSRF to internal services)
+        if let Some(ref url) = parent_url {
+            if !url.starts_with("https://") {
+                tracing::warn!(
+                    "PARENT_URL must use HTTPS — ignoring insecure value: {}",
+                    &url[..url.len().min(20)]
+                );
+                // Continue without parent_url rather than failing bootstrap
+            }
+        }
+        let parent_url = parent_url.filter(|u| u.starts_with("https://"));
         let parent_address = env::var("PARENT_ADDRESS")
             .ok()
             .and_then(|s| s.parse::<Address>().ok());

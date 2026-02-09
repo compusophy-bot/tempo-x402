@@ -488,6 +488,20 @@ impl Database {
         Ok(())
     }
 
+    /// Provide scoped access to the underlying connection for parameterized queries.
+    /// Used by downstream crates (e.g., x402-node) that need DML with bound parameters,
+    /// which `execute_schema` (execute_batch) does not support.
+    pub fn with_connection<F, T>(&self, f: F) -> Result<T, GatewayError>
+    where
+        F: FnOnce(&Connection) -> Result<T, GatewayError>,
+    {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        f(&conn)
+    }
+
     /// Delete a reserved (pending) slug. Used to clean up failed registrations.
     pub fn delete_reserved_slug(&self, slug: &str) -> Result<(), GatewayError> {
         let conn = self

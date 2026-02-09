@@ -3,6 +3,32 @@ use actix_web::{web, HttpResponse};
 use crate::db;
 use crate::state::NodeState;
 
+/// Validate that a string looks like a UUID (8-4-4-4-12 hex).
+fn is_valid_uuid(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let expected_lens = [8, 4, 4, 4, 12];
+    parts
+        .iter()
+        .zip(expected_lens.iter())
+        .all(|(part, &len)| part.len() == len && part.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Validate that a string looks like an EVM address (0x + 40 hex chars).
+fn is_valid_evm_address(s: &str) -> bool {
+    if s.is_empty() {
+        return true; // allow empty (not yet known)
+    }
+    s.len() == 42 && s.starts_with("0x") && s[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Validate that a URL uses HTTPS scheme.
+fn is_valid_https_url(s: &str) -> bool {
+    s.starts_with("https://") && s.len() > 8
+}
+
 /// GET /instance/info — returns identity, children, version, uptime, clone availability
 pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
     let identity_info = state.identity.as_ref().map(|id| {
@@ -53,8 +79,32 @@ pub async fn register(
         }
     };
 
+    // Validate instance_id is a UUID to prevent injection
+    if !is_valid_uuid(instance_id) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid instance_id format"
+        }));
+    }
+
     let address = body.get("address").and_then(|v| v.as_str()).unwrap_or("");
+
+    // Validate address format if provided
+    if !is_valid_evm_address(address) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid address format"
+        }));
+    }
+
     let url = body.get("url").and_then(|v| v.as_str());
+
+    // Validate URL is HTTPS if provided
+    if let Some(u) = url {
+        if !is_valid_https_url(u) {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "url must use https"
+            }));
+        }
+    }
 
     match db::update_child(
         &state.gateway.db,
@@ -66,7 +116,6 @@ pub async fn register(
         Ok(()) => {
             tracing::info!(
                 instance_id = %instance_id,
-                address = %address,
                 "Child instance registered"
             );
             HttpResponse::Ok().json(serde_json::json!({
@@ -80,6 +129,7 @@ pub async fn register(
                 error = %e,
                 "Failed to update child record"
             );
+            // Don't leak internal error details
             HttpResponse::Ok().json(serde_json::json!({
                 "success": true,
                 "message": "acknowledged",
@@ -94,4 +144,43 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/info", web::get().to(info))
             .route("/register", web::post().to(register)),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_uuid() {
+        assert!(is_valid_uuid("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(is_valid_uuid("a1b2c3d4-e5f6-7890-abcd-ef1234567890"));
+        assert!(!is_valid_uuid("not-a-uuid"));
+        assert!(!is_valid_uuid("550e8400e29b41d4a716446655440000"));
+        assert!(!is_valid_uuid(""));
+        assert!(!is_valid_uuid("550e8400-e29b-41d4-a716-44665544000g"));
+    }
+
+    #[test]
+    fn test_valid_evm_address() {
+        assert!(is_valid_evm_address(
+            "0x1234567890abcdef1234567890abcdef12345678"
+        ));
+        assert!(is_valid_evm_address("")); // empty allowed
+        assert!(!is_valid_evm_address("0x123")); // too short
+        assert!(!is_valid_evm_address(
+            "1234567890abcdef1234567890abcdef12345678"
+        )); // no 0x
+        assert!(!is_valid_evm_address(
+            "0xGGGG567890abcdef1234567890abcdef12345678"
+        )); // invalid hex
+    }
+
+    #[test]
+    fn test_valid_https_url() {
+        assert!(is_valid_https_url("https://example.com"));
+        assert!(is_valid_https_url("https://x402-abc.up.railway.app"));
+        assert!(!is_valid_https_url("http://example.com"));
+        assert!(!is_valid_https_url("https://"));
+        assert!(!is_valid_https_url("ftp://example.com"));
+    }
 }

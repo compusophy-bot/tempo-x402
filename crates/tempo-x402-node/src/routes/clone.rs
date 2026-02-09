@@ -25,19 +25,6 @@ pub async fn clone_instance(
         .as_deref()
         .ok_or_else(|| GatewayError::Internal("clone price amount not set".to_string()))?;
 
-    // Check children limit
-    let current_children = rusqlite::Connection::open(&node.db_path)
-        .ok()
-        .and_then(|conn| db::query_children_count(&conn).ok())
-        .unwrap_or(0);
-
-    if current_children >= node.clone_max_children {
-        return Err(GatewayError::Internal(format!(
-            "clone limit reached: {}/{}",
-            current_children, node.clone_max_children
-        )));
-    }
-
     // Build payment requirements
     let requirements = x402::PaymentRequirements {
         scheme: x402::SCHEME_NAME.to_string(),
@@ -79,18 +66,27 @@ pub async fn clone_instance(
         .unwrap_or_default();
 
     // Spawn clone
-    let clone_result = agent
-        .spawn_clone(&payer_address)
-        .await
-        .map_err(|e| GatewayError::Internal(format!("clone failed: {e}")))?;
+    let clone_result = agent.spawn_clone(&payer_address).await.map_err(|e| {
+        tracing::error!(error = %e, "Clone orchestration failed");
+        GatewayError::Internal("clone operation failed".to_string())
+    })?;
 
-    // Record child in DB
-    let _ = db::create_child(
+    // Atomically record child in DB (also enforces max_children limit)
+    match db::create_child_if_under_limit(
         &node.gateway.db,
+        node.clone_max_children,
         &clone_result.instance_id,
         Some(&clone_result.url),
         Some(&clone_result.railway_service_id),
-    );
+    ) {
+        Ok(false) => {
+            return Err(GatewayError::Internal("clone limit reached".to_string()));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to record child in DB");
+        }
+        Ok(true) => {}
+    }
 
     tracing::info!(
         instance_id = %clone_result.instance_id,

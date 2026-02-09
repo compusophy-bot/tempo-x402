@@ -273,6 +273,179 @@ fn nonce_store_sqlite_preferred_in_production() {
 }
 
 #[test]
+fn no_sql_string_formatting_in_node_db() {
+    let files = production_source_files();
+
+    // Patterns that indicate SQL injection via string formatting
+    let dangerous_sql_patterns = [
+        "format!(\"INSERT",
+        "format!(\"UPDATE",
+        "format!(\"DELETE",
+        "format!(\"SELECT",
+        "format!(\"DROP",
+        // Escaped-quote approach used in the old code
+        ".replace('\\'', \"''\")",
+    ];
+
+    for (path, content) in &files {
+        // Only check node DB files
+        if !path.contains("x402-node") || !path.contains("db.rs") {
+            continue;
+        }
+
+        let prod_content = production_lines(content);
+
+        for pattern in &dangerous_sql_patterns {
+            assert!(
+                !prod_content.contains(pattern),
+                "SQL string formatting pattern '{}' found in {}. \
+                 All SQL DML must use parameterized queries (rusqlite params![]).",
+                pattern,
+                path
+            );
+        }
+    }
+}
+
+#[test]
+fn node_registration_validates_input() {
+    let files = production_source_files();
+
+    for (path, content) in &files {
+        if !path.contains("x402-node") || !path.contains("instance.rs") {
+            continue;
+        }
+
+        let prod_content = production_lines(content);
+
+        // Must validate instance_id format
+        assert!(
+            prod_content.contains("is_valid_uuid"),
+            "Instance registration at {} must validate instance_id as UUID format.",
+            path
+        );
+
+        // Must validate address format
+        assert!(
+            prod_content.contains("is_valid_evm_address"),
+            "Instance registration at {} must validate address as EVM address format.",
+            path
+        );
+
+        // Must validate URL scheme
+        assert!(
+            prod_content.contains("is_valid_https_url") || prod_content.contains("https://"),
+            "Instance registration at {} must validate URL uses HTTPS.",
+            path
+        );
+    }
+}
+
+#[test]
+fn identity_private_key_not_logged() {
+    let files = production_source_files();
+
+    for (path, content) in &files {
+        if !path.contains("x402-identity") {
+            continue;
+        }
+
+        let prod_content = production_lines(content);
+
+        // Check that tracing/logging macros don't reference private_key directly
+        for (i, line) in prod_content.lines().enumerate() {
+            let trimmed = line.trim();
+            if (trimmed.contains("tracing::")
+                || trimmed.contains("tracing::info!")
+                || trimmed.contains("tracing::debug!")
+                || trimmed.contains("tracing::warn!"))
+                && trimmed.contains("private_key")
+                && !trimmed.contains("FACILITATOR_PRIVATE_KEY")
+                && !trimmed.contains("\"Injected FACILITATOR_PRIVATE_KEY\"")
+            {
+                panic!(
+                    "Private key may be logged at {}:{}. Never log private key material.\n  {}",
+                    path,
+                    i + 1,
+                    trimmed
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn parent_url_requires_https() {
+    let files = production_source_files();
+
+    for (path, content) in &files {
+        if !path.contains("x402-identity") || !path.contains("lib.rs") {
+            continue;
+        }
+
+        let prod_content = production_lines(content);
+
+        // The bootstrap function must validate PARENT_URL uses HTTPS
+        if prod_content.contains("PARENT_URL") {
+            assert!(
+                prod_content.contains("starts_with(\"https://\")")
+                    || prod_content.contains("starts_with(\"https:\")"),
+                "Identity bootstrap at {} must validate PARENT_URL uses HTTPS to prevent SSRF.",
+                path
+            );
+        }
+    }
+}
+
+#[test]
+fn clone_route_uses_atomic_limit_check() {
+    let files = production_source_files();
+
+    for (path, content) in &files {
+        if !path.contains("x402-node") {
+            continue;
+        }
+
+        // Check clone route uses atomic check-and-insert, not separate check-then-insert
+        if path.contains("clone.rs") && content.contains("clone_instance") {
+            let prod_content = production_lines(content);
+            assert!(
+                prod_content.contains("create_child_if_under_limit"),
+                "Clone route at {} must use atomic create_child_if_under_limit to prevent \
+                 TOCTOU race condition on children count.",
+                path
+            );
+        }
+    }
+}
+
+#[test]
+fn clone_errors_do_not_leak_details() {
+    let files = production_source_files();
+
+    for (path, content) in &files {
+        if !path.contains("x402-node") || !path.contains("clone.rs") {
+            continue;
+        }
+
+        let prod_content = production_lines(content);
+
+        // Ensure clone errors don't forward internal error messages to HTTP response
+        // The pattern to check: map_err should use a generic message, not format!("{e}")
+        for (i, line) in prod_content.lines().enumerate() {
+            if line.contains("GatewayError::Internal(format!(\"clone failed: {e}\"))") {
+                panic!(
+                    "Clone error at {}:{} leaks internal error details to HTTP response. \
+                     Use a generic error message and log the details server-side.",
+                    path,
+                    i + 1
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn hmac_secret_is_mandatory() {
     let files = production_source_files();
 
