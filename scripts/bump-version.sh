@@ -34,7 +34,7 @@ if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
 fi
 
 # Update each crate's Cargo.toml
-CRATES=("tempo-x402" "tempo-x402-client" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway" "tempo-x402-app")
+CRATES=("tempo-x402" "tempo-x402-client" "tempo-x402-server" "tempo-x402-facilitator" "tempo-x402-gateway" "tempo-x402-app" "tempo-x402-wallet" "tempo-x402-security-audit")
 for crate in "${CRATES[@]}"; do
     CRATE_TOML="$ROOT_DIR/crates/$crate/Cargo.toml"
     if [ -f "$CRATE_TOML" ]; then

@@ -5160,7 +5160,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "base64",
@@ -5183,7 +5183,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-app"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "base64",
  "console_error_panic_hook",
@@ -5205,7 +5205,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-client"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "base64",
@@ -5222,7 +5222,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-facilitator"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -5245,7 +5245,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-gateway"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -5275,7 +5275,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-security-audit"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "regex",
  "walkdir",
@@ -5283,7 +5283,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-server"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -5307,7 +5307,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-wallet"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "base64",
