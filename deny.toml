@@ -4,12 +4,6 @@
 [advisories]
 # Path to the advisory database
 db-path = "~/.cargo/advisory-db"
-# Deny any crate with a known vulnerability
-vulnerability = "deny"
-# Warn on unmaintained crates
-unmaintained = "warn"
-# Warn on crates that have been yanked
-yanked = "warn"
 
 [bans]
 # Warn when multiple versions of the same crate are pulled in
