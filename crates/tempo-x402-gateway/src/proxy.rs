@@ -59,34 +59,22 @@ pub async fn proxy_request(
     include_payment_response: bool,
     hmac_secret: Option<&[u8]>,
 ) -> Result<HttpResponse, GatewayError> {
-    // DNS rebinding fix: resolve DNS once and rewrite the URL to the validated IP.
-    // This eliminates the TOCTOU gap where a second DNS lookup (by reqwest) could
-    // resolve to a different (private) IP.
-    // Uses structured URL parsing (url::Url::set_host) instead of string replacement
-    // to avoid corruption when the hostname appears in the path or query.
-    let mut parsed_url = url::Url::parse(target_url)
+    // SSRF protection: resolve DNS and validate that all resolved IPs are public.
+    // We validate before the request but let reqwest use the original hostname for
+    // the actual connection. This preserves TLS/SNI (which requires the hostname,
+    // not a raw IP) while still blocking requests to private/loopback addresses.
+    //
+    // Note: There is a small TOCTOU window between our DNS validation and reqwest's
+    // DNS resolution. A full fix would require per-request DNS pinning via a custom
+    // reqwest resolver, but the current approach blocks the vast majority of SSRF
+    // attacks (static private IPs, localhost, link-local, CGNAT) while keeping TLS
+    // working correctly with SNI and certificate validation.
+    let parsed_url = url::Url::parse(target_url)
         .map_err(|e| GatewayError::ProxyError(format!("invalid target URL: {e}")))?;
-    let mut original_host: Option<String> = None;
 
-    if let Some(host) = parsed_url.host_str().map(|h| h.to_string()) {
-        // Skip IP-rewrite for hosts that are already IPs
-        if host.parse::<std::net::Ipv4Addr>().is_err()
-            && host.parse::<std::net::Ipv6Addr>().is_err()
-        {
-            let resolved_ip = validate_and_resolve_ip(&host).await?;
-            // Rewrite URL host to the resolved IP using structured URL mutation
-            let ip_host = match resolved_ip {
-                std::net::IpAddr::V6(ip) => format!("[{}]", ip),
-                std::net::IpAddr::V4(ip) => ip.to_string(),
-            };
-            parsed_url
-                .set_host(Some(&ip_host))
-                .map_err(|_| GatewayError::ProxyError("failed to set resolved IP".to_string()))?;
-            original_host = Some(host);
-        } else {
-            // Already an IP — just validate it
-            validate_and_resolve_ip(&host).await?;
-        }
+    if let Some(host) = parsed_url.host_str() {
+        // Validate that DNS resolves to public IPs (blocks SSRF)
+        validate_and_resolve_ip(host).await?;
     }
     let actual_url = parsed_url.to_string();
 
@@ -108,11 +96,6 @@ pub async fn proxy_request(
     };
 
     let mut request_builder = client.request(method, &actual_url);
-
-    // Set the Host header to the original hostname (not the resolved IP)
-    if let Some(ref host) = original_host {
-        request_builder = request_builder.header("host", host.as_str());
-    }
 
     // Copy headers from original request (except stripped ones)
     for (name, value) in original_req.headers() {
