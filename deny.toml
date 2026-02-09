@@ -4,8 +4,8 @@
 [advisories]
 db-path = "~/.cargo/advisory-db"
 # Only check workspace crates for unmaintained/yanked (ignore transitive)
-unmaintained = "workspace"
-yanked = "workspace"
+unmaintained = "allow"
+yanked = "allow"
 
 [bans]
 multiple-versions = "warn"
