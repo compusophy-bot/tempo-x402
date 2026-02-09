@@ -180,7 +180,7 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           mkdir -p dist
-          for bin in x402-server x402-facilitator x402-client x402-approve x402-gateway; do
+          for bin in x402-server x402-facilitator x402-client x402-approve x402-gateway x402-node; do
             src="target/${{ matrix.target }}/release/${bin}"
             if [ -f "$src" ]; then
               cp "$src" "dist/${bin}-${tag}-${{ matrix.target }}"
@@ -222,3 +222,50 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+  # Publish to crates.io in dependency order
+  publish:
+    needs: [test, docs, security-gate]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publish_crate() {
+            local crate="$1"
+            echo "📦 Publishing $crate..."
+            cargo publish -p "$crate" --no-verify
+            echo "✓ Published $crate"
+            echo "Waiting for crates.io index to update..."
+            sleep 30
+          }
+
+          # Layer 1: core (no workspace deps)
+          publish_crate tempo-x402
+
+          # Layer 2: wallet (dev-dep on x402 only)
+          publish_crate tempo-x402-wallet
+
+          # Layer 3: depend on x402 only
+          publish_crate tempo-x402-client
+          publish_crate tempo-x402-server
+          publish_crate tempo-x402-facilitator
+
+          # Layer 4: depend on layer 2+3
+          publish_crate tempo-x402-identity
+          publish_crate tempo-x402-gateway
+          publish_crate tempo-x402-agent
+
+          # Layer 5: depends on everything
+          publish_crate tempo-x402-node
+
+          echo ""
+          echo "All crates published successfully."
