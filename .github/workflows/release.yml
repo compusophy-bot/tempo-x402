@@ -88,7 +88,7 @@ jobs:
       - name: Dependency vulnerability scan
         run: cargo audit || (sleep 15 && cargo audit)
       - name: Install cargo-deny
-        run: cargo install cargo-deny --version 0.16.2 --locked
+        run: cargo install cargo-deny --locked
       - name: Dependency policy check
         run: cargo deny check advisories bans
       - name: Security invariant tests

@@ -64,7 +64,7 @@ jobs:
 
       # Dependency policy check
       - name: Install cargo-deny
-        run: cargo install cargo-deny --version 0.16.2 --locked
+        run: cargo install cargo-deny --locked
       - name: Check advisories
         run: cargo deny check advisories
       - name: Check bans
