@@ -8,6 +8,10 @@ target/
 claude.md
 .claude/
 
+# Internal planning docs
+NEXT-STEPS.md
+ARCHITECTURE-REFACTOR.md
+
 # Local cargo config (user-specific target dirs, etc.)
 .cargo/
 
