@@ -446,6 +446,43 @@ fn clone_errors_do_not_leak_details() {
 }
 
 #[test]
+fn every_crate_has_claude_md() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+
+    let crates_dir = root.join("crates");
+    let mut missing = Vec::new();
+
+    for entry in std::fs::read_dir(&crates_dir).expect("read crates dir") {
+        let entry = entry.expect("read entry");
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        // Skip hidden directories
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or(true, |n| n.starts_with('.'))
+        {
+            continue;
+        }
+        if !path.join("CLAUDE.md").exists() {
+            missing.push(path.display().to_string());
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "Crates missing CLAUDE.md (add one when creating a new crate): {:?}",
+        missing
+    );
+}
+
+#[test]
 fn hmac_secret_is_mandatory() {
     let files = production_source_files();
 
