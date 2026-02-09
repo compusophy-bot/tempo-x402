@@ -2,10 +2,13 @@
 resolver = "2"
 members = [
     "crates/tempo-x402",
+    "crates/tempo-x402-agent",
     "crates/tempo-x402-app",
     "crates/tempo-x402-client",
     "crates/tempo-x402-facilitator",
     "crates/tempo-x402-gateway",
+    "crates/tempo-x402-identity",
+    "crates/tempo-x402-node",
     "crates/tempo-x402-security-audit",
     "crates/tempo-x402-server",
     "crates/tempo-x402-wallet",
@@ -13,7 +16,11 @@ members = [
 
 [workspace.dependencies]
 x402 = { path = "crates/tempo-x402", version = "0.5.0", package = "tempo-x402" }
+x402-agent = { path = "crates/tempo-x402-agent", version = "0.6.0", package = "tempo-x402-agent" }
 x402-facilitator = { path = "crates/tempo-x402-facilitator", version = "0.5.0", package = "tempo-x402-facilitator" }
+x402-gateway = { path = "crates/tempo-x402-gateway", version = "0.5.0", package = "tempo-x402-gateway" }
+x402-identity = { path = "crates/tempo-x402-identity", version = "0.6.0", package = "tempo-x402-identity" }
+x402-wallet = { path = "crates/tempo-x402-wallet", version = "0.5.0", package = "tempo-x402-wallet" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -37,7 +44,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
 bytes = "1"
 url = "2"
 urlencoding = "2"

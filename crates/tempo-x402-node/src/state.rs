@@ -1,0 +1,27 @@
+//! Node-specific state extending the gateway's AppState.
+
+use std::sync::Arc;
+use x402_agent::CloneOrchestrator;
+use x402_gateway::state::AppState as GatewayState;
+use x402_identity::InstanceIdentity;
+
+/// Node state wrapping gateway state with identity + agent capabilities.
+#[derive(Clone)]
+pub struct NodeState {
+    /// The underlying gateway state (config, db, http_client, facilitator)
+    pub gateway: GatewayState,
+    /// Instance identity (when AUTO_BOOTSTRAP is set)
+    pub identity: Option<InstanceIdentity>,
+    /// Clone orchestrator (when Railway credentials are configured)
+    pub agent: Option<Arc<CloneOrchestrator>>,
+    /// When the node started
+    pub started_at: chrono::DateTime<chrono::Utc>,
+    /// Read connection to the database for children queries
+    pub db_path: String,
+    /// Clone price (e.g., "$0.10")
+    pub clone_price: Option<String>,
+    /// Clone price in token units
+    pub clone_price_amount: Option<String>,
+    /// Maximum children
+    pub clone_max_children: u32,
+}

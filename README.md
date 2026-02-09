@@ -4,6 +4,8 @@ Pay-per-request APIs on the Tempo blockchain. Security-hardened.
 
 **[Live Demo](https://tempo-x402-app.vercel.app)** | **[Documentation](https://tempo-x402-app.vercel.app/docs)** | **[crates.io](https://crates.io/crates/tempo-x402)**
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/tempo-x402?referralCode=tempo)
+
 ## How It Works
 
 ```

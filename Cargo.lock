@@ -5182,6 +5182,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tempo-x402-agent"
+version = "0.6.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempo-x402",
+ "tempo-x402-identity",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "tempo-x402-app"
 version = "0.5.0"
 dependencies = [
@@ -5271,6 +5285,52 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "tempo-x402-identity"
+version = "0.6.0"
+dependencies = [
+ "alloy",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tempo-x402",
+ "tempo-x402-wallet",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "tempo-x402-node"
+version = "0.6.0"
+dependencies = [
+ "actix-cors",
+ "actix-files",
+ "actix-governor",
+ "actix-web",
+ "alloy",
+ "chrono",
+ "dotenvy",
+ "lazy_static",
+ "prometheus",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempo-x402",
+ "tempo-x402-agent",
+ "tempo-x402-facilitator",
+ "tempo-x402-gateway",
+ "tempo-x402-identity",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -477,6 +477,17 @@ impl Database {
         Ok(purged)
     }
 
+    /// Execute additional schema SQL. Used by downstream crates (e.g., x402-node)
+    /// to extend the database with their own tables without modifying gateway code.
+    pub fn execute_schema(&self, sql: &str) -> Result<(), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        conn.execute_batch(sql)?;
+        Ok(())
+    }
+
     /// Delete a reserved (pending) slug. Used to clean up failed registrations.
     pub fn delete_reserved_slug(&self, slug: &str) -> Result<(), GatewayError> {
         let conn = self

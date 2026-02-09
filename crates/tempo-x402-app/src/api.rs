@@ -16,6 +16,11 @@ const GATEWAY_URL: &str = {
     }
 };
 
+/// Get the gateway base URL for API calls.
+pub fn gateway_base_url() -> &'static str {
+    GATEWAY_URL
+}
+
 /// 402 Payment Required response body
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PaymentRequiredBody {

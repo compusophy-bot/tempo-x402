@@ -1,0 +1,38 @@
+[package]
+name = "tempo-x402-node"
+version = "0.6.0"
+edition = "2021"
+description = "Self-deploying x402 node: gateway + identity bootstrap + clone orchestration"
+license = "MIT"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "tempo", "node", "self-replicating", "autonomous"]
+categories = ["web-programming", "cryptography::cryptocurrencies"]
+
+[[bin]]
+name = "x402-node"
+path = "src/main.rs"
+
+[dependencies]
+x402 = { workspace = true }
+x402-agent = { workspace = true }
+x402-facilitator = { workspace = true }
+x402-gateway = { workspace = true }
+x402-identity = { workspace = true }
+actix-web = { workspace = true }
+actix-cors = { workspace = true }
+actix-files = { workspace = true }
+actix-governor = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+alloy = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+thiserror = { workspace = true }

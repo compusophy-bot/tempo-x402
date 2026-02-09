@@ -376,6 +376,147 @@ fn WalletManagement() -> impl IntoView {
     }
 }
 
+/// Instance info panel — shows identity, children, clone button
+#[component]
+fn InstancePanel() -> impl IntoView {
+    let (info, set_info) = create_signal(None::<serde_json::Value>);
+    let (loading, set_loading) = create_signal(true);
+    let (error, set_error) = create_signal(None::<String>);
+
+    // Fetch instance info on mount
+    spawn_local(async move {
+        let base = api::gateway_base_url();
+        let url = format!("{}/instance/info", base);
+        match gloo_net::http::Request::get(&url).send().await {
+            Ok(resp) if resp.ok() => {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    set_info.set(Some(data));
+                }
+            }
+            Ok(resp) => {
+                set_error.set(Some(format!("HTTP {}", resp.status())));
+            }
+            Err(e) => {
+                set_error.set(Some(format!("{}", e)));
+            }
+        }
+        set_loading.set(false);
+    });
+
+    view! {
+        <div class="instance-panel">
+            <h3>"Instance Info"</h3>
+
+            <Show when=move || loading.get() fallback=|| ()>
+                <p class="loading">"Loading instance info..."</p>
+            </Show>
+
+            <Show when=move || error.get().is_some() fallback=|| ()>
+                <p class="error-text">"Instance info unavailable"</p>
+            </Show>
+
+            <Show when=move || info.get().is_some() fallback=|| ()>
+                {move || {
+                    let data = info.get().unwrap_or_default();
+
+                    let identity = data.get("identity").cloned();
+                    let children_count = data.get("children_count")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let clone_available = data.get("clone_available")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let clone_price = data.get("clone_price")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
+                        .to_string();
+                    let version = data.get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let uptime = data.get("uptime_seconds")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+
+                    let address = identity.as_ref()
+                        .and_then(|id| id.get("address"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
+                        .to_string();
+                    let instance_id = identity.as_ref()
+                        .and_then(|id| id.get("instance_id"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
+                        .to_string();
+                    let parent_url = identity.as_ref()
+                        .and_then(|id| id.get("parent_url"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+
+                    let children = data.get("children")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    view! {
+                        <div class="instance-details">
+                            <div class="instance-identity">
+                                <p><strong>"Address: "</strong><code>{address}</code></p>
+                                <p><strong>"Instance: "</strong><code>{instance_id}</code></p>
+                                <p><strong>"Version: "</strong>{version}</p>
+                                <p><strong>"Uptime: "</strong>{format!("{}s", uptime)}</p>
+                                {parent_url.map(|url| view! {
+                                    <p><strong>"Parent: "</strong>
+                                        <a href=url.clone() target="_blank">{url}</a>
+                                    </p>
+                                })}
+                            </div>
+
+                            <Show when=move || clone_available fallback=|| ()>
+                                <div class="clone-section">
+                                    <p>"Clone this instance for " <strong>{clone_price.clone()}</strong></p>
+                                </div>
+                            </Show>
+
+                            <Show when=move || { children_count > 0 } fallback=|| ()>
+                                <div class="children-list">
+                                    <h4>{format!("Children ({})", children_count)}</h4>
+                                    <ul>
+                                        {children.iter().map(|child| {
+                                            let child_id = child.get("instance_id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("unknown")
+                                                .to_string();
+                                            let child_url = child.get("url")
+                                                .and_then(|v| v.as_str())
+                                                .map(String::from);
+                                            let child_status = child.get("status")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("unknown")
+                                                .to_string();
+                                            view! {
+                                                <li>
+                                                    <code>{child_id}</code>
+                                                    " — "
+                                                    <span class="status-badge">{child_status}</span>
+                                                    {child_url.map(|url| view! {
+                                                        " "
+                                                        <a href=url.clone() target="_blank">{url}</a>
+                                                    })}
+                                                </li>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </ul>
+                                </div>
+                            </Show>
+                        </div>
+                    }
+                }}
+            </Show>
+        </div>
+    }
+}
+
 /// Home page with payment demo
 #[component]
 fn HomePage() -> impl IntoView {
@@ -388,6 +529,7 @@ fn HomePage() -> impl IntoView {
 
             <PaymentDemo />
             <WalletManagement />
+            <InstancePanel />
 
             <div class="info-section">
                 <h2>"How it works"</h2>

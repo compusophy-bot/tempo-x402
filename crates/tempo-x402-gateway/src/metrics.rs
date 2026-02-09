@@ -37,6 +37,7 @@ lazy_static! {
         HistogramOpts::new("gateway_proxy_latency_seconds", "Proxy request latency")
             .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
     ).unwrap();
+
 }
 
 /// Register all metrics with the registry

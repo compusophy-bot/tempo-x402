@@ -229,7 +229,7 @@ impl GatewayConfig {
 }
 
 /// Parse a price string like "$0.01" to token amount string
-fn parse_price_to_amount(price: &str) -> Result<String, ConfigError> {
+pub fn parse_price_to_amount(price: &str) -> Result<String, ConfigError> {
     use x402::{SchemeServer, TempoSchemeServer};
 
     let scheme = TempoSchemeServer::new();
