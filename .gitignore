@@ -12,6 +12,9 @@ claude.md
 NEXT-STEPS.md
 ARCHITECTURE-REFACTOR.md
 
+# Railway introspection schema (local tooling artifact)
+railway_schema.json
+
 # Local cargo config (user-specific target dirs, etc.)
 .cargo/
 
