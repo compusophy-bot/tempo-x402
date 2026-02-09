@@ -64,8 +64,12 @@ async fn sign_payment(
 }
 
 #[tokio::test]
-#[ignore] // requires EVM_PRIVATE_KEY and live gateway
 async fn e2e_full_payment_flow() {
+    dotenvy::dotenv().ok();
+    if std::env::var("EVM_PRIVATE_KEY").is_err() {
+        eprintln!("EVM_PRIVATE_KEY not set, skipping e2e test");
+        return;
+    }
     let gateway_url = gateway_url();
     let signer = client_signer();
     let address = signer.address();
@@ -279,8 +283,12 @@ async fn e2e_full_payment_flow() {
 /// Register the permanent "demo" endpoint for the SPA frontend.
 /// Idempotent — skips if already registered.
 #[tokio::test]
-#[ignore] // requires EVM_PRIVATE_KEY and live gateway
 async fn register_demo_endpoint() {
+    dotenvy::dotenv().ok();
+    if std::env::var("EVM_PRIVATE_KEY").is_err() {
+        eprintln!("EVM_PRIVATE_KEY not set, skipping register_demo_endpoint test");
+        return;
+    }
     let gateway_url = gateway_url();
     let http = reqwest::Client::new();
 
