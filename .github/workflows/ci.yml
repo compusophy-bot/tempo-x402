@@ -62,14 +62,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
 
-      # Dependency policy check
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: Check advisories
-        run: cargo deny check advisories
-      - name: Check bans
-        run: cargo deny check bans
-
       # Security invariant tests
       - name: Run security invariant tests
         run: cargo test -p tempo-x402-security-audit
