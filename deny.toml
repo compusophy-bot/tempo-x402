@@ -4,6 +4,9 @@
 [advisories]
 # Path to the advisory database
 db-path = "~/.cargo/advisory-db"
+# Warn (don't error) on unmaintained transitive deps we can't control
+unmaintained = "warn"
+yanked = "warn"
 
 [bans]
 # Warn when multiple versions of the same crate are pulled in
