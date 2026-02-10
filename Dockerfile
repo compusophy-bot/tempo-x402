@@ -10,13 +10,13 @@ COPY . .
 # Build the SPA
 RUN cd crates/tempo-x402-app && trunk build --release
 
-# Stage 2: Build the gateway binary
-FROM rust:1.89-bookworm AS gateway-builder
+# Stage 2: Build the gateway and node binaries
+FROM rust:1.89-bookworm AS builder
 
 WORKDIR /app
 COPY . .
 
-RUN cargo build --release --package tempo-x402-gateway
+RUN cargo build --release --package tempo-x402-gateway --package tempo-x402-node
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
@@ -25,13 +25,15 @@ RUN apt-get update && apt-get install -y ca-certificates gosu && rm -rf /var/lib
 
 RUN groupadd -r app && useradd -r -g app -d /app app
 
-COPY --from=gateway-builder /app/target/release/x402-gateway /usr/local/bin/x402-gateway
+COPY --from=builder /app/target/release/x402-gateway /usr/local/bin/x402-gateway
+COPY --from=builder /app/target/release/x402-node /usr/local/bin/x402-node
 COPY --from=spa-builder /app/crates/tempo-x402-app/dist /app/spa
 
 RUN chown -R app:app /app
 
 # Entrypoint: fix volume permissions then drop to non-root
-RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nexec gosu app x402-gateway "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Use X402_BINARY env var to select binary (default: x402-node)
+RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nBIN=${X402_BINARY:-x402-node}\nexec gosu app "$BIN" "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
