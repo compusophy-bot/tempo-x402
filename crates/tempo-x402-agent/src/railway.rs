@@ -400,27 +400,26 @@ impl RailwayClient {
     }
 
     /// Trigger a deployment for a service in an environment.
+    ///
+    /// Uses `serviceInstanceDeploy` which works for Docker image–based services.
+    /// (`environmentTriggersDeploy` only triggers git-based deploys.)
     pub async fn deploy_service(
         &self,
         service_id: &str,
         environment_id: &str,
     ) -> Result<String, RailwayError> {
         let query = r#"
-            mutation EnvironmentTriggersDeploy($input: EnvironmentTriggersDeployInput!) {
-                environmentTriggersDeploy(input: $input)
+            mutation ServiceInstanceDeploy($serviceId: String!, $environmentId: String!) {
+                serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
             }
         "#;
 
         let variables = serde_json::json!({
-            "input": {
-                "projectId": self.project_id,
-                "serviceId": service_id,
-                "environmentId": environment_id,
-            }
+            "serviceId": service_id,
+            "environmentId": environment_id,
         });
 
         self.execute(query, variables).await?;
-        // environmentTriggersDeploy returns a boolean, not a deployment ID
         Ok("triggered".to_string())
     }
 }
