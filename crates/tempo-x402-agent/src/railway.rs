@@ -406,26 +406,22 @@ impl RailwayClient {
         environment_id: &str,
     ) -> Result<String, RailwayError> {
         let query = r#"
-            mutation DeploymentCreate($input: DeploymentCreateInput!) {
-                deploymentCreate(input: $input) {
-                    id
-                    status
-                }
+            mutation EnvironmentTriggersDeploy($input: EnvironmentTriggersDeployInput!) {
+                environmentTriggersDeploy(input: $input)
             }
         "#;
 
         let variables = serde_json::json!({
             "input": {
+                "projectId": self.project_id,
                 "serviceId": service_id,
                 "environmentId": environment_id,
             }
         });
 
-        let data = self.execute(query, variables).await?;
-        data["deploymentCreate"]["id"]
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| RailwayError::MissingField("deploymentCreate.id".to_string()))
+        self.execute(query, variables).await?;
+        // environmentTriggersDeploy returns a boolean, not a deployment ID
+        Ok("triggered".to_string())
     }
 }
 
