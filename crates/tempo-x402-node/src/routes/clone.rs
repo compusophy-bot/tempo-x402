@@ -192,9 +192,7 @@ pub async fn delete_clone(
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to query clone for delete");
-            return Err(GatewayError::Internal(
-                "failed to query clone".to_string(),
-            ));
+            return Err(GatewayError::Internal("failed to query clone".to_string()));
         }
     };
 
@@ -237,9 +235,7 @@ pub async fn delete_clone(
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to delete clone from DB");
-            Err(GatewayError::Internal(
-                "failed to delete clone".to_string(),
-            ))
+            Err(GatewayError::Internal("failed to delete clone".to_string()))
         }
     }
 }
@@ -272,9 +268,7 @@ pub async fn redeploy_clone(
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to query clone for redeploy");
-            return Err(GatewayError::Internal(
-                "failed to query clone".to_string(),
-            ));
+            return Err(GatewayError::Internal("failed to query clone".to_string()));
         }
     };
 
@@ -324,9 +318,7 @@ pub async fn redeploy_clone(
 }
 
 /// POST /clone/update-all — redeploy all active children
-pub async fn update_all(
-    node: web::Data<NodeState>,
-) -> Result<HttpResponse, GatewayError> {
+pub async fn update_all(node: web::Data<NodeState>) -> Result<HttpResponse, GatewayError> {
     let agent = node
         .agent
         .as_ref()
