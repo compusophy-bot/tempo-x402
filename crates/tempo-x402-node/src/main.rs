@@ -268,6 +268,136 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
+    // ── Background: version check + auto-redeploy outdated children ────
+    if node_state.agent.is_some() {
+        let version_check_state = node_state.clone();
+        tokio::spawn(async move {
+            // Wait for children to finish booting
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            let parent_version = env!("CARGO_PKG_VERSION");
+            tracing::info!("Checking children versions against parent v{parent_version}");
+
+            let children = match rusqlite::Connection::open(&version_check_state.db_path) {
+                Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
+                Err(e) => {
+                    tracing::warn!("Version check: failed to open db: {e}");
+                    return;
+                }
+            };
+
+            let running: Vec<_> = children
+                .into_iter()
+                .filter(|c| c.status == "running" && c.url.is_some())
+                .collect();
+
+            if running.is_empty() {
+                tracing::info!("Version check: no running children to check");
+                return;
+            }
+
+            let http = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_default();
+
+            let agent = match version_check_state.agent.as_ref() {
+                Some(a) => a,
+                None => return,
+            };
+
+            for child in &running {
+                let url = match child.url.as_ref() {
+                    Some(u) => u,
+                    None => continue,
+                };
+
+                let health_url = format!("{url}/health");
+                let child_version = match http.get(&health_url).send().await {
+                    Ok(resp) => match resp.json::<serde_json::Value>().await {
+                        Ok(json) => json
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        Err(e) => {
+                            tracing::warn!(
+                                instance_id = %child.instance_id,
+                                error = %e,
+                                "Version check: failed to parse health response"
+                            );
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(
+                            instance_id = %child.instance_id,
+                            error = %e,
+                            "Version check: failed to reach child"
+                        );
+                        continue;
+                    }
+                };
+
+                if child_version == parent_version {
+                    tracing::debug!(
+                        instance_id = %child.instance_id,
+                        version = %child_version,
+                        "Child is up to date"
+                    );
+                    continue;
+                }
+
+                tracing::info!(
+                    instance_id = %child.instance_id,
+                    child_version = %child_version,
+                    parent_version = %parent_version,
+                    "Child version mismatch — triggering redeploy"
+                );
+
+                let service_id = match child.railway_service_id.as_ref() {
+                    Some(id) => id,
+                    None => {
+                        tracing::warn!(
+                            instance_id = %child.instance_id,
+                            "Cannot redeploy: no Railway service ID"
+                        );
+                        continue;
+                    }
+                };
+
+                match agent.redeploy_clone(service_id).await {
+                    Ok(_) => {
+                        if let Err(e) = db::update_child_status(
+                            &version_check_state.gateway.db,
+                            &child.instance_id,
+                            "deploying",
+                        ) {
+                            tracing::warn!(
+                                instance_id = %child.instance_id,
+                                error = %e,
+                                "Failed to update status after auto-redeploy"
+                            );
+                        }
+                        tracing::info!(
+                            instance_id = %child.instance_id,
+                            "Auto-redeploy triggered"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            instance_id = %child.instance_id,
+                            error = %e,
+                            "Auto-redeploy failed (non-fatal)"
+                        );
+                    }
+                }
+            }
+
+            tracing::info!("Version check complete");
+        });
+    }
+
     // ── Rate limiter ────────────────────────────────────────────────────
     let governor_conf = GovernorConfigBuilder::default()
         .requests_per_minute(rate_limit_rpm as u64)

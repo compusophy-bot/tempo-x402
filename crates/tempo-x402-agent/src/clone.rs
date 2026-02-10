@@ -163,6 +163,22 @@ impl CloneOrchestrator {
         })
     }
 
+    /// Redeploy an existing clone service by re-pulling the `:latest` image.
+    ///
+    /// Fetches the default environment, then triggers `serviceInstanceDeploy`
+    /// which re-pulls the Docker image and restarts the service.
+    pub async fn redeploy_clone(&self, service_id: &str) -> Result<String, CloneError> {
+        let env_id = self.railway.get_default_environment().await?;
+        let result = self.railway.deploy_service(service_id, &env_id).await?;
+        Ok(result)
+    }
+
+    /// Delete a Railway service. Delegates to the Railway client.
+    pub async fn delete_service(&self, service_id: &str) -> Result<(), CloneError> {
+        self.railway.delete_service(service_id).await?;
+        Ok(())
+    }
+
     pub fn config(&self) -> &CloneConfig {
         &self.config
     }

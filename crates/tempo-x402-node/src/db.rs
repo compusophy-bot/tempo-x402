@@ -212,7 +212,8 @@ pub fn update_child(
 // Read operations use direct rusqlite connections opened from NodeState's db_path,
 // or with_connection for consistency.
 
-/// Query children from a direct rusqlite connection.
+/// Query all children (including failed) from a direct rusqlite connection.
+#[allow(dead_code)]
 pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         r#"
@@ -241,6 +242,69 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(children)
+}
+
+/// Query only active (non-failed) children from a direct rusqlite connection.
+pub fn query_children_active(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<ChildInstance>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT id, instance_id, address, url, railway_service_id,
+               funded_amount, funding_tx, status, created_at, updated_at
+        FROM children
+        WHERE status != 'failed'
+        ORDER BY created_at DESC
+        "#,
+    )?;
+
+    let children = stmt
+        .query_map([], |row| {
+            Ok(ChildInstance {
+                id: row.get(0)?,
+                instance_id: row.get(1)?,
+                address: row.get(2)?,
+                url: row.get(3)?,
+                railway_service_id: row.get(4)?,
+                funded_amount: row.get(5)?,
+                funding_tx: row.get(6)?,
+                status: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(children)
+}
+
+/// Delete a child record only if its status is 'failed'.
+/// Returns `Ok(true)` if a row was deleted, `Ok(false)` if not found or not failed.
+pub fn delete_failed_child(db: &Database, instance_id: &str) -> Result<bool, GatewayError> {
+    db.with_connection(|conn| {
+        let rows = conn.execute(
+            "DELETE FROM children WHERE instance_id = ?1 AND status = 'failed'",
+            params![instance_id],
+        )?;
+        Ok(rows > 0)
+    })
+}
+
+/// Update a child's status.
+pub fn update_child_status(
+    db: &Database,
+    instance_id: &str,
+    status: &str,
+) -> Result<(), GatewayError> {
+    let now = chrono::Utc::now().timestamp();
+
+    db.with_connection(|conn| {
+        conn.execute(
+            "UPDATE children SET status = ?1, updated_at = ?2 WHERE instance_id = ?3",
+            params![status, now, instance_id],
+        )?;
+        Ok(())
+    })
 }
 
 /// Count children from a direct rusqlite connection.

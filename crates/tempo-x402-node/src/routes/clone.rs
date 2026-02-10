@@ -1,6 +1,7 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 
 use crate::db;
+use crate::routes::instance::is_valid_uuid;
 use crate::state::NodeState;
 use x402_gateway::error::GatewayError;
 use x402_gateway::middleware::{payment_response_header, require_payment};
@@ -168,7 +169,253 @@ pub async fn clone_status(
     }
 }
 
+/// DELETE /clone/{instance_id} — delete a failed clone
+pub async fn delete_clone(
+    path: web::Path<String>,
+    node: web::Data<NodeState>,
+) -> Result<HttpResponse, GatewayError> {
+    let instance_id = path.into_inner();
+
+    if !is_valid_uuid(&instance_id) {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid instance_id format",
+        })));
+    }
+
+    // Look up the child
+    let child = match db::get_child_by_instance_id(&node.gateway.db, &instance_id) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "clone not found",
+            })));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to query clone for delete");
+            return Err(GatewayError::Internal(
+                "failed to query clone".to_string(),
+            ));
+        }
+    };
+
+    // Only allow deleting failed clones
+    if child.status != "failed" {
+        return Ok(HttpResponse::Conflict().json(serde_json::json!({
+            "error": "can only delete failed clones",
+            "current_status": child.status,
+        })));
+    }
+
+    // Best-effort Railway cleanup if service ID exists
+    if let Some(ref service_id) = child.railway_service_id {
+        if let Some(ref agent) = node.agent {
+            if let Err(e) = agent.delete_service(service_id).await {
+                tracing::warn!(
+                    instance_id = %instance_id,
+                    service_id = %service_id,
+                    error = %e,
+                    "Failed to delete Railway service (best-effort cleanup)"
+                );
+            }
+        }
+    }
+
+    // Delete from DB
+    match db::delete_failed_child(&node.gateway.db, &instance_id) {
+        Ok(true) => {
+            tracing::info!(instance_id = %instance_id, "Deleted failed clone");
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "instance_id": instance_id,
+            })))
+        }
+        Ok(false) => {
+            // Race: status changed between check and delete
+            Ok(HttpResponse::Conflict().json(serde_json::json!({
+                "error": "clone is no longer in failed state",
+            })))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to delete clone from DB");
+            Err(GatewayError::Internal(
+                "failed to delete clone".to_string(),
+            ))
+        }
+    }
+}
+
+/// POST /clone/{instance_id}/redeploy — trigger a redeploy for a running clone
+pub async fn redeploy_clone(
+    path: web::Path<String>,
+    node: web::Data<NodeState>,
+) -> Result<HttpResponse, GatewayError> {
+    let instance_id = path.into_inner();
+
+    if !is_valid_uuid(&instance_id) {
+        return Ok(HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "invalid instance_id format",
+        })));
+    }
+
+    let agent = node
+        .agent
+        .as_ref()
+        .ok_or_else(|| GatewayError::Internal("cloning not configured".to_string()))?;
+
+    // Look up the child
+    let child = match db::get_child_by_instance_id(&node.gateway.db, &instance_id) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return Ok(HttpResponse::NotFound().json(serde_json::json!({
+                "error": "clone not found",
+            })));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to query clone for redeploy");
+            return Err(GatewayError::Internal(
+                "failed to query clone".to_string(),
+            ));
+        }
+    };
+
+    // Reject redeploying failed clones
+    if child.status == "failed" {
+        return Ok(HttpResponse::Conflict().json(serde_json::json!({
+            "error": "cannot redeploy a failed clone",
+            "current_status": child.status,
+        })));
+    }
+
+    let service_id = match child.railway_service_id {
+        Some(ref id) => id.clone(),
+        None => {
+            return Ok(HttpResponse::Conflict().json(serde_json::json!({
+                "error": "clone has no Railway service ID",
+            })));
+        }
+    };
+
+    // Trigger redeploy
+    match agent.redeploy_clone(&service_id).await {
+        Ok(_) => {
+            // Update status to deploying
+            if let Err(e) = db::update_child_status(&node.gateway.db, &instance_id, "deploying") {
+                tracing::error!(error = %e, "Failed to update child status after redeploy");
+            }
+
+            tracing::info!(instance_id = %instance_id, "Redeploy triggered");
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "instance_id": instance_id,
+                "status": "deploying",
+            })))
+        }
+        Err(e) => {
+            tracing::error!(
+                instance_id = %instance_id,
+                error = %e,
+                "Failed to redeploy clone"
+            );
+            Err(GatewayError::Internal(
+                "failed to redeploy clone".to_string(),
+            ))
+        }
+    }
+}
+
+/// POST /clone/update-all — redeploy all active children
+pub async fn update_all(
+    node: web::Data<NodeState>,
+) -> Result<HttpResponse, GatewayError> {
+    let agent = node
+        .agent
+        .as_ref()
+        .ok_or_else(|| GatewayError::Internal("cloning not configured".to_string()))?;
+
+    // Query active children
+    let children = rusqlite::Connection::open(&node.db_path)
+        .map_err(|e| GatewayError::Internal(format!("failed to open db: {e}")))?
+        .pipe(|conn| db::query_children_active(&conn))
+        .map_err(|e| GatewayError::Internal(format!("failed to query children: {e}")))?;
+
+    let total = children.len();
+    let mut succeeded = 0u32;
+    let mut failed = 0u32;
+    let mut results = Vec::new();
+
+    for child in &children {
+        let service_id = match child.railway_service_id {
+            Some(ref id) => id.clone(),
+            None => {
+                results.push(serde_json::json!({
+                    "instance_id": child.instance_id,
+                    "success": false,
+                    "error": "no Railway service ID",
+                }));
+                failed += 1;
+                continue;
+            }
+        };
+
+        match agent.redeploy_clone(&service_id).await {
+            Ok(_) => {
+                if let Err(e) =
+                    db::update_child_status(&node.gateway.db, &child.instance_id, "deploying")
+                {
+                    tracing::error!(
+                        instance_id = %child.instance_id,
+                        error = %e,
+                        "Failed to update status after redeploy"
+                    );
+                }
+                results.push(serde_json::json!({
+                    "instance_id": child.instance_id,
+                    "success": true,
+                }));
+                succeeded += 1;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    instance_id = %child.instance_id,
+                    error = %e,
+                    "Failed to redeploy child"
+                );
+                results.push(serde_json::json!({
+                    "instance_id": child.instance_id,
+                    "success": false,
+                    "error": e.to_string(),
+                }));
+                failed += 1;
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "total": total,
+        "succeeded": succeeded,
+        "failed": failed,
+        "results": results,
+    })))
+}
+
+/// Pipe helper — allows `value.pipe(|v| f(v))` for readability.
+trait Pipe: Sized {
+    fn pipe<F, R>(self, f: F) -> R
+    where
+        F: FnOnce(Self) -> R,
+    {
+        f(self)
+    }
+}
+impl<T> Pipe for T {}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/clone", web::post().to(clone_instance))
-        .route("/clone/{instance_id}/status", web::get().to(clone_status));
+        .route("/clone/update-all", web::post().to(update_all))
+        .route("/clone/{instance_id}/status", web::get().to(clone_status))
+        .route(
+            "/clone/{instance_id}/redeploy",
+            web::post().to(redeploy_clone),
+        )
+        .route("/clone/{instance_id}", web::delete().to(delete_clone));
 }

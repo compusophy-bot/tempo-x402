@@ -4,7 +4,7 @@ use crate::db;
 use crate::state::NodeState;
 
 /// Validate that a string looks like a UUID (8-4-4-4-12 hex).
-fn is_valid_uuid(s: &str) -> bool {
+pub(crate) fn is_valid_uuid(s: &str) -> bool {
     let parts: Vec<&str> = s.split('-').collect();
     if parts.len() != 5 {
         return false;
@@ -41,10 +41,10 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
         })
     });
 
-    // Open a read connection to query children
+    // Open a read connection to query active (non-failed) children
     let children = rusqlite::Connection::open(&state.db_path)
         .ok()
-        .and_then(|conn| db::query_children(&conn).ok())
+        .and_then(|conn| db::query_children_active(&conn).ok())
         .unwrap_or_default();
 
     let uptime_secs = (chrono::Utc::now() - state.started_at).num_seconds();
