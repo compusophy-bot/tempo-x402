@@ -5,8 +5,11 @@
 //! Docker image deployment, and domain management.
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 const RAILWAY_API_URL: &str = "https://backboard.railway.app/graphql/v2";
+const MAX_RETRIES: u32 = 3;
+const BASE_DELAY_MS: u64 = 500;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RailwayError {
@@ -18,6 +21,15 @@ pub enum RailwayError {
 
     #[error("missing field in response: {0}")]
     MissingField(String),
+
+    #[error("HTTP {status}: {body}")]
+    HttpStatus { status: u16, body: String },
+
+    #[error("exhausted {attempts} retries, last error: {source}")]
+    Exhausted {
+        attempts: u32,
+        source: Box<RailwayError>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -63,7 +75,45 @@ impl RailwayClient {
         &self.project_id
     }
 
-    /// Execute a GraphQL query/mutation against the Railway API.
+    /// Returns true if the HTTP status code is retryable (server error or rate limit).
+    fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+        matches!(status.as_u16(), 429 | 502 | 503 | 504)
+    }
+
+    /// Returns true if a reqwest error is retryable (timeout or connection).
+    fn is_retryable_error(err: &reqwest::Error) -> bool {
+        err.is_timeout() || err.is_connect() || err.is_request()
+    }
+
+    /// Compute delay for a retry attempt with ±25% jitter.
+    fn retry_delay(attempt: u32, retry_after: Option<Duration>) -> Duration {
+        if let Some(ra) = retry_after {
+            return ra;
+        }
+        // Exponential: 500ms, 1000ms, 2000ms
+        let base_ms = BASE_DELAY_MS * 2u64.pow(attempt);
+        // Jitter: ±25%
+        let jitter_range = base_ms / 4;
+        let jitter = (base_ms as i64)
+            + (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() as i64
+                % (2 * jitter_range as i64 + 1))
+            - jitter_range as i64;
+        Duration::from_millis(jitter.max(100) as u64)
+    }
+
+    /// Parse the `Retry-After` header value (seconds) from a response.
+    fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+        headers
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_secs)
+    }
+
+    /// Execute a GraphQL query/mutation against the Railway API with retry.
     async fn execute(
         &self,
         query: &str,
@@ -74,25 +124,101 @@ impl RailwayClient {
             variables,
         };
 
-        let response = self
-            .http
-            .post(RAILWAY_API_URL)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await?;
+        let mut last_err: Option<RailwayError> = None;
 
-        let gql_response: GraphQLResponse = response.json().await?;
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let delay = Self::retry_delay(attempt - 1, None);
+                tracing::warn!(
+                    attempt,
+                    delay_ms = delay.as_millis() as u64,
+                    "Retrying Railway API request"
+                );
+                tokio::time::sleep(delay).await;
+            }
 
-        if let Some(errors) = gql_response.errors {
-            let messages: Vec<String> = errors.into_iter().map(|e| e.message).collect();
-            return Err(RailwayError::GraphQL(messages.join("; ")));
+            // Send request
+            let response = match self
+                .http
+                .post(RAILWAY_API_URL)
+                .header("Authorization", format!("Bearer {}", self.token))
+                .header("Content-Type", "application/json")
+                .json(&request)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    if Self::is_retryable_error(&e) && attempt < MAX_RETRIES {
+                        tracing::warn!(attempt, error = %e, "Retryable request error");
+                        last_err = Some(RailwayError::Http(e));
+                        continue;
+                    }
+                    return Err(RailwayError::Http(e));
+                }
+            };
+
+            // Check HTTP status before parsing body
+            let status = response.status();
+            if !status.is_success() {
+                if Self::is_retryable_status(status) && attempt < MAX_RETRIES {
+                    let retry_after = Self::parse_retry_after(response.headers());
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::warn!(attempt, status = status.as_u16(), "Retryable HTTP status");
+                    if let Some(ra) = retry_after {
+                        // Override delay with Retry-After for the next attempt
+                        tokio::time::sleep(ra).await;
+                        last_err = Some(RailwayError::HttpStatus {
+                            status: status.as_u16(),
+                            body,
+                        });
+                        // Skip the normal delay at the top of the loop — we already slept
+                        // We do this by just continuing (next iteration's delay uses attempt)
+                        continue;
+                    }
+                    last_err = Some(RailwayError::HttpStatus {
+                        status: status.as_u16(),
+                        body,
+                    });
+                    continue;
+                }
+                let body = response.text().await.unwrap_or_default();
+                return Err(RailwayError::HttpStatus {
+                    status: status.as_u16(),
+                    body,
+                });
+            }
+
+            // Parse response body
+            let gql_response: GraphQLResponse = match response.json().await {
+                Ok(r) => r,
+                Err(e) => {
+                    if attempt < MAX_RETRIES {
+                        tracing::warn!(attempt, error = %e, "Failed to parse response JSON");
+                        last_err = Some(RailwayError::Http(e));
+                        continue;
+                    }
+                    return Err(RailwayError::Http(e));
+                }
+            };
+
+            if let Some(errors) = gql_response.errors {
+                let messages: Vec<String> = errors.into_iter().map(|e| e.message).collect();
+                return Err(RailwayError::GraphQL(messages.join("; ")));
+            }
+
+            return gql_response
+                .data
+                .ok_or_else(|| RailwayError::MissingField("data".to_string()));
         }
 
-        gql_response
-            .data
-            .ok_or_else(|| RailwayError::MissingField("data".to_string()))
+        // All retries exhausted
+        Err(RailwayError::Exhausted {
+            attempts: MAX_RETRIES + 1,
+            source: Box::new(last_err.unwrap_or_else(|| {
+                RailwayError::MissingField("unknown error after retries".to_string())
+            })),
+        })
     }
 
     /// Create a new service in the project.
@@ -260,6 +386,19 @@ impl RailwayClient {
             .as_str()
             .map(String::from)
             .ok_or_else(|| RailwayError::MissingField("volumeCreate.id".to_string()))
+    }
+
+    /// Delete a Railway service. Best-effort cleanup — logs on failure.
+    pub async fn delete_service(&self, service_id: &str) -> Result<(), RailwayError> {
+        let query = r#"
+            mutation ServiceDelete($id: String!) {
+                serviceDelete(id: $id)
+            }
+        "#;
+
+        let variables = serde_json::json!({ "id": service_id });
+        self.execute(query, variables).await?;
+        Ok(())
     }
 
     /// Trigger a deployment for a service in an environment.

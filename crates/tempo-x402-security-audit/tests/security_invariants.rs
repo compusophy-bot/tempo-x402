@@ -410,9 +410,10 @@ fn clone_route_uses_atomic_limit_check() {
         if path.contains("clone.rs") && content.contains("clone_instance") {
             let prod_content = production_lines(content);
             assert!(
-                prod_content.contains("create_child_if_under_limit"),
-                "Clone route at {} must use atomic create_child_if_under_limit to prevent \
-                 TOCTOU race condition on children count.",
+                prod_content.contains("reserve_child_slot")
+                    || prod_content.contains("create_child_if_under_limit"),
+                "Clone route at {} must use atomic reserve_child_slot (or create_child_if_under_limit) \
+                 to prevent TOCTOU race condition on children count.",
                 path
             );
         }
