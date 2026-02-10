@@ -308,16 +308,14 @@ impl RailwayClient {
         image: &str,
     ) -> Result<(), RailwayError> {
         let query = r#"
-            mutation ServiceInstanceUpdate($input: ServiceInstanceUpdateInput!) {
-                serviceInstanceUpdate(input: $input) {
-                    id
-                }
+            mutation ServiceInstanceUpdate($serviceId: String!, $input: ServiceInstanceUpdateInput!) {
+                serviceInstanceUpdate(serviceId: $serviceId, input: $input)
             }
         "#;
 
         let variables = serde_json::json!({
+            "serviceId": service_id,
             "input": {
-                "serviceId": service_id,
                 "source": {
                     "image": image,
                 }
