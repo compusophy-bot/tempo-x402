@@ -607,6 +607,21 @@ impl Database {
         Ok(stats)
     }
 
+    /// Purge test endpoints matching a slug prefix (e.g. "e2e-test-").
+    /// Performs a hard delete. Returns the number of rows removed.
+    pub fn purge_endpoints_by_prefix(&self, prefix: &str) -> Result<usize, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let pattern = format!("{}%", prefix);
+        let purged = conn.execute(
+            "DELETE FROM endpoints WHERE slug LIKE ?1",
+            params![pattern],
+        )?;
+        Ok(purged)
+    }
+
     /// Execute additional schema SQL. Used by downstream crates (e.g., x402-node)
     /// to extend the database with their own tables without modifying gateway code.
     pub fn execute_schema(&self, sql: &str) -> Result<(), GatewayError> {

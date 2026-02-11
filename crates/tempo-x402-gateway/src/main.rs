@@ -140,6 +140,13 @@ async fn main() -> std::io::Result<()> {
         Err(e) => tracing::warn!("Failed to purge stale reservations: {e}"),
     }
 
+    // Clean up leftover e2e test endpoints
+    match db.purge_endpoints_by_prefix("e2e-test-") {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Purged {n} stale e2e-test endpoints"),
+        Err(e) => tracing::warn!("Failed to purge e2e-test endpoints: {e}"),
+    }
+
     // Register Prometheus metrics
     register_metrics();
 

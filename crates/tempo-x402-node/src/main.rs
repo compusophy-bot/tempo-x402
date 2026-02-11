@@ -164,6 +164,13 @@ async fn main() -> std::io::Result<()> {
         Err(e) => tracing::warn!("Failed to purge stale reservations: {e}"),
     }
 
+    // Clean up leftover e2e test endpoints
+    match gateway_db.purge_endpoints_by_prefix("e2e-test-") {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Purged {n} stale e2e-test endpoints"),
+        Err(e) => tracing::warn!("Failed to purge e2e-test endpoints: {e}"),
+    }
+
     // Initialize children table (node extension on top of gateway DB)
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
@@ -268,14 +275,14 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    // ── Background: version check + auto-redeploy outdated children ────
+    // ── Background: health probe + version check + auto-redeploy ───────
     if node_state.agent.is_some() {
         let version_check_state = node_state.clone();
         tokio::spawn(async move {
             // Wait for children to finish booting
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             let parent_version = env!("CARGO_PKG_VERSION");
-            tracing::info!("Checking children versions against parent v{parent_version}");
+            tracing::info!("Checking children against parent v{parent_version}");
 
             let children = match rusqlite::Connection::open(&version_check_state.db_path) {
                 Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
@@ -285,13 +292,16 @@ async fn main() -> std::io::Result<()> {
                 }
             };
 
-            let running: Vec<_> = children
+            // Children with a URL that we can probe (running OR stuck deploying)
+            let probeworthy: Vec<_> = children
                 .into_iter()
-                .filter(|c| c.status == "running" && c.url.is_some())
+                .filter(|c| {
+                    c.url.is_some() && (c.status == "running" || c.status == "deploying")
+                })
                 .collect();
 
-            if running.is_empty() {
-                tracing::info!("Version check: no running children to check");
+            if probeworthy.is_empty() {
+                tracing::info!("Version check: no children to check");
                 return;
             }
 
@@ -306,25 +316,22 @@ async fn main() -> std::io::Result<()> {
                 None => return,
             };
 
-            for child in &running {
+            for child in &probeworthy {
                 let url = match child.url.as_ref() {
                     Some(u) => u,
                     None => continue,
                 };
 
+                // Probe /health to see if the child is actually alive
                 let health_url = format!("{url}/health");
-                let child_version = match http.get(&health_url).send().await {
+                let health_json = match http.get(&health_url).send().await {
                     Ok(resp) => match resp.json::<serde_json::Value>().await {
-                        Ok(json) => json
-                            .get("version")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
+                        Ok(json) => json,
                         Err(e) => {
                             tracing::warn!(
                                 instance_id = %child.instance_id,
                                 error = %e,
-                                "Version check: failed to parse health response"
+                                "Health probe: failed to parse response"
                             );
                             continue;
                         }
@@ -333,12 +340,62 @@ async fn main() -> std::io::Result<()> {
                         tracing::warn!(
                             instance_id = %child.instance_id,
                             error = %e,
-                            "Version check: failed to reach child"
+                            "Health probe: failed to reach child"
                         );
                         continue;
                     }
                 };
 
+                let child_version = health_json
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                // ── Fix stuck "deploying" children ──────────────────────
+                // Child is alive but parent DB still says "deploying".
+                // Fetch its identity and promote to "running".
+                if child.status == "deploying" {
+                    tracing::info!(
+                        instance_id = %child.instance_id,
+                        "Stuck deploying child is alive — recovering status"
+                    );
+
+                    // Try to get the child's address from its /instance/info
+                    let mut child_address: Option<String> = None;
+                    let info_url = format!("{url}/instance/info");
+                    if let Ok(resp) = http.get(&info_url).send().await {
+                        if let Ok(info) = resp.json::<serde_json::Value>().await {
+                            child_address = info
+                                .get("identity")
+                                .and_then(|id| id.get("address"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                        }
+                    }
+
+                    if let Err(e) = db::update_child(
+                        &version_check_state.gateway.db,
+                        &child.instance_id,
+                        child_address.as_deref(),
+                        None, // keep existing URL
+                        Some("running"),
+                    ) {
+                        tracing::warn!(
+                            instance_id = %child.instance_id,
+                            error = %e,
+                            "Failed to recover stuck child status"
+                        );
+                    } else {
+                        tracing::info!(
+                            instance_id = %child.instance_id,
+                            address = ?child_address,
+                            "Child status recovered to running"
+                        );
+                    }
+                }
+
+                // ── Version check & auto-redeploy ───────────────────────
                 if child_version == parent_version {
                     tracing::debug!(
                         instance_id = %child.instance_id,
@@ -394,7 +451,7 @@ async fn main() -> std::io::Result<()> {
                 }
             }
 
-            tracing::info!("Version check complete");
+            tracing::info!("Version/health check complete");
         });
     }
 
@@ -443,6 +500,7 @@ async fn main() -> std::io::Result<()> {
             .configure(x402_gateway::routes::health::configure)
             .configure(x402_gateway::routes::register::configure)
             .configure(x402_gateway::routes::endpoints::configure)
+            .configure(x402_gateway::routes::analytics::configure)
             .configure(x402_gateway::routes::gateway::configure)
             // Node routes (identity, clone)
             .configure(crate::routes::instance::configure)
