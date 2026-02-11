@@ -1,9 +1,14 @@
 fn main() {
-    // If GIT_SHA is already set (e.g. Docker --build-arg), use it.
-    // Otherwise, extract from git rev-parse HEAD (works on Railway source builds).
+    // Priority: GIT_SHA (Docker build-arg) > RAILWAY_GIT_COMMIT_SHA (Railway built-in)
+    // > git rev-parse HEAD (local dev) > "dev" (fallback)
     let sha = std::env::var("GIT_SHA")
         .ok()
         .filter(|s| !s.is_empty() && s != "dev")
+        .or_else(|| {
+            std::env::var("RAILWAY_GIT_COMMIT_SHA")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
         .or_else(|| {
             std::process::Command::new("git")
                 .args(["rev-parse", "HEAD"])
@@ -23,4 +28,5 @@ fn main() {
 
     println!("cargo:rustc-env=GIT_SHA={sha}");
     println!("cargo:rerun-if-env-changed=GIT_SHA");
+    println!("cargo:rerun-if-env-changed=RAILWAY_GIT_COMMIT_SHA");
 }
