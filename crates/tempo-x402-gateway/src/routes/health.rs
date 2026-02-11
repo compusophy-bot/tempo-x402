@@ -3,13 +3,27 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use crate::metrics::REGISTRY;
 use crate::state::AppState;
 
+/// Returns the git SHA for this build. Compile-time value from build.rs,
+/// with runtime fallback to RAILWAY_GIT_COMMIT_SHA (Railway injects this
+/// at runtime but not during Docker builds).
+fn build_sha() -> &'static str {
+    static SHA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SHA.get_or_init(|| {
+        let compile_time = env!("GIT_SHA");
+        if compile_time != "dev" {
+            return compile_time.to_string();
+        }
+        std::env::var("RAILWAY_GIT_COMMIT_SHA").unwrap_or_else(|_| "dev".to_string())
+    })
+}
+
 /// GET /health - Health check endpoint
 pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     let mut response = serde_json::json!({
         "status": "ok",
         "service": "x402-gateway",
         "version": env!("CARGO_PKG_VERSION"),
-        "build": env!("GIT_SHA"),
+        "build": build_sha(),
     });
 
     // If facilitator is embedded, include its health status

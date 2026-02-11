@@ -282,7 +282,14 @@ async fn main() -> std::io::Result<()> {
             // Wait for children to finish booting
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             let parent_version = env!("CARGO_PKG_VERSION");
-            let parent_build = env!("GIT_SHA");
+            let parent_build = {
+                let compile_time = env!("GIT_SHA");
+                if compile_time != "dev" {
+                    compile_time.to_string()
+                } else {
+                    std::env::var("RAILWAY_GIT_COMMIT_SHA").unwrap_or_else(|_| "dev".to_string())
+                }
+            };
             tracing::info!("Checking children against parent v{parent_version} build={parent_build}");
 
             let children = match rusqlite::Connection::open(&version_check_state.db_path) {
