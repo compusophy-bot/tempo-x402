@@ -13,6 +13,9 @@ RUN cd crates/tempo-x402-app && trunk build --release
 # Stage 2: Build the gateway and node binaries
 FROM rust:1.89-bookworm AS builder
 
+ARG GIT_SHA=dev
+ENV GIT_SHA=${GIT_SHA}
+
 WORKDIR /app
 COPY . .
 

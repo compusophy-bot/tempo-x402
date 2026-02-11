@@ -9,6 +9,7 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
         "status": "ok",
         "service": "x402-gateway",
         "version": env!("CARGO_PKG_VERSION"),
+        "build": option_env!("GIT_SHA").unwrap_or("dev"),
     });
 
     // If facilitator is embedded, include its health status

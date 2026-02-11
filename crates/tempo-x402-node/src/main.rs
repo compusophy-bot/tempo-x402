@@ -282,7 +282,8 @@ async fn main() -> std::io::Result<()> {
             // Wait for children to finish booting
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             let parent_version = env!("CARGO_PKG_VERSION");
-            tracing::info!("Checking children against parent v{parent_version}");
+            let parent_build = option_env!("GIT_SHA").unwrap_or("dev");
+            tracing::info!("Checking children against parent v{parent_version} build={parent_build}");
 
             let children = match rusqlite::Connection::open(&version_check_state.db_path) {
                 Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
@@ -351,6 +352,11 @@ async fn main() -> std::io::Result<()> {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
+                let child_build = health_json
+                    .get("build")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
 
                 // ── Fix stuck "deploying" children ──────────────────────
                 // Child is alive but parent DB still says "deploying".
@@ -395,11 +401,24 @@ async fn main() -> std::io::Result<()> {
                     }
                 }
 
-                // ── Version check & auto-redeploy ───────────────────────
-                if child_version == parent_version {
+                // ── Build hash check & auto-redeploy ────────────────────
+                // Compare build hashes (git SHA) for exact match. Fall back
+                // to semver if the child doesn't report a build hash yet
+                // (old image without the `build` field).
+                let up_to_date = if !child_build.is_empty()
+                    && child_build != "dev"
+                    && parent_build != "dev"
+                {
+                    child_build == parent_build
+                } else {
+                    child_version == parent_version
+                };
+
+                if up_to_date {
                     tracing::debug!(
                         instance_id = %child.instance_id,
                         version = %child_version,
+                        build = %child_build,
                         "Child is up to date"
                     );
                     continue;
@@ -408,8 +427,10 @@ async fn main() -> std::io::Result<()> {
                 tracing::info!(
                     instance_id = %child.instance_id,
                     child_version = %child_version,
+                    child_build = %child_build,
                     parent_version = %parent_version,
-                    "Child version mismatch — triggering redeploy"
+                    parent_build = %parent_build,
+                    "Child build mismatch — triggering redeploy"
                 );
 
                 let service_id = match child.railway_service_id.as_ref() {
