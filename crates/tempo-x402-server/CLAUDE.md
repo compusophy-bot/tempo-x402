@@ -19,6 +19,6 @@ Binary: `x402-server` on port 4021.
 
 ## If You're Changing...
 
-- **Adding a paid endpoint**: Update `PaymentConfig::new()` in `config.rs`
+- **Adding a paid endpoint**: Use `PaymentConfigBuilder` in `config.rs` — call `.route(method, path, price, description)` for each endpoint. `PaymentConfig::new()` is a convenience that registers the default `GET /blockNumber` route.
 - **Payment flow logic**: `middleware.rs` — `require_payment()` → `decode_payment_header()` → `call_verify_and_settle()`
 - **Metrics**: Follow `x402_server_` prefix in `metrics.rs`

@@ -38,6 +38,17 @@ lazy_static! {
             .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
     ).unwrap();
 
+    // Per-endpoint counters
+    pub static ref ENDPOINT_PAYMENTS: IntCounterVec = IntCounterVec::new(
+        Opts::new("gateway_endpoint_payments_total", "Successful payments per endpoint"),
+        &["slug"]
+    ).unwrap();
+
+    pub static ref ENDPOINT_REVENUE: IntCounterVec = IntCounterVec::new(
+        Opts::new("gateway_endpoint_revenue_total", "Revenue in token units per endpoint"),
+        &["slug"]
+    ).unwrap();
+
 }
 
 /// Register all metrics with the registry
@@ -54,4 +65,10 @@ pub fn register_metrics() {
         .register(Box::new(PROXY_REQUESTS_TOTAL.clone()))
         .unwrap();
     REGISTRY.register(Box::new(PROXY_LATENCY.clone())).unwrap();
+    REGISTRY
+        .register(Box::new(ENDPOINT_PAYMENTS.clone()))
+        .unwrap();
+    REGISTRY
+        .register(Box::new(ENDPOINT_REVENUE.clone()))
+        .unwrap();
 }

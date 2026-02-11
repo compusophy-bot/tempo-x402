@@ -200,6 +200,7 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::health::configure)
             .configure(routes::register::configure)
             .configure(routes::endpoints::configure)
+            .configure(routes::analytics::configure)
             .configure(routes::gateway::configure);
 
         // Mount facilitator HTTP routes if embedded (for external callers)

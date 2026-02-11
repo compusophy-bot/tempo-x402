@@ -23,3 +23,5 @@ Crate type: `["cdylib", "rlib"]` — compiles to WASM, no binary.
 - **Payment signing**: `api.rs` — `sign_for_wallet()` dispatches by WalletMode
 - **MetaMask integration**: `wallet.rs` — WASM FFI to `window.ethereum`
 - **Adding dependencies**: Must be WASM-compatible
+- **Docs page**: `lib.rs` `DocsPage` component. Points to `llms.txt` as single source of truth for API reference — update llms.txt, not the DocsPage, for API details.
+- **Dashboard analytics**: `lib.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()` for per-endpoint stats

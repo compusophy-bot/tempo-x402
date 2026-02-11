@@ -19,6 +19,8 @@ Binary: `x402-gateway` on port 4023.
 - SSRF protection: HTTPS-only targets, private IP blocking, DNS resolution check, no redirects, CRLF rejection
 - Embedded facilitator (when `FACILITATOR_PRIVATE_KEY` set) runs in-process — no HTTP round-trip
 - Soft deletes on endpoints (`active` boolean)
+- Per-endpoint analytics: `endpoint_stats` table tracks request_count, payment_count, revenue_total per slug
+- Per-endpoint Prometheus metrics: `ENDPOINT_PAYMENTS` and `ENDPOINT_REVENUE` (`IntCounterVec` with `slug` label)
 
 ## If You're Changing...
 
@@ -27,3 +29,4 @@ Binary: `x402-gateway` on port 4023.
 - **Adding DB tables**: Use `execute_schema()` pattern (see x402-node `db.rs`)
 - **Embedded facilitator**: Init in `main.rs`, mounted at `/facilitator/*`
 - **SSRF patterns**: Security-audit checks `redirect(Policy::none())` on all HTTP clients
+- **Analytics**: `routes/analytics.rs` serves `GET /analytics` and `GET /analytics/{slug}`. Stats recorded in `routes/gateway.rs` after successful proxy.

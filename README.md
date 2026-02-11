@@ -88,8 +88,11 @@ async fn main() {
 | [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, signing, HTTP client |
 | [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
 | [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and settlement |
-| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API relay/proxy with endpoint registration |
+| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API gateway with endpoint registration and analytics |
 | [`tempo-x402-wallet`](https://crates.io/crates/tempo-x402-wallet) | WASM-compatible wallet — key generation, EIP-712 signing |
+| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying node — gateway + identity + clone orchestration |
+| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, persistence, faucet funding |
+| [`tempo-x402-agent`](https://crates.io/crates/tempo-x402-agent) | Railway API client + clone orchestration |
 
 ## Deployed Services
 

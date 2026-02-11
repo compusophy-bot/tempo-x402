@@ -20,6 +20,17 @@ pub struct Endpoint {
     pub active: bool,
 }
 
+/// Endpoint analytics stats record
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EndpointStats {
+    pub slug: String,
+    pub request_count: i64,
+    pub payment_count: i64,
+    /// Total revenue in token units (integer string, e.g. "142000")
+    pub revenue_total: String,
+    pub last_accessed_at: Option<i64>,
+}
+
 /// Request to create a new endpoint
 #[derive(Debug, serde::Deserialize)]
 pub struct CreateEndpoint {
@@ -93,6 +104,20 @@ impl Database {
         // Create index on owner_address for listing owned endpoints
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_endpoints_owner ON endpoints(owner_address)",
+            [],
+        )?;
+
+        // Endpoint analytics stats
+        conn.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS endpoint_stats (
+                slug TEXT PRIMARY KEY,
+                request_count INTEGER NOT NULL DEFAULT 0,
+                payment_count INTEGER NOT NULL DEFAULT 0,
+                revenue_total TEXT NOT NULL DEFAULT '0',
+                last_accessed_at INTEGER
+            )
+            "#,
             [],
         )?;
 
@@ -477,6 +502,111 @@ impl Database {
         Ok(purged)
     }
 
+    /// Record a successful payment for an endpoint.
+    /// Upserts the stats row: increments request_count and payment_count, adds amount to revenue.
+    pub fn record_payment(&self, slug: &str, amount: &str) -> Result<(), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let now = chrono::Utc::now().timestamp();
+
+        // Parse amount as u128 to do integer addition safely
+        let add_amount: u128 = amount.parse().unwrap_or(0);
+
+        // Get current revenue (or 0)
+        let current_revenue: String = conn
+            .query_row(
+                "SELECT revenue_total FROM endpoint_stats WHERE slug = ?1",
+                params![slug],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "0".to_string());
+        let current: u128 = current_revenue.parse().unwrap_or(0);
+        let new_revenue = (current + add_amount).to_string();
+
+        conn.execute(
+            r#"
+            INSERT INTO endpoint_stats (slug, request_count, payment_count, revenue_total, last_accessed_at)
+            VALUES (?1, 1, 1, ?2, ?3)
+            ON CONFLICT(slug) DO UPDATE SET
+                request_count = request_count + 1,
+                payment_count = payment_count + 1,
+                revenue_total = ?2,
+                last_accessed_at = ?3
+            "#,
+            params![slug, new_revenue, now],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get analytics stats for a single endpoint.
+    pub fn get_endpoint_stats(&self, slug: &str) -> Result<Option<EndpointStats>, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let stats = conn
+            .query_row(
+                r#"
+                SELECT slug, request_count, payment_count, revenue_total, last_accessed_at
+                FROM endpoint_stats
+                WHERE slug = ?1
+                "#,
+                params![slug],
+                |row| {
+                    Ok(EndpointStats {
+                        slug: row.get(0)?,
+                        request_count: row.get(1)?,
+                        payment_count: row.get(2)?,
+                        revenue_total: row.get(3)?,
+                        last_accessed_at: row.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+
+        Ok(stats)
+    }
+
+    /// List endpoint stats ordered by revenue descending with pagination.
+    pub fn list_endpoint_stats(
+        &self,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<EndpointStats>, GatewayError> {
+        let limit = limit.clamp(1, 500);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT slug, request_count, payment_count, revenue_total, last_accessed_at
+            FROM endpoint_stats
+            ORDER BY CAST(revenue_total AS INTEGER) DESC
+            LIMIT ?1 OFFSET ?2
+            "#,
+        )?;
+
+        let stats = stmt
+            .query_map(params![limit, offset], |row| {
+                Ok(EndpointStats {
+                    slug: row.get(0)?,
+                    request_count: row.get(1)?,
+                    payment_count: row.get(2)?,
+                    revenue_total: row.get(3)?,
+                    last_accessed_at: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(stats)
+    }
+
     /// Execute additional schema SQL. Used by downstream crates (e.g., x402-node)
     /// to extend the database with their own tables without modifying gateway code.
     pub fn execute_schema(&self, sql: &str) -> Result<(), GatewayError> {
@@ -590,5 +720,44 @@ mod tests {
 
         let result = db.get_endpoint("to-delete").unwrap();
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_record_and_get_endpoint_stats() {
+        let db = Database::new(":memory:").unwrap();
+
+        // No stats initially
+        assert!(db.get_endpoint_stats("test").unwrap().is_none());
+
+        // Record first payment
+        db.record_payment("test", "1000").unwrap();
+        let stats = db.get_endpoint_stats("test").unwrap().unwrap();
+        assert_eq!(stats.slug, "test");
+        assert_eq!(stats.request_count, 1);
+        assert_eq!(stats.payment_count, 1);
+        assert_eq!(stats.revenue_total, "1000");
+        assert!(stats.last_accessed_at.is_some());
+
+        // Record second payment
+        db.record_payment("test", "2000").unwrap();
+        let stats = db.get_endpoint_stats("test").unwrap().unwrap();
+        assert_eq!(stats.request_count, 2);
+        assert_eq!(stats.payment_count, 2);
+        assert_eq!(stats.revenue_total, "3000");
+    }
+
+    #[test]
+    fn test_list_endpoint_stats_ordered_by_revenue() {
+        let db = Database::new(":memory:").unwrap();
+
+        db.record_payment("low", "1000").unwrap();
+        db.record_payment("high", "50000").unwrap();
+        db.record_payment("mid", "10000").unwrap();
+
+        let stats = db.list_endpoint_stats(100, 0).unwrap();
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].slug, "high");
+        assert_eq!(stats[1].slug, "mid");
+        assert_eq!(stats[2].slug, "low");
     }
 }

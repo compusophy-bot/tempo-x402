@@ -668,6 +668,7 @@ fn shorten_address(addr: &str) -> String {
 fn DashboardPage() -> impl IntoView {
     let (info, set_info) = create_signal(None::<serde_json::Value>);
     let (endpoints, set_endpoints) = create_signal(Vec::<serde_json::Value>::new());
+    let (analytics, set_analytics) = create_signal(None::<serde_json::Value>);
     let (child_health, set_child_health) =
         create_signal(std::collections::HashMap::<String, serde_json::Value>::new());
     let (loading, set_loading) = create_signal(true);
@@ -730,6 +731,11 @@ fn DashboardPage() -> impl IntoView {
             // Fetch endpoints
             if let Ok(eps) = api::list_endpoints().await {
                 set_endpoints.set(eps);
+            }
+
+            // Fetch analytics
+            if let Ok(data) = api::fetch_analytics().await {
+                set_analytics.set(Some(data));
             }
 
             set_loading.set(false);
@@ -820,6 +826,23 @@ fn DashboardPage() -> impl IntoView {
                     let eps = endpoints.get();
                     let ep_count = eps.len();
 
+                    let analytics_data = analytics.get();
+                    let total_payments = analytics_data.as_ref()
+                        .and_then(|a| a.get("total_payments"))
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let total_revenue_usd = analytics_data.as_ref()
+                        .and_then(|a| a.get("total_revenue_usd"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("$0")
+                        .to_string();
+                    let analytics_endpoints = analytics_data.as_ref()
+                        .and_then(|a| a.get("endpoints"))
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let active_endpoints = analytics_endpoints.len();
+
                     view! {
                         // Stats cards
                         <div class="stats-grid">
@@ -848,6 +871,22 @@ fn DashboardPage() -> impl IntoView {
                                         ""
                                     }}
                                 </span>
+                            </div>
+                        </div>
+
+                        // Analytics stats cards
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-label">"TOTAL PAYMENTS"</span>
+                                <span class="stat-value">{total_payments.to_string()}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"TOTAL REVENUE"</span>
+                                <span class="stat-value">{total_revenue_usd}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"ACTIVE ENDPOINTS"</span>
+                                <span class="stat-value">{active_endpoints.to_string()}</span>
                             </div>
                         </div>
 
@@ -973,8 +1012,17 @@ fn DashboardPage() -> impl IntoView {
                             {if eps.is_empty() {
                                 view! { <p class="empty">"No endpoints registered"</p> }.into_view()
                             } else {
+                                let analytics_eps = analytics_endpoints.clone();
                                 view! {
                                     <div class="endpoints-table">
+                                        <div class="endpoint-row endpoint-header">
+                                            <span class="endpoint-slug">"Endpoint"</span>
+                                            <span class="endpoint-price">"Price"</span>
+                                            <span class="endpoint-stat">"Calls"</span>
+                                            <span class="endpoint-stat">"Payments"</span>
+                                            <span class="endpoint-stat">"Revenue"</span>
+                                            <span class="endpoint-desc">"Description"</span>
+                                        </div>
                                         {eps.iter().map(|ep| {
                                             let slug = ep.get("slug")
                                                 .and_then(|v| v.as_str())
@@ -992,6 +1040,24 @@ fn DashboardPage() -> impl IntoView {
                                                 .and_then(|v| v.as_str())
                                                 .map(String::from);
 
+                                            // Look up analytics stats for this slug
+                                            let ep_stats = analytics_eps.iter().find(|a| {
+                                                a.get("slug").and_then(|v| v.as_str()) == Some(&slug)
+                                            });
+                                            let calls = ep_stats
+                                                .and_then(|s| s.get("request_count"))
+                                                .and_then(|v| v.as_i64())
+                                                .unwrap_or(0);
+                                            let payments = ep_stats
+                                                .and_then(|s| s.get("payment_count"))
+                                                .and_then(|v| v.as_i64())
+                                                .unwrap_or(0);
+                                            let revenue = ep_stats
+                                                .and_then(|s| s.get("revenue_usd"))
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("$0")
+                                                .to_string();
+
                                             view! {
                                                 <div class="endpoint-row">
                                                     <span class="endpoint-slug">
@@ -1005,6 +1071,9 @@ fn DashboardPage() -> impl IntoView {
                                                         }}
                                                     </span>
                                                     <span class="endpoint-price">{format!("${}", price)}</span>
+                                                    <span class="endpoint-stat">{calls.to_string()}</span>
+                                                    <span class="endpoint-stat">{payments.to_string()}</span>
+                                                    <span class="endpoint-stat">{revenue}</span>
                                                     <span class="endpoint-desc">{description}</span>
                                                 </div>
                                             }
@@ -1027,22 +1096,70 @@ fn DocsPage() -> impl IntoView {
                 <div class="page docs">
                     <h1>"Documentation"</h1>
 
+                    <p class="subtitle">
+                        "Full reference: "
+                        <a href="https://github.com/compusophy/tempo-x402/blob/main/llms.txt" target="_blank">"llms.txt"</a>
+                    </p>
+
                     <section>
                         <h2>"Quick Start"</h2>
                         <pre class="code-block">
     {r#"// Add to Cargo.toml
 [dependencies]
-tempo-x402-client = "0.4"
+tempo-x402 = "0.6"
 
 // Make paid requests
-use x402_client::{X402Client, TempoSchemeClient};
+use alloy::signers::local::PrivateKeySigner;
+use x402::{TempoSchemeClient, X402Client};
 
-let signer = "0x...".parse().unwrap();
+let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
 let client = X402Client::new(TempoSchemeClient::new(signer));
 
-let (resp, settlement) = client
-    .fetch("https://api.example.com/data", Method::GET)
+let (response, settlement) = client
+    .fetch("https://api.example.com/paid-endpoint", reqwest::Method::GET)
     .await?;
+
+println!("{}", response.text().await?);
+if let Some(s) = settlement {
+    println!("tx: {}", s.transaction);
+}
+"#}
+                        </pre>
+                    </section>
+
+                    <section>
+                        <h2>"Gateway"</h2>
+                        <p>"Register any HTTP API with a price. Clients pay per-request via " <code>"/g/{slug}"</code> "."</p>
+                        <pre class="code-block">
+    {r#"# Register an endpoint (returns 402 — sign and retry)
+curl -X POST https://x402-gateway.example.com/register \
+  -H "Content-Type: application/json" \
+  -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
+
+# Call a proxied endpoint
+curl https://x402-gateway.example.com/g/my-api/data \
+  -H "PAYMENT-SIGNATURE: <base64-encoded-payment>"
+"#}
+                        </pre>
+                        <h3>"Gateway Endpoints"</h3>
+                        <ul>
+                            <li><code>"POST /register"</code>" — Register a new endpoint (platform fee)"</li>
+                            <li><code>"GET /endpoints"</code>" — List all endpoints"</li>
+                            <li><code>"GET /analytics"</code>" — Per-endpoint payment stats and revenue"</li>
+                            <li><code>"ANY /g/{slug}/*"</code>" — Proxy to target API (endpoint price)"</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h2>"Server SDK — Multi-Endpoint Pricing"</h2>
+                        <pre class="code-block">
+    {r#"use x402_server::{PaymentConfigBuilder, PaymentGateConfig};
+
+let config = PaymentConfigBuilder::new(scheme, pay_to, &gate_config)
+    .route("GET", "/blockNumber", "$0.001", Some("Latest block"))
+    .route("POST", "/submit", "$0.01", Some("Submit transaction"))
+    .route("GET", "/data", "$0.05", None)
+    .build();
 "#}
                         </pre>
                     </section>
@@ -1050,20 +1167,33 @@ let (resp, settlement) = client
                     <section>
                         <h2>"Crates"</h2>
                         <ul>
-                            <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types and crypto"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-client">"tempo-x402-client"</a>" — Client SDK"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment settlement"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types, signing, HTTP client"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware (multi-endpoint pricing)"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment verification and settlement"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway with analytics"</li>
                             <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" — WASM wallet (signing + key gen)"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-node">"tempo-x402-node"</a>" — Self-deploying node with clone orchestration"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-identity">"tempo-x402-identity"</a>" — Wallet generation and persistence"</li>
+                            <li><a href="https://crates.io/crates/tempo-x402-agent">"tempo-x402-agent"</a>" — Railway API client + clone orchestration"</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h2>"Network"</h2>
+                        <ul>
+                            <li>"Chain: Tempo Moderato — Chain ID " <code>"42431"</code></li>
+                            <li>"Token: pathUSD " <code>"0x20c0000000000000000000000000000000000000"</code> " (6 decimals)"</li>
+                            <li>"RPC: " <a href="https://rpc.moderato.tempo.xyz">"https://rpc.moderato.tempo.xyz"</a></li>
+                            <li>"Explorer: " <a href="https://explore.moderato.tempo.xyz" target="_blank">"https://explore.moderato.tempo.xyz"</a></li>
                         </ul>
                     </section>
 
                     <section>
                         <h2>"Links"</h2>
                         <ul>
-                            <li><a href="https://github.com/compusophy/tempo-x402">"GitHub"</a></li>
-                            <li><a href="https://explore.moderato.tempo.xyz">"Block Explorer"</a></li>
+                            <li><a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a></li>
+                            <li><a href="https://github.com/compusophy/tempo-x402/blob/main/llms.txt" target="_blank">"llms.txt (full API reference)"</a></li>
+                            <li><a href="https://explore.moderato.tempo.xyz" target="_blank">"Block Explorer"</a></li>
                         </ul>
                     </section>
                 </div>

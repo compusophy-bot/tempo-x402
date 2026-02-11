@@ -352,6 +352,18 @@ pub async fn list_endpoints() -> Result<Vec<serde_json::Value>, String> {
     Ok(endpoints)
 }
 
+/// Fetch analytics data from the gateway
+pub async fn fetch_analytics() -> Result<serde_json::Value, String> {
+    let resp = Request::get(&format!("{}/analytics", GATEWAY_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 /// Get details of a specific endpoint
 pub async fn get_endpoint(slug: &str) -> Result<serde_json::Value, String> {
     let resp = Request::get(&format!("{}/endpoints/{}", GATEWAY_URL, slug))

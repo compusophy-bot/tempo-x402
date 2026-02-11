@@ -2,6 +2,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use alloy::primitives::Address;
 
 use crate::error::GatewayError;
+use crate::metrics::{ENDPOINT_PAYMENTS, ENDPOINT_REVENUE};
 use crate::middleware::{endpoint_requirements, require_payment};
 use crate::proxy::proxy_request;
 use crate::state::AppState;
@@ -151,6 +152,9 @@ pub async fn gateway_proxy(
     )
     .await?;
 
+    // Record payment stats
+    record_endpoint_stats(&state, &slug, &endpoint.price_amount);
+
     Ok(response)
 }
 
@@ -229,5 +233,20 @@ async fn gateway_proxy_no_path(
     )
     .await?;
 
+    // Record payment stats
+    record_endpoint_stats(&state, &slug, &endpoint.price_amount);
+
     Ok(response)
+}
+
+/// Record payment stats in DB and Prometheus metrics.
+fn record_endpoint_stats(state: &AppState, slug: &str, price_amount: &str) {
+    if let Err(e) = state.db.record_payment(slug, price_amount) {
+        tracing::warn!(slug = %slug, error = %e, "failed to record payment stats");
+    }
+    ENDPOINT_PAYMENTS.with_label_values(&[slug]).inc();
+    let amount: u64 = price_amount.parse().unwrap_or(0);
+    ENDPOINT_REVENUE
+        .with_label_values(&[slug])
+        .inc_by(amount);
 }

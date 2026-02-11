@@ -74,39 +74,91 @@ pub struct PaymentConfig {
     pub hmac_secret: Option<Vec<u8>>,
 }
 
-impl PaymentConfig {
+/// Builder for constructing a `PaymentConfig` with multiple priced routes.
+pub struct PaymentConfigBuilder {
+    scheme: Box<dyn SchemeServer>,
+    pay_to: Address,
+    gate_config_facilitator_url: String,
+    gate_config_hmac_secret: Option<Vec<u8>>,
+    routes: HashMap<String, RoutePaymentConfig>,
+}
+
+impl PaymentConfigBuilder {
+    /// Create a new builder. `scheme` is used to parse prices into token amounts.
     pub fn new(
-        scheme: &dyn SchemeServer,
+        scheme: impl SchemeServer + 'static,
         pay_to: Address,
         gate_config: &PaymentGateConfig,
     ) -> Self {
-        let mut routes = HashMap::new();
+        Self {
+            scheme: Box::new(scheme),
+            pay_to,
+            gate_config_facilitator_url: gate_config.facilitator_url.clone(),
+            gate_config_hmac_secret: gate_config.hmac_secret.clone(),
+            routes: HashMap::new(),
+        }
+    }
 
-        // Gate GET /blockNumber at $0.001
-        let (amount, asset) = scheme.parse_price("$0.001").expect("failed to parse price");
+    /// Register a priced route (e.g. `route("GET", "/blockNumber", "$0.001", Some("..."))`).
+    ///
+    /// `price` is a human-readable string like `"$0.001"` — parsed via the scheme.
+    pub fn route(
+        mut self,
+        method: &str,
+        path: &str,
+        price: &str,
+        description: Option<&str>,
+    ) -> Self {
+        let (amount, asset) = self
+            .scheme
+            .parse_price(price)
+            .unwrap_or_else(|_| panic!("failed to parse price: {price}"));
 
-        routes.insert(
-            "GET /blockNumber".to_string(),
+        let key = format!("{method} {path}");
+        self.routes.insert(
+            key,
             RoutePaymentConfig {
                 requirements: PaymentRequirements {
                     scheme: SCHEME_NAME.to_string(),
                     network: TEMPO_NETWORK.to_string(),
-                    price: "$0.001".to_string(),
+                    price: price.to_string(),
                     asset,
                     amount,
-                    pay_to,
+                    pay_to: self.pay_to,
                     max_timeout_seconds: 30,
-                    description: Some("Get the latest Tempo block number".to_string()),
+                    description: description.map(String::from),
                     mime_type: Some("application/json".to_string()),
                 },
             },
         );
+        self
+    }
 
-        Self {
-            routes,
-            facilitator_url: gate_config.facilitator_url.clone(),
-            hmac_secret: gate_config.hmac_secret.clone(),
+    /// Consume the builder and produce a `PaymentConfig`.
+    pub fn build(self) -> PaymentConfig {
+        PaymentConfig {
+            routes: self.routes,
+            facilitator_url: self.gate_config_facilitator_url,
+            hmac_secret: self.gate_config_hmac_secret,
         }
+    }
+}
+
+impl PaymentConfig {
+    /// Convenience constructor that registers the default `GET /blockNumber` route at `$0.001`.
+    pub fn new(
+        scheme: impl SchemeServer + 'static,
+        pay_to: Address,
+        gate_config: &PaymentGateConfig,
+    ) -> Self {
+        PaymentConfigBuilder::new(scheme, pay_to, gate_config)
+            .route(
+                "GET",
+                "/blockNumber",
+                "$0.001",
+                Some("Get the latest Tempo block number"),
+            )
+            .build()
     }
 
     /// Look up the payment config for a given route key (e.g. "GET /blockNumber").
@@ -120,16 +172,18 @@ impl PaymentConfig {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_payment_config_creates_block_number_route() {
-        let scheme = x402::TempoSchemeServer::new();
-        let gate = PaymentGateConfig {
+    fn test_gate() -> PaymentGateConfig {
+        PaymentGateConfig {
             facilitator_url: "http://localhost:4022".to_string(),
             hmac_secret: None,
             rate_limit_rpm: 60,
             allowed_origins: vec![],
-        };
-        let config = PaymentConfig::new(&scheme, Address::ZERO, &gate);
+        }
+    }
+
+    #[test]
+    fn test_payment_config_creates_block_number_route() {
+        let config = PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
         let route = config.get_route("GET", "/blockNumber");
         assert!(route.is_some());
         let req = &route.unwrap().requirements;
@@ -141,14 +195,51 @@ mod tests {
 
     #[test]
     fn test_get_route_returns_none_for_unknown() {
-        let scheme = x402::TempoSchemeServer::new();
-        let gate = PaymentGateConfig {
-            facilitator_url: "http://test".to_string(),
-            hmac_secret: None,
-            rate_limit_rpm: 60,
-            allowed_origins: vec![],
-        };
-        let config = PaymentConfig::new(&scheme, Address::ZERO, &gate);
+        let config = PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
         assert!(config.get_route("POST", "/unknown").is_none());
+    }
+
+    #[test]
+    fn test_builder_multiple_routes() {
+        let config = PaymentConfigBuilder::new(
+            x402::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        )
+        .route("GET", "/blockNumber", "$0.001", Some("block number"))
+        .route("POST", "/submit", "$0.01", Some("submit tx"))
+        .route("GET", "/data", "$0.05", None)
+        .build();
+
+        assert_eq!(config.routes.len(), 3);
+
+        let r1 = config.get_route("GET", "/blockNumber").unwrap();
+        assert_eq!(r1.requirements.price, "$0.001");
+        assert_eq!(r1.requirements.amount, "1000");
+        assert_eq!(
+            r1.requirements.description.as_deref(),
+            Some("block number")
+        );
+
+        let r2 = config.get_route("POST", "/submit").unwrap();
+        assert_eq!(r2.requirements.price, "$0.01");
+        assert_eq!(r2.requirements.amount, "10000");
+
+        let r3 = config.get_route("GET", "/data").unwrap();
+        assert_eq!(r3.requirements.price, "$0.05");
+        assert_eq!(r3.requirements.amount, "50000");
+        assert!(r3.requirements.description.is_none());
+    }
+
+    #[test]
+    fn test_builder_empty_builds_no_routes() {
+        let config = PaymentConfigBuilder::new(
+            x402::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        )
+        .build();
+
+        assert!(config.routes.is_empty());
     }
 }
