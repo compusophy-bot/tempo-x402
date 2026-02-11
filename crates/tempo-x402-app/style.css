@@ -322,6 +322,254 @@ body {
     text-decoration: underline;
 }
 
+/* Dashboard */
+.dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+}
+
+.live-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--success);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+}
+
+/* Stats grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Status dots */
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot--green {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+}
+
+.status-dot--yellow {
+    background: #eab308;
+    box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
+}
+
+.status-dot--red {
+    background: var(--error);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+
+/* Topology section */
+.topology-section {
+    margin-bottom: 2rem;
+}
+
+.topology-section h2 {
+    margin-bottom: 1rem;
+}
+
+.topology {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.topology-level {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.topology-level--children {
+    position: relative;
+}
+
+/* Connector line between parent and children */
+.connector-vertical {
+    width: 2px;
+    height: 2rem;
+    background: var(--surface-light);
+    margin: 0 auto;
+}
+
+/* Node cards */
+.node-card {
+    background: var(--background);
+    border: 1px solid var(--surface-light);
+    border-radius: var(--border-radius);
+    padding: 1rem 1.25rem;
+    min-width: 220px;
+    max-width: 300px;
+}
+
+.node-card--parent {
+    border-color: var(--primary);
+    border-width: 2px;
+}
+
+.node-card--child {
+    border-color: var(--surface-light);
+}
+
+.node-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.node-header strong {
+    font-size: 0.875rem;
+}
+
+.node-address {
+    display: block;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    text-decoration: none;
+}
+
+a.node-address {
+    color: var(--primary);
+}
+
+a.node-address:hover {
+    text-decoration: underline;
+}
+
+.node-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.node-parent-link {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.node-parent-link a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.node-parent-link a:hover {
+    text-decoration: underline;
+}
+
+/* Endpoints section */
+.endpoints-section {
+    margin-bottom: 2rem;
+}
+
+.endpoints-section h2 {
+    margin-bottom: 1rem;
+}
+
+.endpoints-table {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.endpoint-row {
+    display: grid;
+    grid-template-columns: 1fr auto 2fr;
+    gap: 1rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--background);
+    align-items: center;
+}
+
+.endpoint-row:last-child {
+    border-bottom: none;
+}
+
+.endpoint-row .endpoint-slug {
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--primary);
+}
+
+.endpoint-row .endpoint-slug a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.endpoint-row .endpoint-slug a:hover {
+    text-decoration: underline;
+}
+
+.endpoint-row .endpoint-price {
+    color: var(--success);
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.endpoint-desc {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .nav {
@@ -339,5 +587,35 @@ body {
 
     .endpoint-item {
         grid-template-columns: 1fr;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .topology {
+        padding: 1rem;
+    }
+
+    .topology-level {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .node-card {
+        min-width: unset;
+        max-width: unset;
+        width: 100%;
+    }
+
+    .endpoint-row {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
     }
 }

@@ -1,3 +1,4 @@
+use gloo_timers::callback::Interval;
 use leptos::*;
 use leptos_meta::*;
 use leptos_router::*;
@@ -83,6 +84,7 @@ pub fn App() -> impl IntoView {
                 <Header />
                 <Routes>
                     <Route path="/" view=HomePage />
+                    <Route path="/dashboard" view=DashboardPage />
                     <Route path="/docs" view=DocsPage />
                     <Route path="/*any" view=NotFound />
                 </Routes>
@@ -104,6 +106,7 @@ fn Header() -> impl IntoView {
                 <a href="/" class="logo">"x402"</a>
                 <div class="nav-links">
                     <a href="/">"Demo"</a>
+                    <a href="/dashboard">"Dashboard"</a>
                     <a href="/docs">"Docs"</a>
                     <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
                 </div>
@@ -633,6 +636,385 @@ fn PaymentDemo() -> impl IntoView {
                     <h4>"Proxied Response"</h4>
                     <pre class="code-block">{move || result.get().unwrap_or_default()}</pre>
                 </div>
+            </Show>
+        </div>
+    }
+}
+
+/// Format seconds into human-readable uptime string
+fn format_uptime(secs: i64) -> String {
+    if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+    } else {
+        format!("{}d {}h", secs / 86400, (secs % 86400) / 3600)
+    }
+}
+
+/// Shorten an address for display
+fn shorten_address(addr: &str) -> String {
+    if addr.len() > 12 {
+        format!("{}...{}", &addr[..6], &addr[addr.len() - 4..])
+    } else {
+        addr.to_string()
+    }
+}
+
+/// Dashboard page with live network topology
+#[component]
+fn DashboardPage() -> impl IntoView {
+    let (info, set_info) = create_signal(None::<serde_json::Value>);
+    let (endpoints, set_endpoints) = create_signal(Vec::<serde_json::Value>::new());
+    let (child_health, set_child_health) =
+        create_signal(std::collections::HashMap::<String, serde_json::Value>::new());
+    let (loading, set_loading) = create_signal(true);
+    let (error, set_error) = create_signal(None::<String>);
+    let (tick, set_tick) = create_signal(0u32);
+
+    // Fetch all dashboard data
+    let fetch_data = move || {
+        spawn_local(async move {
+            let base = api::gateway_base_url();
+
+            // Fetch instance info
+            match gloo_net::http::Request::get(&format!("{}/instance/info", base))
+                .send()
+                .await
+            {
+                Ok(resp) if resp.ok() => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        // Fetch child health for each child with a URL
+                        if let Some(children) = data.get("children").and_then(|v| v.as_array()) {
+                            for child in children {
+                                if let Some(url) = child.get("url").and_then(|v| v.as_str()) {
+                                    let url = url.to_string();
+                                    let child_id = child
+                                        .get("instance_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    spawn_local(async move {
+                                        if let Ok(resp) = gloo_net::http::Request::get(&format!(
+                                            "{}/health",
+                                            url
+                                        ))
+                                        .send()
+                                        .await
+                                        {
+                                            if let Ok(health) =
+                                                resp.json::<serde_json::Value>().await
+                                            {
+                                                set_child_health.update(|map| {
+                                                    map.insert(child_id, health);
+                                                });
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        set_info.set(Some(data));
+                    }
+                }
+                Ok(resp) => {
+                    set_error.set(Some(format!("HTTP {}", resp.status())));
+                }
+                Err(e) => {
+                    set_error.set(Some(format!("{}", e)));
+                }
+            }
+
+            // Fetch endpoints
+            if let Ok(eps) = api::list_endpoints().await {
+                set_endpoints.set(eps);
+            }
+
+            set_loading.set(false);
+        });
+    };
+
+    // Initial fetch
+    fetch_data();
+
+    // Auto-refresh every 10s
+    let interval = Interval::new(10_000, move || {
+        set_tick.update(|t| *t = t.wrapping_add(1));
+        fetch_data();
+    });
+
+    on_cleanup(move || {
+        drop(interval);
+    });
+
+    view! {
+        <div class="page dashboard">
+            <div class="dashboard-header">
+                <h1>"Network Dashboard"</h1>
+                <div class="live-badge">
+                    <span class="live-dot"></span>
+                    "Live"
+                    {move || {
+                        // Touch tick to ensure reactivity
+                        let _ = tick.get();
+                    }}
+                </div>
+            </div>
+
+            <Show when=move || loading.get() && info.get().is_none() fallback=|| ()>
+                <p class="loading">"Loading dashboard..."</p>
+            </Show>
+
+            <Show when=move || error.get().is_some() && info.get().is_none() fallback=|| ()>
+                <p class="error-text">{move || error.get().unwrap_or_default()}</p>
+            </Show>
+
+            <Show when=move || info.get().is_some() fallback=|| ()>
+                {move || {
+                    let data = info.get().unwrap_or_default();
+
+                    let version = data.get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let uptime = data.get("uptime_seconds")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let children_count = data.get("children_count")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let max_children = data.get("clone_max_children")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(10);
+                    let clone_available = data.get("clone_available")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let clone_price = data.get("clone_price")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
+                        .to_string();
+
+                    let identity = data.get("identity").cloned();
+                    let address = identity.as_ref()
+                        .and_then(|id| id.get("address"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("N/A")
+                        .to_string();
+                    let parent_url = identity.as_ref()
+                        .and_then(|id| id.get("parent_url"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let parent_address = identity.as_ref()
+                        .and_then(|id| id.get("parent_address"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+
+                    let children = data.get("children")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let health_map = child_health.get();
+                    let eps = endpoints.get();
+                    let ep_count = eps.len();
+
+                    view! {
+                        // Stats cards
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-label">"STATUS"</span>
+                                <span class="stat-value">
+                                    <span class="status-dot status-dot--green"></span>
+                                    " Online"
+                                </span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"VERSION"</span>
+                                <span class="stat-value">{format!("v{}", version)}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"UPTIME"</span>
+                                <span class="stat-value">{format_uptime(uptime)}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"CLONES"</span>
+                                <span class="stat-value">
+                                    {format!("{}/{}", children_count, max_children)}
+                                    {if clone_available {
+                                        " available"
+                                    } else {
+                                        ""
+                                    }}
+                                </span>
+                            </div>
+                        </div>
+
+                        // Network topology
+                        <div class="topology-section">
+                            <h2>"Network Topology"</h2>
+                            <div class="topology">
+                                // Parent node
+                                <div class="topology-level">
+                                    <div class="node-card node-card--parent">
+                                        <div class="node-header">
+                                            <span class="status-dot status-dot--green"></span>
+                                            <strong>"Parent (this node)"</strong>
+                                        </div>
+                                        <code class="node-address">{shorten_address(&address)}</code>
+                                        <div class="node-meta">
+                                            <span>{format!("v{}", version)}</span>
+                                            <span>{format!("↑ {}", format_uptime(uptime))}</span>
+                                        </div>
+                                        <div class="node-meta">
+                                            <span>{format!("clone: {}  {}/{} slots", clone_price, children_count, max_children)}</span>
+                                        </div>
+                                        {parent_url.map(|url| {
+                                            let parent_short = parent_address
+                                                .as_deref()
+                                                .map(shorten_address)
+                                                .unwrap_or_else(|| "parent".to_string());
+                                            view! {
+                                                <div class="node-parent-link">
+                                                    "↑ "
+                                                    <a href=url target="_blank">{parent_short}</a>
+                                                </div>
+                                            }
+                                        })}
+                                    </div>
+                                </div>
+
+                                // Connector
+                                {if !children.is_empty() {
+                                    let children_view = children;
+                                    Some(view! {
+                                    <div class="connector-vertical"></div>
+                                    <div class="topology-level topology-level--children">
+                                        {children_view.iter().map(|child| {
+                                            let child_id = child.get("instance_id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("unknown")
+                                                .to_string();
+                                            let child_url = child.get("url")
+                                                .and_then(|v| v.as_str())
+                                                .map(String::from);
+                                            let child_status = child.get("status")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("unknown")
+                                                .to_string();
+                                            let child_address = child.get("address")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("")
+                                                .to_string();
+
+                                            let health = health_map.get(&child_id).cloned();
+
+                                            let (dot_class, status_label) = match child_status.as_str() {
+                                                "running" => ("status-dot--green", "running"),
+                                                "deploying" | "building" => ("status-dot--yellow", &*child_status),
+                                                "failed" | "error" => ("status-dot--red", &*child_status),
+                                                _ => ("status-dot--yellow", &*child_status),
+                                            };
+
+                                            let child_version = health.as_ref()
+                                                .and_then(|h| h.get("version"))
+                                                .and_then(|v| v.as_str())
+                                                .map(|v| format!("v{}", v))
+                                                .unwrap_or_else(|| {
+                                                    if child_status == "running" {
+                                                        "loading...".to_string()
+                                                    } else {
+                                                        "v?.?.?".to_string()
+                                                    }
+                                                });
+
+                                            let display_addr = if child_address.is_empty() {
+                                                child_id.clone()
+                                            } else {
+                                                shorten_address(&child_address)
+                                            };
+
+                                            view! {
+                                                <div class="node-card node-card--child">
+                                                    <div class="node-header">
+                                                        <span class={format!("status-dot {}", dot_class)}></span>
+                                                        <strong>{status_label.to_string()}</strong>
+                                                    </div>
+                                                    {child_url.as_ref().map(|url| view! {
+                                                        <a href=url.clone() target="_blank" class="node-address">
+                                                            {display_addr.clone()}
+                                                        </a>
+                                                    })}
+                                                    {if child_url.is_none() {
+                                                        Some(view! {
+                                                            <code class="node-address">{display_addr.clone()}</code>
+                                                        })
+                                                    } else {
+                                                        None
+                                                    }}
+                                                    <div class="node-meta">
+                                                        <span>{child_version}</span>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                    })
+                                } else {
+                                    None
+                                }}
+                            </div>
+                        </div>
+
+                        // Endpoints table
+                        <div class="endpoints-section">
+                            <h2>{format!("Registered Endpoints ({})", ep_count)}</h2>
+                            {if eps.is_empty() {
+                                view! { <p class="empty">"No endpoints registered"</p> }.into_view()
+                            } else {
+                                view! {
+                                    <div class="endpoints-table">
+                                        {eps.iter().map(|ep| {
+                                            let slug = ep.get("slug")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("?")
+                                                .to_string();
+                                            let price = ep.get("price")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("?")
+                                                .to_string();
+                                            let description = ep.get("description")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("")
+                                                .to_string();
+                                            let gateway_url = ep.get("gateway_url")
+                                                .and_then(|v| v.as_str())
+                                                .map(String::from);
+
+                                            view! {
+                                                <div class="endpoint-row">
+                                                    <span class="endpoint-slug">
+                                                        {gateway_url.as_ref().map(|url| view! {
+                                                            <a href=url.clone() target="_blank">{format!("/g/{}", slug)}</a>
+                                                        })}
+                                                        {if gateway_url.is_none() {
+                                                            Some(view! { <span>{format!("/g/{}", slug)}</span> })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                    </span>
+                                                    <span class="endpoint-price">{format!("${}", price)}</span>
+                                                    <span class="endpoint-desc">{description}</span>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_view()
+                            }}
+                        </div>
+                    }
+                }}
             </Show>
         </div>
     }
