@@ -183,7 +183,8 @@ mod tests {
 
     #[test]
     fn test_payment_config_creates_block_number_route() {
-        let config = PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
+        let config =
+            PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
         let route = config.get_route("GET", "/blockNumber");
         assert!(route.is_some());
         let req = &route.unwrap().requirements;
@@ -195,31 +196,26 @@ mod tests {
 
     #[test]
     fn test_get_route_returns_none_for_unknown() {
-        let config = PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
+        let config =
+            PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
         assert!(config.get_route("POST", "/unknown").is_none());
     }
 
     #[test]
     fn test_builder_multiple_routes() {
-        let config = PaymentConfigBuilder::new(
-            x402::TempoSchemeServer::new(),
-            Address::ZERO,
-            &test_gate(),
-        )
-        .route("GET", "/blockNumber", "$0.001", Some("block number"))
-        .route("POST", "/submit", "$0.01", Some("submit tx"))
-        .route("GET", "/data", "$0.05", None)
-        .build();
+        let config =
+            PaymentConfigBuilder::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate())
+                .route("GET", "/blockNumber", "$0.001", Some("block number"))
+                .route("POST", "/submit", "$0.01", Some("submit tx"))
+                .route("GET", "/data", "$0.05", None)
+                .build();
 
         assert_eq!(config.routes.len(), 3);
 
         let r1 = config.get_route("GET", "/blockNumber").unwrap();
         assert_eq!(r1.requirements.price, "$0.001");
         assert_eq!(r1.requirements.amount, "1000");
-        assert_eq!(
-            r1.requirements.description.as_deref(),
-            Some("block number")
-        );
+        assert_eq!(r1.requirements.description.as_deref(), Some("block number"));
 
         let r2 = config.get_route("POST", "/submit").unwrap();
         assert_eq!(r2.requirements.price, "$0.01");
@@ -233,12 +229,9 @@ mod tests {
 
     #[test]
     fn test_builder_empty_builds_no_routes() {
-        let config = PaymentConfigBuilder::new(
-            x402::TempoSchemeServer::new(),
-            Address::ZERO,
-            &test_gate(),
-        )
-        .build();
+        let config =
+            PaymentConfigBuilder::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate())
+                .build();
 
         assert!(config.routes.is_empty());
     }

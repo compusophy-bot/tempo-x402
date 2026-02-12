@@ -246,7 +246,5 @@ fn record_endpoint_stats(state: &AppState, slug: &str, price_amount: &str) {
     }
     ENDPOINT_PAYMENTS.with_label_values(&[slug]).inc();
     let amount: u64 = price_amount.parse().unwrap_or(0);
-    ENDPOINT_REVENUE
-        .with_label_values(&[slug])
-        .inc_by(amount);
+    ENDPOINT_REVENUE.with_label_values(&[slug]).inc_by(amount);
 }

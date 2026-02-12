@@ -615,10 +615,7 @@ impl Database {
             .lock()
             .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
         let pattern = format!("{}%", prefix);
-        let purged = conn.execute(
-            "DELETE FROM endpoints WHERE slug LIKE ?1",
-            params![pattern],
-        )?;
+        let purged = conn.execute("DELETE FROM endpoints WHERE slug LIKE ?1", params![pattern])?;
         Ok(purged)
     }
 

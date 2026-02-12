@@ -698,12 +698,10 @@ fn DashboardPage() -> impl IntoView {
                                         .unwrap_or("unknown")
                                         .to_string();
                                     spawn_local(async move {
-                                        if let Ok(resp) = gloo_net::http::Request::get(&format!(
-                                            "{}/health",
-                                            url
-                                        ))
-                                        .send()
-                                        .await
+                                        if let Ok(resp) =
+                                            gloo_net::http::Request::get(&format!("{}/health", url))
+                                                .send()
+                                                .await
                                         {
                                             if let Ok(health) =
                                                 resp.json::<serde_json::Value>().await
@@ -1132,8 +1130,8 @@ if let Some(s) = settlement {
                         <p>"Register any HTTP API with a price. Clients pay per-request via " <code>"/g/{slug}"</code> "."</p>
                         <pre class="code-block">
     {r#"# Register an endpoint (returns 402 — sign and retry)
-curl -X POST https://x402-gateway.example.com/register \
-  -H "Content-Type: application/json" \
+    curl -X POST https://x402-gateway.example.com/register \
+    -H "Content-Type: application/json" \
   -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
 
 # Call a proxied endpoint

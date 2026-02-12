@@ -91,14 +91,8 @@ pub async fn get_analytics(
 
 /// Configure analytics routes
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::resource("/analytics")
-            .route(web::get().to(list_analytics)),
-    )
-    .service(
-        web::resource("/analytics/{slug}")
-            .route(web::get().to(get_analytics)),
-    );
+    cfg.service(web::resource("/analytics").route(web::get().to(list_analytics)))
+        .service(web::resource("/analytics/{slug}").route(web::get().to(get_analytics)));
 }
 
 #[cfg(test)]

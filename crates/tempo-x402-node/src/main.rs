@@ -290,7 +290,9 @@ async fn main() -> std::io::Result<()> {
                     std::env::var("RAILWAY_GIT_COMMIT_SHA").unwrap_or_else(|_| "dev".to_string())
                 }
             };
-            tracing::info!("Checking children against parent v{parent_version} build={parent_build}");
+            tracing::info!(
+                "Checking children against parent v{parent_version} build={parent_build}"
+            );
 
             let children = match rusqlite::Connection::open(&version_check_state.db_path) {
                 Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
@@ -303,9 +305,7 @@ async fn main() -> std::io::Result<()> {
             // Children with a URL that we can probe (running OR stuck deploying)
             let probeworthy: Vec<_> = children
                 .into_iter()
-                .filter(|c| {
-                    c.url.is_some() && (c.status == "running" || c.status == "deploying")
-                })
+                .filter(|c| c.url.is_some() && (c.status == "running" || c.status == "deploying"))
                 .collect();
 
             if probeworthy.is_empty() {
@@ -412,14 +412,12 @@ async fn main() -> std::io::Result<()> {
                 // Compare build hashes (git SHA) for exact match. Fall back
                 // to semver if the child doesn't report a build hash yet
                 // (old image without the `build` field).
-                let up_to_date = if !child_build.is_empty()
-                    && child_build != "dev"
-                    && parent_build != "dev"
-                {
-                    child_build == parent_build
-                } else {
-                    child_version == parent_version
-                };
+                let up_to_date =
+                    if !child_build.is_empty() && child_build != "dev" && parent_build != "dev" {
+                        child_build == parent_build
+                    } else {
+                        child_version == parent_version
+                    };
 
                 if up_to_date {
                     tracing::debug!(
