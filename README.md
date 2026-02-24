@@ -44,11 +44,15 @@ Pay-per-request APIs on the Tempo blockchain. Security-hardened.
 
 | Component | What it does | Crate |
 |-----------|--------------|-------|
-| **Client** | Signs payments, makes requests | `tempo-x402` |
-| **Server** | Gates endpoints, returns 402 | `tempo-x402-server` |
-| **Facilitator** | Verifies signatures, settles on-chain | `tempo-x402-facilitator` |
-| **Gateway** | Proxy any API with payment rails | `tempo-x402-gateway` |
-| **Wallet** | WASM-compatible signing & key generation | `tempo-x402-wallet` |
+| **x402** | Types, EIP-712 signing, TIP-20, HTTP client | `tempo-x402` |
+| **Client** | SDK for making paid API requests | `tempo-x402-client` |
+| **Server** | Gates endpoints, returns 402 with payment middleware | `tempo-x402-server` |
+| **Facilitator** | Verifies signatures, settles payments on-chain | `tempo-x402-facilitator` |
+| **Gateway** | Proxy any HTTP API with payment rails | `tempo-x402-gateway` |
+| **Wallet** | WASM-compatible key generation & EIP-712 signing | `tempo-x402-wallet` |
+| **Identity** | Wallet generation, persistence, faucet funding, lineage | `tempo-x402-identity` |
+| **Agent** | Railway API client, clone spawning, instance management | `tempo-x402-agent` |
+| **Node** | Self-deploying node — gateway + identity + clone orchestration | `tempo-x402-node` |
 
 The facilitator holds no funds — it just has approval to call `transferFrom` on behalf of clients who have pre-approved it.
 
@@ -85,14 +89,17 @@ async fn main() {
 
 | Crate | Purpose |
 |-------|---------|
-| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, signing, HTTP client |
+| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, EIP-712 signing, TIP-20, HTTP client |
+| [`tempo-x402-client`](https://crates.io/crates/tempo-x402-client) | Client SDK for making paid API requests |
 | [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
-| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and settlement |
-| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API gateway with endpoint registration and analytics |
+| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and on-chain settlement |
+| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API gateway — proxy any HTTP API with payment rails |
 | [`tempo-x402-wallet`](https://crates.io/crates/tempo-x402-wallet) | WASM-compatible wallet — key generation, EIP-712 signing |
-| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying node — gateway + identity + clone orchestration |
-| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, persistence, faucet funding |
-| [`tempo-x402-agent`](https://crates.io/crates/tempo-x402-agent) | Railway API client + clone orchestration |
+| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, persistence, faucet funding, lineage tracking |
+| [`tempo-x402-agent`](https://crates.io/crates/tempo-x402-agent) | Railway API client, clone spawning, instance management |
+| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying node — gateway + identity bootstrap + clone orchestration |
+| [`tempo-x402-app`](https://crates.io/crates/tempo-x402-app) | WASM demo app — kitchen sink for all payment features (unpublished) |
+| [`tempo-x402-security-audit`](https://crates.io/crates/tempo-x402-security-audit) | Security invariant tests enforced on every CI build (unpublished) |
 
 ## Deployed Services
 
