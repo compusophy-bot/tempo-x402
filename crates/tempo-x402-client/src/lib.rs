@@ -32,7 +32,10 @@ pub use http_client::{decode_payment, encode_payment, X402Client};
 pub use scheme_client::TempoSchemeClient;
 
 // Re-export commonly needed types from core
-pub use x402::{
-    ChainConfig, PaymentPayload, PaymentRequiredBody, PaymentRequirements, SchemeClient,
-    SettleResponse, TempoPaymentData, X402Error, DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK,
+pub use x402::constants::{ChainConfig, DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
+pub use x402::error::X402Error;
+pub use x402::payment::{
+    PaymentPayload, PaymentRequiredBody, PaymentRequirements, TempoPaymentData,
 };
+pub use x402::response::SettleResponse;
+pub use x402::scheme::SchemeClient;

@@ -1,3 +1,9 @@
+//! HMAC-SHA256 utilities for authenticating facilitator requests.
+//!
+//! The resource server signs outgoing requests to the facilitator with
+//! [`compute_hmac`], and the facilitator verifies them with [`verify_hmac`].
+//! All comparisons use constant-time operations to prevent timing attacks.
+
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 

@@ -1,3 +1,12 @@
+//! Core trait definitions for the three-party payment model.
+//!
+//! - [`SchemeClient`] — client-side: creates signed payment payloads
+//! - [`SchemeFacilitator`] — facilitator-side: verifies and settles payments
+//! - [`SchemeServer`] — server-side: parses prices into on-chain amounts
+//!
+//! See [`crate::scheme_server::TempoSchemeServer`] and
+//! [`crate::scheme_facilitator::TempoSchemeFacilitator`] for the Tempo implementations.
+
 use crate::error::X402Error;
 use crate::payment::{PaymentPayload, PaymentRequirements};
 use crate::response::{SettleResponse, VerifyResponse};

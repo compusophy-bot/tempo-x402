@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use x402::network::{is_private_ipv4, is_private_ipv6};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,29 +11,6 @@ pub struct SettlementWebhook {
     pub transaction: Option<String>,
     pub network: String,
     pub timestamp: u64,
-}
-
-/// Check if an IPv4 address is private/loopback/non-routable.
-fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
-    ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_broadcast()
-        || ip.is_unspecified()
-        || (ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64)
-}
-
-/// Check if an IPv6 address is private/loopback/non-routable.
-fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
-    ip.is_loopback() || ip.is_unspecified() || {
-        let segments = ip.segments();
-        (segments[0] & 0xFE00) == 0xFC00
-            || (segments[0] & 0xFFC0) == 0xFE80
-            || match ip.to_ipv4_mapped() {
-                Some(v4) => is_private_ipv4(&v4),
-                None => false,
-            }
-    }
 }
 
 /// Validate that all webhook URLs use HTTPS and do not target private IPs.

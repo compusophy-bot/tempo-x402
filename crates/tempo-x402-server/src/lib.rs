@@ -1,3 +1,15 @@
+//! x402 resource server — gates HTTP endpoints behind 402 payments.
+//!
+//! Provides middleware that intercepts requests to protected routes, returns
+//! HTTP 402 with [`PaymentRequirements`](x402::payment::PaymentRequirements),
+//! and settles payments via the facilitator before granting access.
+//!
+//! # Modules
+//!
+//! - [`config`] — Payment configuration and route registration ([`PaymentConfigBuilder`](config::PaymentConfigBuilder))
+//! - [`middleware`] — Payment gate middleware ([`require_payment`](middleware::require_payment))
+//! - [`metrics`] — Prometheus metrics for request and payment tracking
+
 pub mod config;
 pub mod metrics;
 pub mod middleware;

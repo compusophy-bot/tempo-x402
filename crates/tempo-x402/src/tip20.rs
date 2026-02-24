@@ -1,3 +1,11 @@
+//! TIP-20 (ERC-20 compatible) on-chain token operations.
+//!
+//! Provides async functions for interacting with the pathUSD token contract:
+//! - [`balance_of`] — query token balance
+//! - [`allowance`] — query approved spending allowance
+//! - [`transfer_from`] — execute a token transfer (used by facilitator for settlement)
+//! - [`approve`] — approve a spender (used by the `x402-approve` CLI)
+
 use crate::X402Error;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;

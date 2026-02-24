@@ -3,9 +3,9 @@ use alloy::providers::RootProvider;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
+use x402::constants::DEFAULT_TOKEN;
 use x402::eip712;
 use x402::PaymentAuthorization;
-use x402::DEFAULT_TOKEN;
 
 /// Helper: create a valid PaymentAuthorization and sign it.
 fn make_signed_auth(signer: &PrivateKeySigner) -> (PaymentAuthorization, Vec<u8>) {
@@ -79,7 +79,8 @@ fn test_verify_invalid_signature_bytes() {
 fn test_nonce_replay_detection() {
     let provider =
         RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce = FixedBytes::new([0x42; 32]);
 
@@ -92,7 +93,8 @@ fn test_nonce_replay_detection() {
 fn test_nonce_not_yet_used() {
     let provider =
         RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce = FixedBytes::new([0x01; 32]);
     assert!(!facilitator.is_nonce_used(&nonce));
@@ -102,7 +104,8 @@ fn test_nonce_not_yet_used() {
 fn test_multiple_nonces_independent() {
     let provider =
         RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let nonce_a = FixedBytes::new([0xaa; 32]);
     let nonce_b = FixedBytes::new([0xbb; 32]);
@@ -117,7 +120,8 @@ fn test_multiple_nonces_independent() {
 
 #[tokio::test]
 async fn test_expired_authorization() {
-    use x402::{PaymentPayload, PaymentRequirements, SchemeFacilitator, TempoPaymentData};
+    use x402::payment::{PaymentPayload, PaymentRequirements, TempoPaymentData};
+    use x402::scheme::SchemeFacilitator;
 
     let signer = PrivateKeySigner::random();
 
@@ -163,7 +167,8 @@ async fn test_expired_authorization() {
 
     let provider =
         RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let result = facilitator.verify(&payload, &requirements).await.unwrap();
     assert!(!result.is_valid);
@@ -175,7 +180,8 @@ async fn test_expired_authorization() {
 
 #[tokio::test]
 async fn test_not_yet_valid_authorization() {
-    use x402::{PaymentPayload, PaymentRequirements, SchemeFacilitator, TempoPaymentData};
+    use x402::payment::{PaymentPayload, PaymentRequirements, TempoPaymentData};
+    use x402::scheme::SchemeFacilitator;
 
     let signer = PrivateKeySigner::random();
 
@@ -221,7 +227,8 @@ async fn test_not_yet_valid_authorization() {
 
     let provider =
         RootProvider::<alloy::network::Ethereum>::new_http("http://localhost:1".parse().unwrap());
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, Address::ZERO);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, Address::ZERO);
 
     let result = facilitator.verify(&payload, &requirements).await.unwrap();
     assert!(!result.is_valid);

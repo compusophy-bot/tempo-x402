@@ -24,4 +24,5 @@ Binary: `x402-facilitator` on port 4022.
 - **Settlement logic**: Change `x402` core crate (`scheme_facilitator.rs`), not here
 - **Webhook behavior**: `webhook.rs` — validation at startup, fire-and-forget with retries
 - **Adding endpoints**: `routes.rs` + register in `main.rs`
+- **Embedded facilitator init**: `bootstrap.rs` — used by gateway and node for in-process mode
 - **AppState fields**: Gateway crate imports this as `FacilitatorState` — check compatibility

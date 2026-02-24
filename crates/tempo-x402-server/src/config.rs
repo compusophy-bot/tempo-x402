@@ -1,6 +1,8 @@
 use alloy::primitives::Address;
 use std::collections::HashMap;
-use x402::{PaymentRequirements, SchemeServer, SCHEME_NAME, TEMPO_NETWORK};
+use x402::constants::{SCHEME_NAME, TEMPO_NETWORK};
+use x402::payment::PaymentRequirements;
+use x402::scheme::SchemeServer;
 
 /// Payment configuration for a single route.
 #[derive(Debug, Clone)]
@@ -183,8 +185,11 @@ mod tests {
 
     #[test]
     fn test_payment_config_creates_block_number_route() {
-        let config =
-            PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
+        let config = PaymentConfig::new(
+            x402::scheme_server::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        );
         let route = config.get_route("GET", "/blockNumber");
         assert!(route.is_some());
         let req = &route.unwrap().requirements;
@@ -196,19 +201,25 @@ mod tests {
 
     #[test]
     fn test_get_route_returns_none_for_unknown() {
-        let config =
-            PaymentConfig::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate());
+        let config = PaymentConfig::new(
+            x402::scheme_server::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        );
         assert!(config.get_route("POST", "/unknown").is_none());
     }
 
     #[test]
     fn test_builder_multiple_routes() {
-        let config =
-            PaymentConfigBuilder::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate())
-                .route("GET", "/blockNumber", "$0.001", Some("block number"))
-                .route("POST", "/submit", "$0.01", Some("submit tx"))
-                .route("GET", "/data", "$0.05", None)
-                .build();
+        let config = PaymentConfigBuilder::new(
+            x402::scheme_server::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        )
+        .route("GET", "/blockNumber", "$0.001", Some("block number"))
+        .route("POST", "/submit", "$0.01", Some("submit tx"))
+        .route("GET", "/data", "$0.05", None)
+        .build();
 
         assert_eq!(config.routes.len(), 3);
 
@@ -229,9 +240,12 @@ mod tests {
 
     #[test]
     fn test_builder_empty_builds_no_routes() {
-        let config =
-            PaymentConfigBuilder::new(x402::TempoSchemeServer::new(), Address::ZERO, &test_gate())
-                .build();
+        let config = PaymentConfigBuilder::new(
+            x402::scheme_server::TempoSchemeServer::new(),
+            Address::ZERO,
+            &test_gate(),
+        )
+        .build();
 
         assert!(config.routes.is_empty());
     }

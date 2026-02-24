@@ -74,23 +74,19 @@ fn sanitize_path(path: &str) -> Result<String, GatewayError> {
     Ok(path.to_string())
 }
 
-/// ANY /g/{slug}/{path:.*} - Proxy to target API with payment
-pub async fn gateway_proxy(
-    req: HttpRequest,
-    path: web::Path<(String, String)>,
+/// Shared implementation for gateway proxy with and without a trailing path.
+async fn do_gateway_proxy(
+    req: &HttpRequest,
+    state: &web::Data<AppState>,
+    slug: &str,
+    rest_path: Option<&str>,
     body: web::Bytes,
-    state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
-    let (slug, rest_path) = path.into_inner();
-
-    // Sanitize the rest path
-    let rest_path = sanitize_path(&rest_path)?;
-
     // Look up the endpoint
     let endpoint = state
         .db
-        .get_endpoint(&slug)?
-        .ok_or_else(|| GatewayError::EndpointNotFound(slug.clone()))?;
+        .get_endpoint(slug)?
+        .ok_or_else(|| GatewayError::EndpointNotFound(slug.to_string()))?;
 
     // Parse owner address
     let owner: Address = endpoint
@@ -108,7 +104,7 @@ pub async fn gateway_proxy(
 
     // Require payment (returns 402 with requirements if no valid payment)
     let settle = match require_payment(
-        &req,
+        req,
         requirements,
         &state.http_client,
         &state.config.facilitator_url,
@@ -122,28 +118,27 @@ pub async fn gateway_proxy(
     };
 
     // Build target URL
-    let target_url = format!(
-        "{}/{}",
-        endpoint.target_url.trim_end_matches('/'),
-        rest_path
-    );
+    let base_url = match rest_path {
+        Some(path) => format!("{}/{}", endpoint.target_url.trim_end_matches('/'), path),
+        None => endpoint.target_url.clone(),
+    };
 
     // Add query string if present (sanitized)
     let target_url = if let Some(query) = req.uri().query() {
         let query = sanitize_query(query)?;
         if query.is_empty() {
-            target_url
+            base_url
         } else {
-            format!("{}?{}", target_url, query)
+            format!("{}?{}", base_url, query)
         }
     } else {
-        target_url
+        base_url
     };
 
     // Proxy the request (includes PAYMENT-RESPONSE header)
     let response = proxy_request(
         &state.http_client,
-        &req,
+        req,
         &target_url,
         body,
         &settle,
@@ -153,9 +148,21 @@ pub async fn gateway_proxy(
     .await?;
 
     // Record payment stats
-    record_endpoint_stats(&state, &slug, &endpoint.price_amount);
+    record_endpoint_stats(state, slug, &endpoint.price_amount);
 
     Ok(response)
+}
+
+/// ANY /g/{slug}/{path:.*} - Proxy to target API with payment
+pub async fn gateway_proxy(
+    req: HttpRequest,
+    path: web::Path<(String, String)>,
+    body: web::Bytes,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, GatewayError> {
+    let (slug, rest_path) = path.into_inner();
+    let rest_path = sanitize_path(&rest_path)?;
+    do_gateway_proxy(&req, &state, &slug, Some(&rest_path), body).await
 }
 
 /// Configure the gateway routes
@@ -173,70 +180,7 @@ async fn gateway_proxy_no_path(
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
     let slug = path.into_inner();
-
-    // Look up the endpoint
-    let endpoint = state
-        .db
-        .get_endpoint(&slug)?
-        .ok_or_else(|| GatewayError::EndpointNotFound(slug.clone()))?;
-
-    // Parse owner address
-    let owner: Address = endpoint
-        .owner_address
-        .parse()
-        .map_err(|_| GatewayError::Internal("invalid stored owner address".to_string()))?;
-
-    // Build payment requirements for this endpoint
-    let requirements = endpoint_requirements(
-        owner,
-        &endpoint.price_usd,
-        &endpoint.price_amount,
-        endpoint.description.as_deref(),
-    );
-
-    // Require payment (returns 402 with requirements if no valid payment)
-    let settle = match require_payment(
-        &req,
-        requirements,
-        &state.http_client,
-        &state.config.facilitator_url,
-        state.config.hmac_secret.as_deref(),
-        state.facilitator.as_deref(),
-    )
-    .await
-    {
-        Ok(s) => s,
-        Err(http_response) => return Ok(http_response),
-    };
-
-    // Build target URL (just the base, with sanitized query string)
-    let target_url = if let Some(query) = req.uri().query() {
-        let query = sanitize_query(query)?;
-        if query.is_empty() {
-            endpoint.target_url.clone()
-        } else {
-            format!("{}?{}", endpoint.target_url, query)
-        }
-    } else {
-        endpoint.target_url.clone()
-    };
-
-    // Proxy the request (includes PAYMENT-RESPONSE header)
-    let response = proxy_request(
-        &state.http_client,
-        &req,
-        &target_url,
-        body,
-        &settle,
-        true,
-        state.config.hmac_secret.as_deref(),
-    )
-    .await?;
-
-    // Record payment stats
-    record_endpoint_stats(&state, &slug, &endpoint.price_amount);
-
-    Ok(response)
+    do_gateway_proxy(&req, &state, &slug, None, body).await
 }
 
 /// Record payment stats in DB and Prometheus metrics.

@@ -23,6 +23,46 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     ha.ct_eq(&hb).into()
 }
 
+/// Framework-agnostic metrics endpoint authentication.
+///
+/// Checks the `Authorization: Bearer <token>` header against an expected token.
+/// If no token is configured, falls back to the `public` flag.
+///
+/// Returns `Ok(())` if access is allowed, or `Err((status_code, message))` if not.
+/// Status code is 401 (unauthorized) when a token is configured but the header
+/// is missing/invalid, or 403 (forbidden) when no token is configured and the
+/// endpoint is not public.
+pub fn check_metrics_auth(
+    auth_header: Option<&str>,
+    expected_token: Option<&[u8]>,
+    public: bool,
+) -> Result<(), (u16, &'static str)> {
+    match expected_token {
+        Some(expected) => {
+            let authorized = auth_header
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|token| constant_time_eq(token.as_bytes(), expected))
+                .unwrap_or(false);
+
+            if authorized {
+                Ok(())
+            } else {
+                Err((401, "Valid Bearer token required for /metrics"))
+            }
+        }
+        None => {
+            if public {
+                Ok(())
+            } else {
+                Err((
+                    403,
+                    "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics",
+                ))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

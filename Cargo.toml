@@ -39,7 +39,6 @@ tokio-stream = "0.1"
 futures = "0.3"
 dashmap = "6"
 prometheus = "0.14"
-lazy_static = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 hmac = "0.12"
 sha2 = "0.10"

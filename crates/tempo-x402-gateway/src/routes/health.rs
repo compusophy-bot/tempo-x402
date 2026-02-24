@@ -48,43 +48,30 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison — delegates to the shared implementation
-/// in x402::security which uses the `subtle` crate.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    x402::security::constant_time_eq(a, b)
-}
-
 /// GET /metrics - Prometheus metrics endpoint (auth-gated by default)
 pub async fn metrics(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    match &state.config.metrics_token {
-        Some(expected_token) => {
-            let authorized = req
-                .headers()
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|token| constant_time_eq(token.as_bytes(), expected_token.as_bytes()))
-                .unwrap_or(false);
+    let auth_header = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok());
+    let token_bytes = state.config.metrics_token.as_ref().map(|s| s.as_bytes());
+    let public_metrics = std::env::var("X402_PUBLIC_METRICS")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
-            if !authorized {
-                return HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "unauthorized",
-                    "message": "Valid Bearer token required for /metrics"
-                }));
-            }
-        }
-        None => {
-            // No token configured — metrics are protected by default.
-            let public_metrics = std::env::var("X402_PUBLIC_METRICS")
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false);
-            if !public_metrics {
-                return HttpResponse::Forbidden().json(serde_json::json!({
-                    "error": "forbidden",
-                    "message": "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics"
-                }));
-            }
-        }
+    if let Err((status, msg)) =
+        x402::security::check_metrics_auth(auth_header, token_bytes, public_metrics)
+    {
+        return match status {
+            401 => HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": msg
+            })),
+            _ => HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "forbidden",
+                "message": msg
+            })),
+        };
     }
 
     use prometheus::Encoder;

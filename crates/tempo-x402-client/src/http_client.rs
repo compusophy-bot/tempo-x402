@@ -1,7 +1,9 @@
 use base64::Engine;
-use x402::{
-    PaymentPayload, PaymentRequiredBody, SchemeClient, SettleResponse, X402Error, SCHEME_NAME,
-};
+use x402::constants::SCHEME_NAME;
+use x402::error::X402Error;
+use x402::payment::{PaymentPayload, PaymentRequiredBody};
+use x402::response::SettleResponse;
+use x402::scheme::SchemeClient;
 
 /// HTTP client that automatically handles 402 payment responses.
 ///
@@ -144,7 +146,7 @@ pub fn decode_payment(encoded: &str) -> Result<PaymentPayload, X402Error> {
 mod tests {
     use super::*;
     use alloy::primitives::{Address, FixedBytes};
-    use x402::TempoPaymentData;
+    use x402::payment::TempoPaymentData;
 
     fn sample_payload() -> PaymentPayload {
         PaymentPayload {

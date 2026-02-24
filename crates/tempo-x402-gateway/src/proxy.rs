@@ -1,6 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse};
 use bytes::Bytes;
-use x402::SettleResponse;
+use x402::response::SettleResponse;
 
 use crate::error::GatewayError;
 use crate::middleware::payment_response_header;

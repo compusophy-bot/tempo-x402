@@ -1,3 +1,8 @@
+//! Error types for x402 payment operations.
+//!
+//! [`X402Error`] covers signature failures, chain interaction errors,
+//! invalid payments, unsupported schemes, configuration issues, and HTTP errors.
+
 use thiserror::Error;
 
 /// Errors returned by x402 operations.

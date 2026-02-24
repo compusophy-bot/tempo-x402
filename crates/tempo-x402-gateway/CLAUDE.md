@@ -27,6 +27,7 @@ Binary: `x402-gateway` on port 4023.
 - **Proxy security**: `proxy.rs` (header stripping) + `validation.rs` (SSRF). Security-audit crate tests these.
 - **Registration flow**: `routes/register.rs` — don't break the reserve→pay→activate sequence
 - **Adding DB tables**: Use `execute_schema()` pattern (see x402-node `db.rs`)
-- **Embedded facilitator**: Init in `main.rs`, mounted at `/facilitator/*`
+- **Embedded facilitator**: Init via `x402_facilitator::bootstrap`, mounted at `/facilitator/*`
+- **CORS**: `cors.rs` — shared with x402-node
 - **SSRF patterns**: Security-audit checks `redirect(Policy::none())` on all HTTP clients
 - **Analytics**: `routes/analytics.rs` serves `GET /analytics` and `GET /analytics/{slug}`. Stats recorded in `routes/gateway.rs` after successful proxy.

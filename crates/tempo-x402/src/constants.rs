@@ -1,3 +1,8 @@
+//! Chain configuration and well-known constants for the Tempo blockchain.
+//!
+//! Contains the Tempo Moderato chain ID, default token address (pathUSD),
+//! RPC endpoint, and a runtime [`ChainConfig`] struct for multi-chain support.
+
 use alloy::primitives::Address;
 
 /// Tempo Moderato chain ID.

@@ -15,7 +15,10 @@ use alloy::primitives::Address;
 use alloy::providers::RootProvider;
 use alloy::signers::local::PrivateKeySigner;
 use base64::Engine;
-use x402::{PaymentRequiredBody, SchemeClient, SettleResponse, DEFAULT_TOKEN, SCHEME_NAME};
+use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME};
+use x402::payment::{PaymentRequiredBody, PaymentRequirements};
+use x402::response::SettleResponse;
+use x402::scheme::SchemeClient;
 use x402_client::TempoSchemeClient;
 
 fn gateway_url() -> String {
@@ -51,10 +54,7 @@ async fn check_allowance(address: Address) -> u128 {
 }
 
 /// Sign a payment for the given requirements, return the base64-encoded PAYMENT-SIGNATURE header.
-async fn sign_payment(
-    signer: &TempoSchemeClient,
-    requirements: &x402::PaymentRequirements,
-) -> String {
+async fn sign_payment(signer: &TempoSchemeClient, requirements: &PaymentRequirements) -> String {
     let payload = signer
         .create_payment_payload(1, requirements)
         .await
@@ -313,7 +313,7 @@ async fn register_demo_endpoint() {
 
     assert_eq!(resp.status().as_u16(), 402);
 
-    let body_402: x402::PaymentRequiredBody = resp.json().await.expect("parse 402");
+    let body_402: PaymentRequiredBody = resp.json().await.expect("parse 402");
     let requirements = body_402
         .accepts
         .iter()

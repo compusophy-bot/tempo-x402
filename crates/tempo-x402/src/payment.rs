@@ -1,3 +1,10 @@
+//! Payment data structures exchanged between client, server, and facilitator.
+//!
+//! - [`TempoPaymentData`] — the signed payment fields (EIP-712)
+//! - [`PaymentPayload`] — wire-format wrapper sent in the `PAYMENT-SIGNATURE` header
+//! - [`PaymentRequirements`] — a single entry in the 402 response's `accepts` array
+//! - [`PaymentRequiredBody`] — the complete 402 response body
+
 use alloy::primitives::{Address, FixedBytes};
 use serde::{Deserialize, Serialize};
 

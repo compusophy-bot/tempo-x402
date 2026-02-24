@@ -159,7 +159,7 @@ impl GatewayConfig {
             .unwrap_or_default();
 
         // Optional: RPC URL
-        let rpc_url = env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+        let rpc_url = env::var("RPC_URL").unwrap_or_else(|_| x402::constants::RPC_URL.to_string());
 
         // Optional: SPA directory
         let spa_dir = env::var("SPA_DIR").ok().filter(|s| !s.is_empty());
@@ -230,7 +230,8 @@ impl GatewayConfig {
 
 /// Parse a price string like "$0.01" to token amount string
 pub fn parse_price_to_amount(price: &str) -> Result<String, ConfigError> {
-    use x402::{SchemeServer, TempoSchemeServer};
+    use x402::scheme::SchemeServer;
+    use x402::scheme_server::TempoSchemeServer;
 
     let scheme = TempoSchemeServer::new();
     let (amount, _) = scheme

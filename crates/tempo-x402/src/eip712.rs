@@ -1,3 +1,12 @@
+//! EIP-712 typed-data signing, signature verification, and nonce generation.
+//!
+//! Provides functions for:
+//! - Building EIP-712 domains ([`payment_domain`], [`payment_domain_for_chain`])
+//! - Computing signing hashes ([`signing_hash`], [`signing_hash_for_chain`])
+//! - Verifying signatures with EIP-2 malleability protection ([`verify_signature`], [`verify_signature_for_chain`])
+//! - Generating cryptographically secure random nonces ([`random_nonce`])
+//! - Encoding signatures to hex ([`encode_signature_hex`])
+
 use alloy::primitives::{Address, FixedBytes, Signature, B256, U256};
 use alloy::sol_types::SolStruct;
 
@@ -119,7 +128,7 @@ mod tests {
             from: addr,
             to: Address::ZERO,
             value: U256::from(1000u64),
-            token: crate::DEFAULT_TOKEN,
+            token: crate::constants::DEFAULT_TOKEN,
             validAfter: U256::from(0u64),
             validBefore: U256::from(u64::MAX),
             nonce: FixedBytes::ZERO,

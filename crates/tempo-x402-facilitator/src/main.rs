@@ -5,6 +5,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 
 use std::sync::Arc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use x402_facilitator::routes;
 use x402_facilitator::state::AppState;
@@ -50,7 +51,13 @@ fn build_cors(origins: &[String]) -> Cors {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,actix_web=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     let key = std::env::var("FACILITATOR_PRIVATE_KEY")
         .expect("FACILITATOR_PRIVATE_KEY environment variable is required");
@@ -58,7 +65,7 @@ async fn main() -> std::io::Result<()> {
     let signer: PrivateKeySigner = key.parse().expect("invalid FACILITATOR_PRIVATE_KEY");
     let facilitator_address = signer.address();
 
-    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::constants::RPC_URL.to_string());
 
     let provider = ProviderBuilder::new()
         .wallet(alloy::network::EthereumWallet::from(signer))
@@ -85,8 +92,9 @@ async fn main() -> std::io::Result<()> {
             }
         };
 
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address)
-        .with_nonce_store(nonce_store);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, facilitator_address)
+            .with_nonce_store(nonce_store);
 
     // Start background nonce cleanup
     facilitator.start_nonce_cleanup();
@@ -151,7 +159,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState {
         facilitator,
         hmac_secret,
-        chain_config: x402::ChainConfig::default(),
+        chain_config: x402::constants::ChainConfig::default(),
         webhook_urls,
         http_client: x402_facilitator::webhook::webhook_client(),
         metrics_token,

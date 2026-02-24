@@ -19,9 +19,9 @@ async fn main() {
     let token: Address = std::env::var("TEMPO_TOKEN")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(x402::DEFAULT_TOKEN);
+        .unwrap_or(x402::constants::DEFAULT_TOKEN);
 
-    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::constants::RPC_URL.to_string());
 
     let approve_amount: U256 = match std::env::var("APPROVE_AMOUNT") {
         Ok(val) => val

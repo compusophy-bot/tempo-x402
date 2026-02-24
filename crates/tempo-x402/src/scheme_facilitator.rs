@@ -1,3 +1,10 @@
+//! [`SchemeFacilitator`](crate::scheme::SchemeFacilitator) implementation for the Tempo blockchain.
+//!
+//! [`TempoSchemeFacilitator`] verifies EIP-712 payment signatures and settles them
+//! on-chain via `transferFrom`. Includes per-payer locking to prevent TOCTOU races,
+//! pluggable nonce storage for replay protection, and configurable token allowlists
+//! and per-settlement amount caps.
+
 use std::sync::Arc;
 
 use alloy::primitives::{Address, FixedBytes, U256};
@@ -5,10 +12,11 @@ use alloy::providers::Provider;
 use dashmap::DashMap;
 use tokio::sync::Mutex;
 
-use crate::{
-    ChainConfig, PaymentPayload, PaymentRequirements, SchemeFacilitator, SettleResponse,
-    VerifyResponse, X402Error,
-};
+use crate::constants::ChainConfig;
+use crate::error::X402Error;
+use crate::payment::{PaymentPayload, PaymentRequirements};
+use crate::response::{SettleResponse, VerifyResponse};
+use crate::scheme::SchemeFacilitator;
 
 use crate::eip712::verify_signature_for_chain;
 use crate::nonce_store::{InMemoryNonceStore, NonceStore};
@@ -125,20 +133,17 @@ impl<P> TempoSchemeFacilitator<P> {
     }
 
     /// Check if a nonce has already been used.
-    #[doc(hidden)]
     pub fn is_nonce_used(&self, nonce: &FixedBytes<32>) -> bool {
         self.nonce_store.is_used(nonce)
     }
 
     /// Record a nonce as used.
-    #[doc(hidden)]
     pub fn record_nonce(&self, nonce: FixedBytes<32>) {
         self.nonce_store.record(nonce);
     }
 
     /// Atomically check if nonce is unused and claim it if so.
     /// Returns true if successfully claimed, false if already used.
-    #[doc(hidden)]
     pub fn try_use_nonce(&self, nonce: FixedBytes<32>) -> bool {
         self.nonce_store.try_use(nonce)
     }

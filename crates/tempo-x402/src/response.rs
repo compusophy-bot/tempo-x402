@@ -1,3 +1,8 @@
+//! Facilitator response types for verify and settle operations.
+//!
+//! - [`VerifyResponse`] — returned by the facilitator's `/verify` endpoint
+//! - [`SettleResponse`] — returned by the facilitator's `/settle` or `/verify-and-settle` endpoint
+
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 

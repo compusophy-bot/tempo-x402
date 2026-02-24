@@ -16,12 +16,13 @@ fn make_state(hmac_secret: Vec<u8>) -> web::Data<AppState> {
         .wallet(EthereumWallet::from(signer))
         .connect_http("http://localhost:1".parse().unwrap());
 
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, facilitator_address);
 
     web::Data::new(AppState {
         facilitator,
         hmac_secret,
-        chain_config: x402::ChainConfig::default(),
+        chain_config: x402::constants::ChainConfig::default(),
         webhook_urls: vec![],
         http_client: reqwest::Client::new(),
         metrics_token: None,
@@ -184,12 +185,13 @@ fn make_state_with_metrics_token(
         .wallet(EthereumWallet::from(signer))
         .connect_http("http://localhost:1".parse().unwrap());
 
-    let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address);
+    let facilitator =
+        x402::scheme_facilitator::TempoSchemeFacilitator::new(provider, facilitator_address);
 
     web::Data::new(AppState {
         facilitator,
         hmac_secret,
-        chain_config: x402::ChainConfig::default(),
+        chain_config: x402::constants::ChainConfig::default(),
         webhook_urls: vec![],
         http_client: reqwest::Client::new(),
         metrics_token,

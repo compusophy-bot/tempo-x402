@@ -1,12 +1,7 @@
-use actix_cors::Cors;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{middleware::Logger, web, App, HttpServer};
-use alloy::providers::ProviderBuilder;
-use alloy::signers::local::PrivateKeySigner;
-use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use x402_facilitator::state::AppState as FacilitatorState;
 use x402_gateway::{
     config::GatewayConfig, db::Database, metrics::register_metrics, routes, state::AppState,
 };
@@ -58,72 +53,20 @@ async fn main() -> std::io::Result<()> {
             );
             std::process::exit(1);
         }
-        tracing::info!("Embedded facilitator: bootstrapping in-process");
 
-        let signer: PrivateKeySigner = key.parse().expect("invalid FACILITATOR_PRIVATE_KEY");
-        let facilitator_address = signer.address();
-
-        let provider = ProviderBuilder::new()
-            .wallet(alloy::network::EthereumWallet::from(signer))
-            .connect_http(config.rpc_url.parse().expect("invalid RPC_URL"));
-
-        // Set up nonce storage — SQLite is mandatory for replay protection
-        let nonce_store: Arc<dyn x402::nonce_store::NonceStore> =
-            match x402::nonce_store::SqliteNonceStore::open(&config.nonce_db_path) {
-                Ok(store) => {
-                    tracing::info!("Nonce store: SQLite at {}", config.nonce_db_path);
-                    Arc::new(store)
-                }
-                Err(e) => {
-                    // CRITICAL: Do not fall back to in-memory. In-memory nonces are lost
-                    // on restart, enabling replay of any recently-settled payment.
-                    tracing::error!(
-                        "Failed to open SQLite nonce store at {}: {}",
-                        config.nonce_db_path,
-                        e
-                    );
-                    tracing::error!(
-                        "Refusing to start — in-memory fallback would enable replay attacks on restart"
-                    );
-                    std::process::exit(1);
-                }
-            };
-
-        let facilitator = x402::TempoSchemeFacilitator::new(provider, facilitator_address)
-            .with_nonce_store(nonce_store);
-
-        facilitator.start_nonce_cleanup();
-
-        tracing::info!("Embedded facilitator address: {facilitator_address}");
-
-        if !config.webhook_urls.is_empty() {
-            tracing::info!("Webhook URLs configured: {}", config.webhook_urls.len());
-            if let Err(e) = x402_facilitator::webhook::validate_webhook_urls(&config.webhook_urls) {
-                tracing::error!("Invalid webhook configuration: {e}");
-                std::process::exit(1);
-            }
-        }
-
-        // Derive domain-separated webhook HMAC key
-        let webhook_hmac_key = config
-            .hmac_secret
-            .as_ref()
-            .map(|secret| x402::hmac::compute_hmac(secret, b"x402-webhook-hmac").into_bytes());
-
-        Some(Arc::new(FacilitatorState {
-            facilitator,
-            // HMAC is guaranteed to be set when FACILITATOR_PRIVATE_KEY is configured
-            // (enforced at lines 54-60 above).
-            hmac_secret: config
-                .hmac_secret
-                .clone()
-                .expect("HMAC secret must be set when embedded facilitator is enabled"),
-            chain_config: x402::ChainConfig::default(),
-            webhook_urls: config.webhook_urls.clone(),
-            http_client: x402_facilitator::webhook::webhook_client(),
-            metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
-            webhook_hmac_key,
-        }))
+        Some(x402_facilitator::bootstrap::bootstrap_embedded_facilitator(
+            x402_facilitator::bootstrap::BootstrapConfig {
+                private_key: key,
+                rpc_url: &config.rpc_url,
+                nonce_db_path: &config.nonce_db_path,
+                hmac_secret: config
+                    .hmac_secret
+                    .clone()
+                    .expect("HMAC secret must be set when embedded facilitator is enabled"),
+                webhook_urls: config.webhook_urls.clone(),
+                metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
+            },
+        ))
     } else {
         tracing::info!("Facilitator URL: {}", config.facilitator_url);
         None
@@ -169,34 +112,7 @@ async fn main() -> std::io::Result<()> {
 
     // Start HTTP server
     HttpServer::new(move || {
-        // Configure CORS
-        let allowed = allowed_origins.clone();
-        let cors = Cors::default()
-            .allowed_origin_fn(move |origin, _req_head| {
-                let origin_str = origin.to_str().unwrap_or("");
-                allowed.iter().any(|a| {
-                    if a == "*" {
-                        // In dev mode (X402_INSECURE_NO_HMAC), wildcard is permitted
-                        // In production, wildcard CORS is rejected at config validation
-                        true
-                    } else {
-                        a == origin_str
-                    }
-                })
-            })
-            .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-            .allowed_headers(vec![
-                actix_web::http::header::AUTHORIZATION,
-                actix_web::http::header::ACCEPT,
-                actix_web::http::header::CONTENT_TYPE,
-                actix_web::http::header::HeaderName::from_static("x-payment"),
-                actix_web::http::header::HeaderName::from_static("payment-signature"),
-            ])
-            .expose_headers(vec![
-                actix_web::http::header::HeaderName::from_static("x-payment-response"),
-                actix_web::http::header::HeaderName::from_static("payment-response"),
-            ])
-            .max_age(3600);
+        let cors = x402_gateway::cors::build_cors(&allowed_origins);
 
         let mut app = App::new()
             .app_data(state_data.clone())

@@ -2,11 +2,12 @@ use alloy::primitives::U256;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
 
-use x402::{
-    eip712::{encode_signature_hex, payment_domain_for_chain, random_nonce},
-    ChainConfig, PaymentAuthorization, PaymentPayload, PaymentRequirements, SchemeClient,
-    TempoPaymentData, X402Error,
-};
+use x402::constants::ChainConfig;
+use x402::eip712::{encode_signature_hex, payment_domain_for_chain, random_nonce};
+use x402::error::X402Error;
+use x402::payment::{PaymentPayload, PaymentRequirements, TempoPaymentData};
+use x402::scheme::SchemeClient;
+use x402::PaymentAuthorization;
 
 /// Client-side scheme implementation: creates and signs EIP-712 payment payloads.
 ///
@@ -102,7 +103,7 @@ impl SchemeClient for TempoSchemeClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x402::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
+    use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
 
     #[tokio::test]
     async fn test_create_payment_payload() {

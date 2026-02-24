@@ -4,33 +4,7 @@ use url::Url;
 
 use crate::error::GatewayError;
 
-/// Check if an IPv4 address is private, loopback, or otherwise non-routable.
-pub fn is_private_ipv4(ip: &Ipv4Addr) -> bool {
-    ip.is_loopback()          // 127.0.0.0/8
-        || ip.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-        || ip.is_link_local() // 169.254.0.0/16
-        || ip.is_broadcast()  // 255.255.255.255
-        || ip.is_unspecified() // 0.0.0.0
-        || ip.octets()[0] == 100 && (ip.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
-}
-
-/// Check if an IPv6 address is private, loopback, or otherwise non-routable.
-pub fn is_private_ipv6(ip: &Ipv6Addr) -> bool {
-    ip.is_loopback()       // ::1
-        || ip.is_unspecified() // ::
-        || {
-            let segments = ip.segments();
-            // fc00::/7 (unique local)
-            (segments[0] & 0xFE00) == 0xFC00
-            // fe80::/10 (link-local)
-            || (segments[0] & 0xFFC0) == 0xFE80
-            // IPv4-mapped IPv6: check the mapped IPv4 address
-            || match ip.to_ipv4_mapped() {
-                Some(v4) => is_private_ipv4(&v4),
-                None => false,
-            }
-        }
-}
+pub use x402::network::{is_private_ipv4, is_private_ipv6};
 
 /// Validate target URL (HTTPS, no private/loopback IPs, no localhost domains).
 pub fn validate_target_url(url: &str) -> Result<(), GatewayError> {

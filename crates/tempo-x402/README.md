@@ -12,7 +12,8 @@ tempo-x402 = "0.6"
 The crate is published as `tempo-x402` but the library name is `x402`:
 
 ```rust
-use x402::{TempoSchemeServer, SchemeServer};
+use x402::scheme::SchemeServer;
+use x402::scheme_server::TempoSchemeServer;
 ```
 
 ## Features
@@ -27,7 +28,7 @@ use x402::{TempoSchemeServer, SchemeServer};
 
 ```rust
 use alloy::signers::local::PrivateKeySigner;
-use x402::{TempoSchemeClient, X402Client};
+use x402_client::{TempoSchemeClient, X402Client};
 
 #[tokio::main]
 async fn main() {

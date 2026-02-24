@@ -20,7 +20,6 @@ x402-facilitator = { workspace = true }
 x402-gateway = { workspace = true }
 x402-identity = { workspace = true }
 actix-web = { workspace = true }
-actix-cors = { workspace = true }
 actix-files = { workspace = true }
 actix-governor = { workspace = true }
 tokio = { workspace = true }
@@ -34,6 +33,5 @@ tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
 prometheus = { workspace = true }
-lazy_static = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }

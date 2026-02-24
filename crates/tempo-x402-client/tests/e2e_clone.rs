@@ -9,7 +9,9 @@
 
 use alloy::signers::local::PrivateKeySigner;
 use base64::Engine;
-use x402::{PaymentRequiredBody, SchemeClient, SCHEME_NAME};
+use x402::constants::SCHEME_NAME;
+use x402::payment::{PaymentRequiredBody, PaymentRequirements};
+use x402::scheme::SchemeClient;
 use x402_client::TempoSchemeClient;
 
 fn gateway_url() -> String {
@@ -23,10 +25,7 @@ fn client_signer() -> PrivateKeySigner {
     key.parse().expect("invalid EVM_PRIVATE_KEY")
 }
 
-async fn sign_payment(
-    signer: &TempoSchemeClient,
-    requirements: &x402::PaymentRequirements,
-) -> String {
+async fn sign_payment(signer: &TempoSchemeClient, requirements: &PaymentRequirements) -> String {
     let payload = signer
         .create_payment_payload(1, requirements)
         .await

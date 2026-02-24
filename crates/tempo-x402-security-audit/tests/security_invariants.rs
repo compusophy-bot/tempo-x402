@@ -253,8 +253,10 @@ fn nonce_store_sqlite_preferred_in_production() {
     let files = production_source_files();
 
     for (path, content) in &files {
-        // Check facilitator main.rs for nonce store initialization
-        if !path.contains("facilitator") || !path.contains("main.rs") {
+        // Check facilitator main.rs and bootstrap.rs for nonce store initialization
+        if !path.contains("facilitator")
+            || !(path.contains("main.rs") || path.contains("bootstrap.rs"))
+        {
             continue;
         }
 

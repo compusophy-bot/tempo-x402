@@ -1,4 +1,11 @@
-use crate::{ChainConfig, SchemeServer, X402Error};
+//! [`SchemeServer`](crate::scheme::SchemeServer) implementation for the Tempo blockchain.
+//!
+//! [`TempoSchemeServer`] parses human-readable price strings (e.g. `"$0.001"`)
+//! into on-chain token amounts using integer-only arithmetic (no floating point).
+
+use crate::constants::ChainConfig;
+use crate::error::X402Error;
+use crate::scheme::SchemeServer;
 use alloy::primitives::Address;
 
 /// Server-side scheme: parses prices and builds payment requirements.
@@ -132,7 +139,7 @@ impl SchemeServer for TempoSchemeServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DEFAULT_TOKEN;
+    use crate::constants::DEFAULT_TOKEN;
 
     #[test]
     fn test_parse_dollar_price() {

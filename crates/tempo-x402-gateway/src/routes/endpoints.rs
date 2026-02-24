@@ -1,6 +1,6 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 use alloy::primitives::Address;
-use x402::SchemeServer;
+use x402::scheme::SchemeServer;
 
 use crate::db::UpdateEndpoint;
 use crate::error::GatewayError;
@@ -106,7 +106,7 @@ pub async fn update_endpoint(
 
     // Parse new price if provided
     let (price_usd, price_amount) = if let Some(ref price) = body.price {
-        let scheme_server = x402::TempoSchemeServer::new();
+        let scheme_server = x402::scheme_server::TempoSchemeServer::new();
         let (amount, _) = scheme_server
             .parse_price(price)
             .map_err(|e| GatewayError::InvalidPrice(e.to_string()))?;
@@ -124,7 +124,7 @@ pub async fn update_endpoint(
         .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
 
     // Decode the payment to extract the payer address for ownership check
-    let decoded: x402::PaymentPayload = {
+    let decoded: x402::payment::PaymentPayload = {
         use base64::Engine;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(payment_header)
@@ -222,7 +222,7 @@ pub async fn delete_endpoint(
         .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
 
     // Decode the payment to extract the payer address for ownership check
-    let decoded: x402::PaymentPayload = {
+    let decoded: x402::payment::PaymentPayload = {
         use base64::Engine;
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(payment_header)

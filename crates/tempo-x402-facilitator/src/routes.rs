@@ -1,6 +1,7 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use serde::Deserialize;
-use x402::{PaymentPayload, PaymentRequirements, SchemeFacilitator};
+use x402::payment::{PaymentPayload, PaymentRequirements};
+use x402::scheme::SchemeFacilitator;
 
 use crate::metrics;
 use crate::state::AppState;
@@ -66,46 +67,32 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
-/// Constant-time byte comparison — delegates to the shared implementation
-/// in x402::security which uses the `subtle` crate.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    x402::security::constant_time_eq(a, b)
-}
-
 #[get("/metrics")]
 pub async fn metrics_endpoint(req: HttpRequest, state: web::Data<AppState>) -> HttpResponse {
-    // Use separate METRICS_TOKEN for metrics auth (not the HMAC shared secret).
-    match &state.metrics_token {
-        Some(token) => {
-            let authorized = req
-                .headers()
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|t| constant_time_eq(t.as_bytes(), token))
-                .unwrap_or(false);
+    let auth_header = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok());
+    let token_ref = state.metrics_token.as_deref();
+    let public_metrics = std::env::var("X402_PUBLIC_METRICS")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
-            if !authorized {
-                return HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "unauthorized",
-                    "message": "Valid Bearer token required for /metrics"
-                }));
-            }
-        }
-        None => {
-            // No token configured — metrics are protected by default.
-            // Set X402_PUBLIC_METRICS=true to explicitly opt-in to unauthenticated access.
-            let public_metrics = std::env::var("X402_PUBLIC_METRICS")
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false);
-            if !public_metrics {
-                return HttpResponse::Forbidden().json(serde_json::json!({
-                    "error": "forbidden",
-                    "message": "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics"
-                }));
-            }
-        }
+    if let Err((status, msg)) =
+        x402::security::check_metrics_auth(auth_header, token_ref, public_metrics)
+    {
+        return match status {
+            401 => HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": msg
+            })),
+            _ => HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "forbidden",
+                "message": msg
+            })),
+        };
     }
+
     HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4")
         .body(metrics::metrics_output())

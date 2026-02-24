@@ -20,11 +20,11 @@ pub type WalletProvider = FillProvider<
 
 /// Shared application state for the facilitator server.
 pub struct AppState {
-    pub facilitator: x402::TempoSchemeFacilitator<WalletProvider>,
+    pub facilitator: x402::scheme_facilitator::TempoSchemeFacilitator<WalletProvider>,
     /// HMAC shared secret for authenticating /verify-and-settle requests.
     /// This is mandatory — the facilitator will not start without it.
     pub hmac_secret: Vec<u8>,
-    pub chain_config: x402::ChainConfig,
+    pub chain_config: x402::constants::ChainConfig,
     pub webhook_urls: Vec<String>,
     pub http_client: reqwest::Client,
     /// Separate bearer token for /metrics endpoint (not the HMAC secret).

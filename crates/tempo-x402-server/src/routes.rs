@@ -2,12 +2,6 @@ use actix_web::{get, web, HttpRequest, HttpResponse};
 use alloy::providers::{Provider, RootProvider};
 use std::sync::Arc;
 
-/// Constant-time byte comparison — delegates to the shared implementation
-/// in x402::security which uses the `subtle` crate.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    x402::security::constant_time_eq(a, b)
-}
-
 /// Cached metrics token, read once at first access.
 static METRICS_TOKEN: std::sync::LazyLock<Option<String>> = std::sync::LazyLock::new(|| {
     std::env::var("METRICS_TOKEN")
@@ -24,32 +18,25 @@ static PUBLIC_METRICS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
 
 #[get("/metrics")]
 pub async fn metrics_endpoint(req: HttpRequest) -> HttpResponse {
-    match &*METRICS_TOKEN {
-        Some(expected) => {
-            let authorized = req
-                .headers()
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-                .map(|token| constant_time_eq(token.as_bytes(), expected.as_bytes()))
-                .unwrap_or(false);
+    let auth_header = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok());
+    let token_bytes = METRICS_TOKEN.as_ref().map(|s| s.as_bytes());
 
-            if !authorized {
-                return HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "unauthorized",
-                    "message": "Valid Bearer token required for /metrics"
-                }));
-            }
-        }
-        None => {
-            // No token configured — metrics are protected by default.
-            if !*PUBLIC_METRICS {
-                return HttpResponse::Forbidden().json(serde_json::json!({
-                    "error": "forbidden",
-                    "message": "Set METRICS_TOKEN or X402_PUBLIC_METRICS=true to access /metrics"
-                }));
-            }
-        }
+    if let Err((status, msg)) =
+        x402::security::check_metrics_auth(auth_header, token_bytes, *PUBLIC_METRICS)
+    {
+        return match status {
+            401 => HttpResponse::Unauthorized().json(serde_json::json!({
+                "error": "unauthorized",
+                "message": msg
+            })),
+            _ => HttpResponse::Forbidden().json(serde_json::json!({
+                "error": "forbidden",
+                "message": msg
+            })),
+        };
     }
 
     HttpResponse::Ok()

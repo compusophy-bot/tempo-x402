@@ -1,3 +1,12 @@
+//! Replay protection via nonce tracking.
+//!
+//! Provides the [`NonceStore`] trait and two implementations:
+//! - [`InMemoryNonceStore`] — fast, concurrent (DashMap-backed), lost on restart
+//! - [`SqliteNonceStore`] — persistent, survives restarts, required for production
+//!
+//! Nonces are claimed atomically via [`NonceStore::try_use`] before settlement
+//! and are **never released on failure** (the transaction may still mine).
+
 use alloy::primitives::FixedBytes;
 use dashmap::DashMap;
 use std::sync::Mutex;

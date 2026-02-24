@@ -1,5 +1,5 @@
 use actix_web::{web, HttpRequest, HttpResponse};
-use x402::SchemeServer;
+use x402::scheme::SchemeServer;
 
 use crate::db::CreateEndpoint;
 use crate::error::GatewayError;
@@ -50,7 +50,7 @@ pub async fn register(
     }
 
     // Parse price early so we fail fast on bad input
-    let scheme_server = x402::TempoSchemeServer::new();
+    let scheme_server = x402::scheme_server::TempoSchemeServer::new();
     let (price_amount, _) = scheme_server
         .parse_price(&body.price)
         .map_err(|e| GatewayError::InvalidPrice(e.to_string()))?;

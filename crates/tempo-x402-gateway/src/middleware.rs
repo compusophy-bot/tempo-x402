@@ -1,9 +1,10 @@
 use actix_web::{HttpRequest, HttpResponse};
 use alloy::primitives::Address;
-use x402::{
-    hmac::compute_hmac, PaymentPayload, PaymentRequiredBody, PaymentRequirements,
-    SchemeFacilitator, SettleResponse, DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK,
-};
+use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
+use x402::hmac::compute_hmac;
+use x402::payment::{PaymentPayload, PaymentRequiredBody, PaymentRequirements};
+use x402::response::SettleResponse;
+use x402::scheme::SchemeFacilitator;
 use x402_facilitator::state::AppState as FacilitatorState;
 
 use crate::error::GatewayError;
@@ -108,52 +109,15 @@ pub async fn verify_and_settle(
     }
 
     // HTTP fallback path
-    let url = format!(
-        "{}/verify-and-settle",
-        facilitator_url.trim_end_matches('/')
-    );
-
-    let request_body = serde_json::json!({
-        "paymentPayload": payload,
-        "paymentRequirements": requirements,
-    });
-
-    let body_bytes = serde_json::to_vec(&request_body)
-        .map_err(|e| GatewayError::Internal(format!("failed to serialize request: {}", e)))?;
-
-    let mut req_builder = http_client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .body(body_bytes.clone());
-
-    // Add HMAC signature if secret is configured
-    if let Some(secret) = hmac_secret {
-        let signature = compute_hmac(secret, &body_bytes);
-        req_builder = req_builder.header("X-Facilitator-Auth", signature);
-    }
-
-    let response = req_builder
-        .send()
-        .await
-        .map_err(|e| GatewayError::PaymentFailed(format!("facilitator request failed: {}", e)))?;
-
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| GatewayError::PaymentFailed(format!("failed to read response: {}", e)))?;
-
-    if !status.is_success() {
-        tracing::error!(
-            status = %status,
-            body = %body,
-            "facilitator returned non-success response"
-        );
-        return Err(GatewayError::PaymentFailed("settlement failed".to_string()));
-    }
-
-    let settle_response: SettleResponse = serde_json::from_str(&body)
-        .map_err(|e| GatewayError::PaymentFailed(format!("invalid facilitator response: {}", e)))?;
+    let settle_response = x402::facilitator_client::call_verify_and_settle(
+        http_client,
+        facilitator_url,
+        payload,
+        requirements,
+        hmac_secret,
+    )
+    .await
+    .map_err(GatewayError::PaymentFailed)?;
 
     if !settle_response.success {
         return Err(GatewayError::PaymentFailed(

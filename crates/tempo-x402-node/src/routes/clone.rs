@@ -27,11 +27,11 @@ pub async fn clone_instance(
         .ok_or_else(|| GatewayError::Internal("clone price amount not set".to_string()))?;
 
     // Build payment requirements
-    let requirements = x402::PaymentRequirements {
-        scheme: x402::SCHEME_NAME.to_string(),
-        network: x402::TEMPO_NETWORK.to_string(),
+    let requirements = x402::payment::PaymentRequirements {
+        scheme: x402::constants::SCHEME_NAME.to_string(),
+        network: x402::constants::TEMPO_NETWORK.to_string(),
         price: clone_price.to_string(),
-        asset: x402::DEFAULT_TOKEN,
+        asset: x402::constants::DEFAULT_TOKEN,
         amount: clone_price_amount.to_string(),
         pay_to: node.gateway.config.platform_address,
         max_timeout_seconds: 60,

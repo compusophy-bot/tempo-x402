@@ -3,6 +3,7 @@ use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer};
 use alloy::providers::RootProvider;
 use std::sync::Arc;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod routes;
 
@@ -47,9 +48,15 @@ fn build_cors(origins: &[String]) -> Cors {
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,actix_web=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
-    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::RPC_URL.to_string());
+    let rpc_url = std::env::var("RPC_URL").unwrap_or_else(|_| x402::constants::RPC_URL.to_string());
     let provider: RootProvider = RootProvider::new_http(rpc_url.parse().expect("invalid RPC_URL"));
 
     let facilitator_url =

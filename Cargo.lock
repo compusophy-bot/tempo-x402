@@ -5245,7 +5245,6 @@ dependencies = [
  "actix-web",
  "alloy",
  "dotenvy",
- "lazy_static",
  "prometheus",
  "reqwest",
  "serde",
@@ -5271,7 +5270,6 @@ dependencies = [
  "bytes",
  "chrono",
  "dotenvy",
- "lazy_static",
  "prometheus",
  "reqwest",
  "rusqlite",
@@ -5310,14 +5308,12 @@ dependencies = [
 name = "tempo-x402-node"
 version = "0.6.6"
 dependencies = [
- "actix-cors",
  "actix-files",
  "actix-governor",
  "actix-web",
  "alloy",
  "chrono",
  "dotenvy",
- "lazy_static",
  "prometheus",
  "reqwest",
  "rusqlite",
@@ -5354,7 +5350,6 @@ dependencies = [
  "base64",
  "dotenvy",
  "futures",
- "lazy_static",
  "prometheus",
  "reqwest",
  "serde",

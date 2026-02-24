@@ -8,7 +8,7 @@ Binary: `x402-approve` — CLI for token approval to facilitator.
 
 ## Depends On
 
-No workspace crates. External: alloy, serde, dashmap, rusqlite, hmac/sha2/subtle.
+No workspace crates. External: alloy, serde, dashmap, rusqlite, reqwest, hmac/sha2/subtle.
 
 ## Non-Obvious Patterns
 
@@ -26,3 +26,4 @@ No workspace crates. External: alloy, serde, dashmap, rusqlite, hmac/sha2/subtle
 - **NonceStore trait**: Both InMemory and Sqlite impls must be updated. Security-audit checks Sqlite is used in prod.
 - **Price parsing**: `scheme_server.rs` has edge-case tests — run them
 - **HMAC or security module**: Security-audit crate tests for constant-time usage patterns
+- **Shared utilities**: `network` (IP validation), `security` (`check_metrics_auth`), `facilitator_client` (HTTP settle call) are used by multiple crates

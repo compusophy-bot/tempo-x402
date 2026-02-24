@@ -1,107 +1,242 @@
-# tempo-x402
+<p align="center">
+  <h1 align="center">tempo-x402</h1>
+  <p align="center">Pay-per-request APIs on the Tempo blockchain. One HTTP header. One on-chain transfer. Zero custodial risk.</p>
+</p>
 
-Pay-per-request APIs on the Tempo blockchain. Security-hardened.
+<p align="center">
+  <a href="https://crates.io/crates/tempo-x402"><img src="https://img.shields.io/crates/v/tempo-x402.svg" alt="crates.io"></a>
+  <a href="https://docs.rs/tempo-x402"><img src="https://docs.rs/tempo-x402/badge.svg" alt="docs.rs"></a>
+  <a href="https://github.com/compusophy/tempo-x402/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
+</p>
 
-**[Live Demo](https://tempo-x402-app.vercel.app)** | **[Documentation](https://docs.rs/tempo-x402)** | **[crates.io](https://crates.io/crates/tempo-x402)**
+<p align="center">
+  <a href="https://docs.rs/tempo-x402">Documentation</a> &middot; <a href="https://tempo-x402-app.vercel.app">Live Demo</a> &middot; <a href="https://crates.io/crates/tempo-x402">crates.io</a> &middot; <a href="https://github.com/compusophy/tempo-x402">GitHub</a>
+</p>
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/tempo-x402?referralCode=tempo)
+<p align="center">
+  <a href="https://railway.com/template/tempo-x402?referralCode=tempo"><img src="https://railway.com/button.svg" alt="Deploy on Railway"></a>
+</p>
 
-## How It Works
+---
+
+**tempo-x402** implements [HTTP 402 Payment Required](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/402) for the Tempo blockchain. Clients sign EIP-712 payment authorizations, servers gate content behind 402 responses, and a facilitator settles payments on-chain via `transferFrom` &mdash; all in a single request/response cycle.
+
+The facilitator holds no user funds. It only has token approval to call `transferFrom` on behalf of clients who have explicitly approved it.
+
+## How it works
 
 ```
-┌────────┐         ┌────────┐         ┌─────────────┐         ┌───────┐
-│ Client │         │ Server │         │ Facilitator │         │ Chain │
-└───┬────┘         └───┬────┘         └──────┬──────┘         └───┬───┘
-    │                  │                     │                    │
-    │  GET /resource   │                     │                    │
-    │─────────────────>│                     │                    │
-    │                  │                     │                    │
-    │  402 + payment   │                     │                    │
-    │  requirements    │                     │                    │
-    │<─────────────────│                     │                    │
-    │                  │                     │                    │
-    │  [sign EIP-712]  │                     │                    │
-    │                  │                     │                    │
-    │  GET /resource   │                     │                    │
-    │  + PAYMENT-      │                     │                    │
-    │    SIGNATURE hdr │                     │                    │
-    │─────────────────>│                     │                    │
-    │                  │                     │                    │
-    │                  │  verify + settle    │                    │
-    │                  │────────────────────>│                    │
-    │                  │                     │  transferFrom()    │
-    │                  │                     │───────────────────>│
-    │                  │                     │<───────────────────│
-    │                  │<────────────────────│                    │
-    │                  │                     │                    │
-    │  200 + content   │                     │                    │
-    │<─────────────────│                     │                    │
+Client                     Server                    Facilitator               Chain
+  |                          |                            |                      |
+  |  GET /resource           |                            |                      |
+  |------------------------->|                            |                      |
+  |                          |                            |                      |
+  |  402 + price/token/to    |                            |                      |
+  |<-------------------------|                            |                      |
+  |                          |                            |                      |
+  |  [sign EIP-712]          |                            |                      |
+  |                          |                            |                      |
+  |  GET /resource           |                            |                      |
+  |  + PAYMENT-SIGNATURE     |                            |                      |
+  |------------------------->|                            |                      |
+  |                          |  POST /verify-and-settle   |                      |
+  |                          |--------------------------->|                      |
+  |                          |                            |  transferFrom()      |
+  |                          |                            |--------------------->|
+  |                          |                            |              tx hash |
+  |                          |                            |<---------------------|
+  |                          |         settlement result  |                      |
+  |                          |<---------------------------|                      |
+  |                          |                            |                      |
+  |  200 + content + tx hash |                            |                      |
+  |<-------------------------|                            |                      |
 ```
 
-**Client** requests a paid endpoint. **Server** returns 402 with price info. Client signs an EIP-712 payment authorization and retries. Server forwards to **Facilitator**, which verifies the signature and calls `transferFrom` on-chain. Server returns the content.
+1. Client requests a protected endpoint
+2. Server responds **402** with `PaymentRequirements` (price, token, recipient)
+3. Client signs an **EIP-712 `PaymentAuthorization`**, retries with `PAYMENT-SIGNATURE` header
+4. Server forwards to facilitator's `/verify-and-settle`
+5. Facilitator **atomically** verifies signature, checks balance/allowance/nonce, calls `transferFrom`
+6. Server returns the content + settlement transaction hash
 
-## Architecture
+## Quick start
 
-| Component | What it does | Crate |
-|-----------|--------------|-------|
-| **x402** | Types, EIP-712 signing, TIP-20, HTTP client | `tempo-x402` |
-| **Client** | SDK for making paid API requests | `tempo-x402-client` |
-| **Server** | Gates endpoints, returns 402 with payment middleware | `tempo-x402-server` |
-| **Facilitator** | Verifies signatures, settles payments on-chain | `tempo-x402-facilitator` |
-| **Gateway** | Proxy any HTTP API with payment rails | `tempo-x402-gateway` |
-| **Wallet** | WASM-compatible key generation & EIP-712 signing | `tempo-x402-wallet` |
-| **Identity** | Wallet generation, persistence, faucet funding, lineage | `tempo-x402-identity` |
-| **Agent** | Railway API client, clone spawning, instance management | `tempo-x402-agent` |
-| **Node** | Self-deploying node — gateway + identity + clone orchestration | `tempo-x402-node` |
-
-The facilitator holds no funds — it just has approval to call `transferFrom` on behalf of clients who have pre-approved it.
-
-## Install
+### Install
 
 ```bash
-cargo add tempo-x402
+cargo add tempo-x402          # core types + traits
+cargo add tempo-x402-client   # client SDK (optional)
 ```
 
-## Usage
+### Make a paid request
 
 ```rust
 use alloy::signers::local::PrivateKeySigner;
-use x402::{TempoSchemeClient, X402Client};
+use x402_client::{TempoSchemeClient, X402Client};
 
 #[tokio::main]
 async fn main() {
-    let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
+    let signer: PrivateKeySigner = "0xYOUR_PRIVATE_KEY".parse().unwrap();
     let client = X402Client::new(TempoSchemeClient::new(signer));
 
     let (response, settlement) = client
-        .fetch("https://api.example.com/paid-endpoint", reqwest::Method::GET)
+        .fetch("https://x402-gateway.example.com/g/my-api/data", reqwest::Method::GET)
         .await
         .unwrap();
 
     println!("{}", response.text().await.unwrap());
     if let Some(s) = settlement {
-        println!("tx: {}", s.transaction);
+        println!("tx: {}", s.transaction.unwrap_or_default());
     }
 }
 ```
 
-## Crates
+### Gate an endpoint (server-side)
 
-| Crate | Purpose |
-|-------|---------|
-| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core library — types, EIP-712 signing, TIP-20, HTTP client |
-| [`tempo-x402-client`](https://crates.io/crates/tempo-x402-client) | Client SDK for making paid API requests |
-| [`tempo-x402-server`](https://crates.io/crates/tempo-x402-server) | Resource server with payment middleware |
-| [`tempo-x402-facilitator`](https://crates.io/crates/tempo-x402-facilitator) | Payment verification and on-chain settlement |
-| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | API gateway — proxy any HTTP API with payment rails |
-| [`tempo-x402-wallet`](https://crates.io/crates/tempo-x402-wallet) | WASM-compatible wallet — key generation, EIP-712 signing |
-| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, persistence, faucet funding, lineage tracking |
-| [`tempo-x402-agent`](https://crates.io/crates/tempo-x402-agent) | Railway API client, clone spawning, instance management |
-| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying node — gateway + identity bootstrap + clone orchestration |
-| [`tempo-x402-app`](https://crates.io/crates/tempo-x402-app) | WASM demo app — kitchen sink for all payment features (unpublished) |
-| [`tempo-x402-security-audit`](https://crates.io/crates/tempo-x402-security-audit) | Security invariant tests enforced on every CI build (unpublished) |
+```rust
+use x402_server::config::PaymentConfigBuilder;
 
-## Deployed Services
+let config = PaymentConfigBuilder::new(facilitator_url, recipient_address)
+    .route("GET", "/premium", "$0.01", "Premium content")
+    .route("POST", "/generate", "$0.05", "AI generation")
+    .build();
+```
+
+### Monetize any API via the gateway
+
+No code changes to the upstream API &mdash; the gateway proxies requests and handles payment.
+
+```bash
+# Register an endpoint (pays a small platform fee)
+curl -X POST https://x402-gateway.example.com/register \
+  -H "Content-Type: application/json" \
+  -H "PAYMENT-SIGNATURE: <base64-payment>" \
+  -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
+
+# Clients call through the gateway
+curl https://x402-gateway.example.com/g/my-api/users/123 \
+  -H "PAYMENT-SIGNATURE: <base64-payment>"
+```
+
+Target APIs receive verification headers: `X-X402-Verified`, `X-X402-Payer`, `X-X402-Amount`, `X-X402-TxHash`.
+
+## Architecture
+
+```
+crates/
+├── tempo-x402/                # Core: types, EIP-712, TIP-20, nonce store, HMAC, traits
+├── tempo-x402-client/         # Client SDK + CLI for making paid requests
+├── tempo-x402-server/         # Resource server with payment middleware (actix-web)
+├── tempo-x402-facilitator/    # Payment verification + on-chain settlement (actix-web)
+├── tempo-x402-gateway/        # API proxy: register endpoints, pay-per-request routing
+├── tempo-x402-wallet/         # WASM-compatible wallet: key gen + EIP-712 signing
+├── tempo-x402-node/           # Self-deploying node: gateway + identity + clone orchestration
+├── tempo-x402-identity/       # Wallet generation, persistence, faucet, parent registration
+├── tempo-x402-agent/          # Railway API client + clone lifecycle management
+├── tempo-x402-app/            # Leptos WASM demo SPA (not published)
+└── tempo-x402-security-audit/ # 15 security invariant tests enforced on every build
+```
+
+| Crate | What it does | Install |
+|-------|-------------|---------|
+| [`tempo-x402`](https://docs.rs/tempo-x402) | Core library &mdash; types, EIP-712, TIP-20, nonce store, HMAC | `cargo add tempo-x402` |
+| [`tempo-x402-client`](https://docs.rs/tempo-x402-client) | Client SDK for making paid API requests | `cargo add tempo-x402-client` |
+| [`tempo-x402-server`](https://docs.rs/tempo-x402-server) | Resource server with payment middleware | `cargo add tempo-x402-server` |
+| [`tempo-x402-facilitator`](https://docs.rs/tempo-x402-facilitator) | Payment verification and on-chain settlement | `cargo add tempo-x402-facilitator` |
+| [`tempo-x402-gateway`](https://docs.rs/tempo-x402-gateway) | API gateway &mdash; proxy any HTTP API with payment rails | `cargo add tempo-x402-gateway` |
+| [`tempo-x402-wallet`](https://docs.rs/tempo-x402-wallet) | WASM-compatible wallet for browsers and edge runtimes | `cargo add tempo-x402-wallet` |
+| [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node with clone orchestration | `cargo add tempo-x402-node` |
+| [`tempo-x402-identity`](https://docs.rs/tempo-x402-identity) | Wallet generation, persistence, faucet funding | `cargo add tempo-x402-identity` |
+| [`tempo-x402-agent`](https://docs.rs/tempo-x402-agent) | Railway API client + clone spawning | `cargo add tempo-x402-agent` |
+
+## Gateway API
+
+The gateway lets you monetize any HTTP API without modifying its source code.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/register` | Platform fee | Register a new endpoint |
+| `GET` | `/endpoints` | Free | List all active endpoints |
+| `GET` | `/endpoints/:slug` | Free | Get endpoint details |
+| `PATCH` | `/endpoints/:slug` | Platform fee | Update endpoint (owner only) |
+| `DELETE` | `/endpoints/:slug` | Platform fee | Deactivate endpoint (owner only) |
+| `GET` | `/analytics` | Free | Per-endpoint payment stats and revenue |
+| `GET` | `/analytics/:slug` | Free | Stats for a single endpoint |
+| `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target API |
+| `GET` | `/health` | Free | Health check |
+| `GET` | `/metrics` | Bearer token | Prometheus metrics |
+
+## Network
+
+| | |
+|-|-|
+| **Chain** | Tempo Moderato (testnet) |
+| **Chain ID** | `42431` ([CAIP-2](https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-2.md): `eip155:42431`) |
+| **Token** | pathUSD &mdash; `0x20c0000000000000000000000000000000000000` (6 decimals) |
+| **Scheme** | `tempo-tip20` |
+| **RPC** | `https://rpc.moderato.tempo.xyz` |
+| **Explorer** | `https://explore.moderato.tempo.xyz` |
+
+## Prerequisites
+
+Before making payments:
+
+```bash
+# 1. Fund your wallet with testnet pathUSD
+cast rpc tempo_fundAddress 0xYOUR_ADDRESS --rpc-url https://rpc.moderato.tempo.xyz
+
+# 2. Approve the facilitator to spend your tokens
+cargo run --bin x402-approve
+```
+
+Or programmatically:
+
+```rust
+use x402::tip20;
+tip20::approve(&provider, token, facilitator_address, amount).await?;
+```
+
+## Environment variables
+
+| Variable | Used by | Description |
+|----------|---------|-------------|
+| `EVM_ADDRESS` | server | Payment recipient address |
+| `EVM_PRIVATE_KEY` | client | Client wallet private key |
+| `FACILITATOR_URL` | server | Facilitator endpoint (default: `localhost:4022`) |
+| `FACILITATOR_PRIVATE_KEY` | facilitator, gateway, node | Facilitator wallet key |
+| `FACILITATOR_ADDRESS` | approve | Facilitator address for token approval |
+| `FACILITATOR_SHARED_SECRET` | server, facilitator | HMAC shared secret for request auth |
+| `RESOURCE_SERVER_URL` | client | Server endpoint (default: `localhost:4021`) |
+| `RPC_URL` | all | Tempo RPC endpoint |
+| `ALLOWED_ORIGINS` | server, facilitator | Comma-separated CORS origins |
+| `RATE_LIMIT_RPM` | server, facilitator | Rate limit per minute per IP |
+| `METRICS_TOKEN` | server, facilitator, gateway | Bearer token for `/metrics` endpoint |
+| `WEBHOOK_URLS` | facilitator, gateway | Comma-separated settlement webhook URLs |
+
+## Security
+
+This project enforces security invariants through automated testing. The `tempo-x402-security-audit` crate runs 15 tests on every build that scan all production source code for:
+
+- No hardcoded private keys in production code
+- HMAC verification reaches constant-time comparison on all paths (via `subtle` crate)
+- All `reqwest` HTTP clients disable redirects (SSRF protection)
+- Webhook URLs require HTTPS with private IP blocking and DNS rebinding prevention
+- HTTP error responses never leak internal details (balances, allowances, stack traces)
+- SQLite nonce store is mandatory in production (no in-memory fallback)
+- Parameterized SQL queries only (no string formatting)
+- HMAC shared secret is mandatory (not `Option`)
+- Private keys never appear in tracing/logging macros
+
+Additional hardening:
+
+- **EIP-2 high-s rejection** prevents signature malleability
+- **Per-payer mutex locks** prevent TOCTOU races during settlement
+- **Nonces claimed before `transferFrom`**, never released on failure
+- **Integer-only arithmetic** for all token amounts (never `f64`)
+- **SSRF protection** on proxy and webhooks: HTTPS-only, private IP blocking, DNS resolution validation, CRLF rejection
+- **Atomic slug reservation** with `BEGIN IMMEDIATE` to prevent race conditions
+
+## Deployed services
 
 | Service | URL |
 |---------|-----|
@@ -110,12 +245,18 @@ async fn main() {
 | Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
 | Gateway | https://x402-gateway-production-5018.up.railway.app |
 
-## Network
+Health check: `GET /health` on any service.
 
-- **Chain**: Tempo Moderato (testnet)
-- **Chain ID**: 42431
-- **Token**: pathUSD `0x20c0000000000000000000000000000000000000` (6 decimals)
-- **RPC**: https://rpc.moderato.tempo.xyz
+## Development
+
+```bash
+cargo build --workspace            # build everything
+cargo test --workspace             # run all tests (including security audit)
+cargo clippy --workspace -- -D warnings
+cargo fmt --all -- --check
+```
+
+OpenAPI 3.1 specs are available in the `openapi/` directory for the facilitator, server, and gateway.
 
 ## License
 
