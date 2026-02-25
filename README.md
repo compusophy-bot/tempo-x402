@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center">Pay-per-request APIs on the Tempo blockchain. One HTTP header. One on-chain transfer. Zero custodial risk. Security hardened.</p>
+  <p align="center">Security-hardened, ultra-fast pay-per-request APIs on the Tempo blockchain &mdash; one HTTP header, one on-chain transfer, zero custodial risk.</p>
 </p>
 
 <p align="center">
