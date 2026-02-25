@@ -15,6 +15,7 @@ use x402_gateway::{
 
 mod db;
 mod routes;
+mod soul_observer;
 mod state;
 
 use state::NodeState;
@@ -222,6 +223,33 @@ async fn main() -> std::io::Result<()> {
                     tracing::warn!("Parent registration failed (non-fatal): {e}");
                 }
             });
+        }
+    }
+
+    // ── Soul (agentic thinking loop) ───────────────────────────────────
+    match x402_soul::SoulConfig::from_env() {
+        Ok(soul_config) => {
+            let generation = soul_config.generation;
+            let dormant = soul_config.gemini_api_key.is_none();
+            match x402_soul::Soul::new(soul_config) {
+                Ok(soul) => {
+                    let observer = soul_observer::NodeObserverImpl::new(
+                        node_state.gateway.clone(),
+                        identity.clone(),
+                        generation,
+                        node_state.started_at,
+                        db_path.clone(),
+                    );
+                    soul.spawn(observer);
+                    tracing::info!(dormant = dormant, generation = generation, "Soul spawned");
+                }
+                Err(e) => {
+                    tracing::warn!("Soul init failed (non-fatal): {e}");
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Soul config failed (non-fatal): {e}");
         }
     }
 

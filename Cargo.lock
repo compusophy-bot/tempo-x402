@@ -5324,6 +5324,7 @@ dependencies = [
  "tempo-x402-facilitator",
  "tempo-x402-gateway",
  "tempo-x402-identity",
+ "tempo-x402-soul",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5360,6 +5361,22 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "tempo-x402-soul"
+version = "0.6.8"
+dependencies = [
+ "chrono",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempo-x402",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

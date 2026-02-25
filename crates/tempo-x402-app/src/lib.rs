@@ -1086,7 +1086,6 @@ fn DashboardPage() -> impl IntoView {
     }
 }
 
-
 /// Footer
 #[component]
 fn Footer() -> impl IntoView {

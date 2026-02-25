@@ -19,6 +19,7 @@ x402-agent = { workspace = true }
 x402-facilitator = { workspace = true }
 x402-gateway = { workspace = true }
 x402-identity = { workspace = true }
+x402-soul = { workspace = true }
 actix-web = { workspace = true }
 actix-files = { workspace = true }
 actix-governor = { workspace = true }
