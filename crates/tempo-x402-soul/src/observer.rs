@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::SoulError;
 
 /// A snapshot of the node's current state, captured by the observer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeSnapshot {
     /// How long the node has been running (seconds).
     pub uptime_secs: u64,

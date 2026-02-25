@@ -1,4 +1,4 @@
-//! The thinking loop: periodic observe → think → record cycle.
+//! The thinking loop: periodic observe → think → record cycle with dynamic attention.
 
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ use crate::db::SoulDatabase;
 use crate::error::SoulError;
 use crate::gemini::GeminiClient;
 use crate::memory::{Thought, ThoughtType};
-use crate::observer::NodeObserver;
+use crate::observer::{NodeObserver, NodeSnapshot};
 
 /// The thinking loop that drives the soul.
 pub struct ThinkingLoop {
@@ -36,30 +36,62 @@ impl ThinkingLoop {
         }
     }
 
-    /// Run the thinking loop forever.
+    /// Run the thinking loop forever with adaptive interval.
     pub async fn run(&self) {
-        let interval = std::time::Duration::from_secs(self.config.think_interval_secs);
+        let base_interval = self.config.think_interval_secs as f64;
+        let max_interval = base_interval * 10.0;
+        let mut current_interval = base_interval;
+        let mut prev_snapshot: Option<NodeSnapshot> = None;
+
         tracing::info!(
-            interval_secs = self.config.think_interval_secs,
+            base_interval_secs = self.config.think_interval_secs,
+            max_interval_secs = max_interval,
             dormant = self.gemini.is_none(),
-            "Soul thinking loop started"
+            "Soul thinking loop started (dynamic attention)"
         );
 
         loop {
-            if let Err(e) = self.think_cycle().await {
+            let snapshot = match self.observer.observe() {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Soul observe failed");
+                    tokio::time::sleep(std::time::Duration::from_secs_f64(current_interval)).await;
+                    continue;
+                }
+            };
+
+            let urgency = compute_urgency(prev_snapshot.as_ref(), &snapshot);
+
+            if let Err(e) = self.think_cycle_with_snapshot(&snapshot).await {
                 tracing::warn!(error = %e, "Soul think cycle failed");
             }
-            tokio::time::sleep(interval).await;
+
+            // Adapt interval based on urgency
+            if urgency == 0.0 {
+                // Nothing changed — exponentially back off
+                current_interval = (current_interval * 1.5).min(max_interval);
+            } else {
+                // Something happened — snap back proportional to urgency
+                current_interval = (base_interval / urgency).clamp(base_interval, max_interval);
+            }
+
+            tracing::debug!(
+                urgency = urgency,
+                next_interval_secs = current_interval,
+                "Soul attention adjusted"
+            );
+
+            prev_snapshot = Some(snapshot);
+
+            tokio::time::sleep(std::time::Duration::from_secs_f64(current_interval)).await;
         }
     }
 
-    /// Execute one think cycle: observe → think → record.
-    async fn think_cycle(&self) -> Result<(), SoulError> {
-        // 1. Observe
-        let snapshot = self.observer.observe()?;
-        let snapshot_json = serde_json::to_string(&snapshot)?;
+    /// Execute one think cycle with a pre-captured snapshot.
+    async fn think_cycle_with_snapshot(&self, snapshot: &NodeSnapshot) -> Result<(), SoulError> {
+        let snapshot_json = serde_json::to_string(snapshot)?;
 
-        // 2. Record observation
+        // Record observation
         let obs_thought = Thought {
             id: uuid::Uuid::new_v4().to_string(),
             thought_type: ThoughtType::Observation,
@@ -76,7 +108,7 @@ impl ThinkingLoop {
         };
         self.db.insert_thought(&obs_thought)?;
 
-        // 3. If dormant (no API key), stop here
+        // If dormant (no API key), stop here
         let gemini = match &self.gemini {
             Some(g) => g,
             None => {
@@ -86,7 +118,7 @@ impl ThinkingLoop {
             }
         };
 
-        // 4. Build prompt from snapshot + recent thoughts
+        // Build prompt from snapshot + recent thoughts
         let recent = self.db.recent_thoughts(5)?;
         let recent_summary: Vec<String> = recent
             .iter()
@@ -121,10 +153,10 @@ impl ThinkingLoop {
                 .unwrap_or_default()
         );
 
-        // 5. Think via Gemini
+        // Think via Gemini
         let response = gemini.think(&system_prompt, &user_prompt).await?;
 
-        // 6. Record reasoning
+        // Record reasoning
         let reasoning = Thought {
             id: uuid::Uuid::new_v4().to_string(),
             thought_type: ThoughtType::Reasoning,
@@ -134,7 +166,7 @@ impl ThinkingLoop {
         };
         self.db.insert_thought(&reasoning)?;
 
-        // 7. Extract and record decisions (lines starting with [DECISION])
+        // Extract and record decisions (lines starting with [DECISION])
         for line in response.lines() {
             let trimmed = line.trim();
             if let Some(decision_text) = trimmed.strip_prefix("[DECISION]") {
@@ -153,7 +185,7 @@ impl ThinkingLoop {
             }
         }
 
-        // 8. Update state
+        // Update state
         self.increment_cycle_count()?;
 
         Ok(())
@@ -171,5 +203,141 @@ impl ThinkingLoop {
         self.db
             .set_state("last_think_at", &chrono::Utc::now().timestamp().to_string())?;
         Ok(())
+    }
+}
+
+/// Compute urgency score (0.0–1.0) by diffing two snapshots.
+fn compute_urgency(prev: Option<&NodeSnapshot>, curr: &NodeSnapshot) -> f64 {
+    let prev = match prev {
+        Some(p) => p,
+        None => return 1.0, // First observation ever — full analysis needed
+    };
+
+    if prev == curr {
+        return 0.0; // Nothing changed
+    }
+
+    let mut urgency: f64 = 0.0;
+
+    // Revenue changed
+    if prev.total_revenue != curr.total_revenue {
+        urgency = urgency.max(0.6);
+    }
+
+    // New endpoint registered
+    if curr.endpoint_count > prev.endpoint_count {
+        urgency = urgency.max(0.5);
+    }
+
+    // Endpoint count decreased
+    if curr.endpoint_count < prev.endpoint_count {
+        urgency = urgency.max(0.7);
+    }
+
+    // New child spawned
+    if curr.children_count > prev.children_count {
+        urgency = urgency.max(0.8);
+    }
+
+    // Child lost
+    if curr.children_count < prev.children_count {
+        urgency = urgency.max(0.9);
+    }
+
+    // Payment count changed but revenue didn't (unusual)
+    if prev.total_payments != curr.total_payments && prev.total_revenue == curr.total_revenue {
+        urgency = urgency.max(0.4);
+    }
+
+    urgency
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_snapshot() -> NodeSnapshot {
+        NodeSnapshot {
+            uptime_secs: 100,
+            endpoint_count: 3,
+            total_revenue: "1000000".to_string(),
+            total_payments: 5,
+            children_count: 1,
+            wallet_address: Some("0xabc".to_string()),
+            instance_id: Some("node-1".to_string()),
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn first_observation_max_urgency() {
+        let snap = base_snapshot();
+        assert_eq!(compute_urgency(None, &snap), 1.0);
+    }
+
+    #[test]
+    fn no_change_zero_urgency() {
+        let snap = base_snapshot();
+        assert_eq!(compute_urgency(Some(&snap), &snap), 0.0);
+    }
+
+    #[test]
+    fn revenue_change_urgency() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.total_revenue = "2000000".to_string();
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.6);
+    }
+
+    #[test]
+    fn child_lost_highest_urgency() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.children_count = 0;
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.9);
+    }
+
+    #[test]
+    fn new_child_spawned() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.children_count = 2;
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.8);
+    }
+
+    #[test]
+    fn endpoint_added() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.endpoint_count = 4;
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.5);
+    }
+
+    #[test]
+    fn endpoint_removed() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.endpoint_count = 2;
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.7);
+    }
+
+    #[test]
+    fn multiple_signals_takes_highest() {
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.total_revenue = "2000000".to_string(); // 0.6
+        curr.children_count = 0; // 0.9
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.9);
+    }
+
+    #[test]
+    fn uptime_only_change_is_zero() {
+        // Uptime always changes but isn't tracked as a signal
+        let prev = base_snapshot();
+        let mut curr = base_snapshot();
+        curr.uptime_secs = 200;
+        // PartialEq will differ but no signal matches, so urgency stays 0
+        // Actually the snapshots differ so we enter the loop, but no signal fires
+        assert_eq!(compute_urgency(Some(&prev), &curr), 0.0);
     }
 }
