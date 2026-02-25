@@ -7,9 +7,9 @@ use crate::error::SoulError;
 pub struct SoulConfig {
     /// Gemini API key. If absent, soul runs in dormant mode (observe-only).
     pub gemini_api_key: Option<String>,
-    /// Fast model for routine thinking (default: gemini-2.0-flash).
+    /// Fast model for routine thinking (default: gemini-3-flash-preview).
     pub gemini_model_fast: String,
-    /// Deeper model for complex reasoning (default: gemini-2.5-pro).
+    /// Deeper model for complex reasoning (default: gemini-3.1-pro-preview).
     pub gemini_model_think: String,
     /// Path to the soul's SQLite database (default: ./soul.db).
     pub db_path: String,
@@ -35,11 +35,11 @@ impl SoulConfig {
             .ok()
             .filter(|s| !s.is_empty());
 
-        let gemini_model_fast =
-            std::env::var("GEMINI_MODEL_FAST").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
+        let gemini_model_fast = std::env::var("GEMINI_MODEL_FAST")
+            .unwrap_or_else(|_| "gemini-3-flash-preview".to_string());
 
-        let gemini_model_think =
-            std::env::var("GEMINI_MODEL_THINK").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+        let gemini_model_think = std::env::var("GEMINI_MODEL_THINK")
+            .unwrap_or_else(|_| "gemini-3.1-pro-preview".to_string());
 
         let db_path = std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "./soul.db".to_string());
 
