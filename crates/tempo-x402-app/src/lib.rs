@@ -85,7 +85,6 @@ pub fn App() -> impl IntoView {
                 <Routes>
                     <Route path="/" view=HomePage />
                     <Route path="/dashboard" view=DashboardPage />
-                    <Route path="/docs" view=DocsPage />
                     <Route path="/*any" view=NotFound />
                 </Routes>
                 <Footer />
@@ -107,7 +106,7 @@ fn Header() -> impl IntoView {
                 <div class="nav-links">
                     <a href="/">"Demo"</a>
                     <a href="/dashboard">"Dashboard"</a>
-                    <a href="/docs">"Docs"</a>
+                    <a href="https://docs.rs/tempo-x402" target="_blank">"Docs"</a>
                     <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
                 </div>
                 <WalletButtons wallet=wallet set_wallet=set_wallet />
@@ -1087,116 +1086,6 @@ fn DashboardPage() -> impl IntoView {
     }
 }
 
-/// Documentation page
-#[component]
-fn DocsPage() -> impl IntoView {
-    view! {
-                <div class="page docs">
-                    <h1>"Documentation"</h1>
-
-                    <p class="subtitle">
-                        "Full reference: "
-                        <a href="https://github.com/compusophy/tempo-x402/blob/main/llms.txt" target="_blank">"llms.txt"</a>
-                    </p>
-
-                    <section>
-                        <h2>"Quick Start"</h2>
-                        <pre class="code-block">
-    {r#"// Add to Cargo.toml
-[dependencies]
-tempo-x402 = "0.6"
-
-// Make paid requests
-use alloy::signers::local::PrivateKeySigner;
-use x402::{TempoSchemeClient, X402Client};
-
-let signer: PrivateKeySigner = "0xYOUR_KEY".parse().unwrap();
-let client = X402Client::new(TempoSchemeClient::new(signer));
-
-let (response, settlement) = client
-    .fetch("https://api.example.com/paid-endpoint", reqwest::Method::GET)
-    .await?;
-
-println!("{}", response.text().await?);
-if let Some(s) = settlement {
-    println!("tx: {}", s.transaction);
-}
-"#}
-                        </pre>
-                    </section>
-
-                    <section>
-                        <h2>"Gateway"</h2>
-                        <p>"Register any HTTP API with a price. Clients pay per-request via " <code>"/g/{slug}"</code> "."</p>
-                        <pre class="code-block">
-    {r#"# Register an endpoint (returns 402 — sign and retry)
-    curl -X POST https://x402-gateway.example.com/register \
-    -H "Content-Type: application/json" \
-  -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
-
-# Call a proxied endpoint
-curl https://x402-gateway.example.com/g/my-api/data \
-  -H "PAYMENT-SIGNATURE: <base64-encoded-payment>"
-"#}
-                        </pre>
-                        <h3>"Gateway Endpoints"</h3>
-                        <ul>
-                            <li><code>"POST /register"</code>" — Register a new endpoint (platform fee)"</li>
-                            <li><code>"GET /endpoints"</code>" — List all endpoints"</li>
-                            <li><code>"GET /analytics"</code>" — Per-endpoint payment stats and revenue"</li>
-                            <li><code>"ANY /g/{slug}/*"</code>" — Proxy to target API (endpoint price)"</li>
-                        </ul>
-                    </section>
-
-                    <section>
-                        <h2>"Server SDK — Multi-Endpoint Pricing"</h2>
-                        <pre class="code-block">
-    {r#"use x402_server::{PaymentConfigBuilder, PaymentGateConfig};
-
-let config = PaymentConfigBuilder::new(scheme, pay_to, &gate_config)
-    .route("GET", "/blockNumber", "$0.001", Some("Latest block"))
-    .route("POST", "/submit", "$0.01", Some("Submit transaction"))
-    .route("GET", "/data", "$0.05", None)
-    .build();
-"#}
-                        </pre>
-                    </section>
-
-                    <section>
-                        <h2>"Crates"</h2>
-                        <ul>
-                            <li><a href="https://crates.io/crates/tempo-x402">"tempo-x402"</a>" — Core types, signing, HTTP client"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-server">"tempo-x402-server"</a>" — Server middleware (multi-endpoint pricing)"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-facilitator">"tempo-x402-facilitator"</a>" — Payment verification and settlement"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-gateway">"tempo-x402-gateway"</a>" — API gateway with analytics"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-wallet">"tempo-x402-wallet"</a>" — WASM wallet (signing + key gen)"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-node">"tempo-x402-node"</a>" — Self-deploying node with clone orchestration"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-identity">"tempo-x402-identity"</a>" — Wallet generation and persistence"</li>
-                            <li><a href="https://crates.io/crates/tempo-x402-agent">"tempo-x402-agent"</a>" — Railway API client + clone orchestration"</li>
-                        </ul>
-                    </section>
-
-                    <section>
-                        <h2>"Network"</h2>
-                        <ul>
-                            <li>"Chain: Tempo Moderato — Chain ID " <code>"42431"</code></li>
-                            <li>"Token: pathUSD " <code>"0x20c0000000000000000000000000000000000000"</code> " (6 decimals)"</li>
-                            <li>"RPC: " <a href="https://rpc.moderato.tempo.xyz">"https://rpc.moderato.tempo.xyz"</a></li>
-                            <li>"Explorer: " <a href="https://explore.moderato.tempo.xyz" target="_blank">"https://explore.moderato.tempo.xyz"</a></li>
-                        </ul>
-                    </section>
-
-                    <section>
-                        <h2>"Links"</h2>
-                        <ul>
-                            <li><a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a></li>
-                            <li><a href="https://github.com/compusophy/tempo-x402/blob/main/llms.txt" target="_blank">"llms.txt (full API reference)"</a></li>
-                            <li><a href="https://explore.moderato.tempo.xyz" target="_blank">"Block Explorer"</a></li>
-                        </ul>
-                    </section>
-                </div>
-            }
-}
 
 /// Footer
 #[component]

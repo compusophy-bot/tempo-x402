@@ -278,32 +278,6 @@ body {
     font-style: italic;
 }
 
-/* Docs */
-.docs section {
-    margin-bottom: 2rem;
-}
-
-.docs h2 {
-    margin-bottom: 1rem;
-}
-
-.docs ul {
-    padding-left: 1.5rem;
-}
-
-.docs li {
-    margin-bottom: 0.5rem;
-}
-
-.docs a {
-    color: var(--primary);
-    text-decoration: none;
-}
-
-.docs a:hover {
-    text-decoration: underline;
-}
-
 /* Footer */
 .footer {
     border-top: 1px solid var(--surface-light);

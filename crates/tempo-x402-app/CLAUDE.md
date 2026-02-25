@@ -1,6 +1,6 @@
 # tempo-x402-app
 
-Leptos WASM SPA. Not published. Deployed at https://tempo-x402-app.vercel.app
+Leptos WASM SPA. Not published. Each gateway/node instance serves its own bundled WASM frontend.
 
 Demo app with three wallet modes (MetaMask, demo key, encrypted embedded wallet). Makes paid requests to the gateway, shows settlement info.
 
@@ -23,5 +23,4 @@ Crate type: `["cdylib", "rlib"]` — compiles to WASM, no binary.
 - **Payment signing**: `api.rs` — `sign_for_wallet()` dispatches by WalletMode
 - **MetaMask integration**: `wallet.rs` — WASM FFI to `window.ethereum`
 - **Adding dependencies**: Must be WASM-compatible
-- **Docs page**: `lib.rs` `DocsPage` component. Points to `llms.txt` as single source of truth for API reference — update llms.txt, not the DocsPage, for API details.
 - **Dashboard analytics**: `lib.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()` for per-endpoint stats

@@ -4,7 +4,7 @@ Pay-per-request APIs on the Tempo blockchain. Clients sign EIP-712 payment
 authorizations, servers gate content behind HTTP 402, facilitators settle
 payments on-chain via transferFrom.
 
-Live demo: https://tempo-x402-app.vercel.app
+Live demo: https://x402-gateway-production-5018.up.railway.app
 Source: https://github.com/compusophy/tempo-x402
 Crates: https://crates.io/crates/tempo-x402
 
@@ -274,7 +274,6 @@ pub enum X402Error {
 
 | Service | URL |
 |---------|-----|
-| Demo | https://tempo-x402-app.vercel.app |
 | Server | https://x402-server-production.up.railway.app |
 | Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
 | Gateway | https://x402-gateway-production-5018.up.railway.app |

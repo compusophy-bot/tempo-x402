@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.rs/tempo-x402">Documentation</a> &middot; <a href="https://tempo-x402-app.vercel.app">Live Demo</a> &middot; <a href="https://crates.io/crates/tempo-x402">crates.io</a> &middot; <a href="https://github.com/compusophy/tempo-x402">GitHub</a>
+  <a href="https://docs.rs/tempo-x402">Documentation</a> &middot; <a href="https://x402-gateway-production-5018.up.railway.app">Live Demo</a> &middot; <a href="https://crates.io/crates/tempo-x402">crates.io</a> &middot; <a href="https://github.com/compusophy/tempo-x402">GitHub</a>
 </p>
 
 <p align="center">
@@ -240,7 +240,6 @@ Additional hardening:
 
 | Service | URL |
 |---------|-----|
-| Demo | https://tempo-x402-app.vercel.app |
 | Server | https://x402-server-production.up.railway.app |
 | Facilitator | https://x402-facilitator-production-ec87.up.railway.app |
 | Gateway | https://x402-gateway-production-5018.up.railway.app |

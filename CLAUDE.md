@@ -41,7 +41,6 @@ Each crate has its own `CLAUDE.md` with local context. Read that first when work
 - **Server**: https://x402-server-production.up.railway.app (port 4021)
 - **Facilitator**: https://x402-facilitator-production-ec87.up.railway.app (port 4022)
 - **Gateway**: https://x402-gateway-production-5018.up.railway.app (port 4023)
-- **Demo**: https://tempo-x402-app.vercel.app
 - **crates.io**: https://crates.io/crates/tempo-x402
 - **GitHub**: https://github.com/compusophy/tempo-x402
 

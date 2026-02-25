@@ -42,7 +42,6 @@ done
 
 # Check deployment URLs are mentioned in llms.txt
 URLS=(
-    "https://tempo-x402-app.vercel.app"
     "https://x402-server-production.up.railway.app"
     "https://x402-facilitator-production-ec87.up.railway.app"
     "https://x402-gateway-production-5018.up.railway.app"
