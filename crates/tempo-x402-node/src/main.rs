@@ -185,21 +185,64 @@ async fn main() -> std::io::Result<()> {
         );
     }
 
+    // ── Soul init (before NodeState so we can store the DB ref) ────────
+    let (soul_db, soul_dormant, soul_instance, soul_generation) =
+        match x402_soul::SoulConfig::from_env() {
+            Ok(soul_config) => {
+                let dormant = soul_config.gemini_api_key.is_none();
+                let generation = soul_config.generation;
+                match x402_soul::Soul::new(soul_config) {
+                    Ok(soul) => {
+                        let db = soul.database().clone();
+                        (Some(db), dormant, Some(soul), generation)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Soul init failed (non-fatal): {e}");
+                        (None, true, None, generation)
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Soul config failed (non-fatal): {e}");
+                (None, true, None, 0)
+            }
+        };
+
     // ── Node state ──────────────────────────────────────────────────────
+    let started_at = chrono::Utc::now();
     let node_state = NodeState {
         gateway: gateway_state,
         identity: identity.clone(),
         agent,
-        started_at: chrono::Utc::now(),
+        started_at,
         db_path: db_path.clone(),
         clone_price,
         clone_price_amount,
         clone_max_children,
+        soul_db,
+        soul_dormant,
     };
 
     let node_data = web::Data::new(node_state.clone());
     let gateway_data = web::Data::new(node_state.gateway.clone());
     let facilitator_data = facilitator_state.map(web::Data::from);
+
+    // ── Soul spawn (after NodeState so we can build the observer) ─────
+    if let Some(soul) = soul_instance {
+        let observer = soul_observer::NodeObserverImpl::new(
+            node_state.gateway.clone(),
+            identity.clone(),
+            soul_generation,
+            started_at,
+            db_path.clone(),
+        );
+        soul.spawn(observer);
+        tracing::info!(
+            dormant = node_state.soul_dormant,
+            generation = soul_generation,
+            "Soul spawned"
+        );
+    }
 
     // ── Background tasks ────────────────────────────────────────────────
     if let Some(ref id) = identity {
@@ -223,33 +266,6 @@ async fn main() -> std::io::Result<()> {
                     tracing::warn!("Parent registration failed (non-fatal): {e}");
                 }
             });
-        }
-    }
-
-    // ── Soul (agentic thinking loop) ───────────────────────────────────
-    match x402_soul::SoulConfig::from_env() {
-        Ok(soul_config) => {
-            let generation = soul_config.generation;
-            let dormant = soul_config.gemini_api_key.is_none();
-            match x402_soul::Soul::new(soul_config) {
-                Ok(soul) => {
-                    let observer = soul_observer::NodeObserverImpl::new(
-                        node_state.gateway.clone(),
-                        identity.clone(),
-                        generation,
-                        node_state.started_at,
-                        db_path.clone(),
-                    );
-                    soul.spawn(observer);
-                    tracing::info!(dormant = dormant, generation = generation, "Soul spawned");
-                }
-                Err(e) => {
-                    tracing::warn!("Soul init failed (non-fatal): {e}");
-                }
-            }
-        }
-        Err(e) => {
-            tracing::warn!("Soul config failed (non-fatal): {e}");
         }
     }
 
@@ -486,9 +502,10 @@ async fn main() -> std::io::Result<()> {
             .configure(x402_gateway::routes::endpoints::configure)
             .configure(x402_gateway::routes::analytics::configure)
             .configure(x402_gateway::routes::gateway::configure)
-            // Node routes (identity, clone)
+            // Node routes (identity, clone, soul)
             .configure(crate::routes::instance::configure)
-            .configure(crate::routes::clone::configure);
+            .configure(crate::routes::clone::configure)
+            .configure(crate::routes::soul::configure);
 
         // Mount facilitator HTTP routes if embedded
         if let Some(ref fac_data) = facilitator_data {

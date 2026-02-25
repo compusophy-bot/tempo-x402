@@ -670,6 +670,7 @@ fn DashboardPage() -> impl IntoView {
     let (analytics, set_analytics) = create_signal(None::<serde_json::Value>);
     let (child_health, set_child_health) =
         create_signal(std::collections::HashMap::<String, serde_json::Value>::new());
+    let (soul_status, set_soul_status) = create_signal(None::<serde_json::Value>);
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal(None::<String>);
     let (tick, set_tick) = create_signal(0u32);
@@ -733,6 +734,11 @@ fn DashboardPage() -> impl IntoView {
             // Fetch analytics
             if let Ok(data) = api::fetch_analytics().await {
                 set_analytics.set(Some(data));
+            }
+
+            // Fetch soul status
+            if let Ok(data) = api::fetch_soul_status().await {
+                set_soul_status.set(Some(data));
             }
 
             set_loading.set(false);
@@ -886,6 +892,9 @@ fn DashboardPage() -> impl IntoView {
                                 <span class="stat-value">{active_endpoints.to_string()}</span>
                             </div>
                         </div>
+
+                        // Soul panel
+                        <SoulPanel status=soul_status />
 
                         // Network topology
                         <div class="topology-section">
@@ -1082,6 +1091,156 @@ fn DashboardPage() -> impl IntoView {
                     }
                 }}
             </Show>
+        </div>
+    }
+}
+
+/// Format a unix timestamp as relative time (e.g., "2m ago")
+fn format_relative_time(unix_ts: i64) -> String {
+    let now = (js_sys::Date::now() / 1000.0) as i64;
+    let diff = now - unix_ts;
+    if diff < 0 {
+        return "just now".to_string();
+    }
+    if diff < 60 {
+        format!("{}s ago", diff)
+    } else if diff < 3600 {
+        format!("{}m ago", diff / 60)
+    } else if diff < 86400 {
+        format!("{}h ago", diff / 3600)
+    } else {
+        format!("{}d ago", diff / 86400)
+    }
+}
+
+/// Soul observability panel
+#[component]
+fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
+    view! {
+        <div class="soul-section">
+            {move || {
+                let data = match status.get() {
+                    Some(d) => d,
+                    None => return view! {
+                        <div class="soul-card soul-card--inactive">
+                            <div class="soul-header">
+                                <h2>"Soul"</h2>
+                                <span class="soul-status-badge soul-status--gray">"No Data"</span>
+                            </div>
+                            <p class="soul-muted">"Soul status unavailable"</p>
+                        </div>
+                    }.into_view(),
+                };
+
+                let active = data.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+                let dormant = data.get("dormant").and_then(|v| v.as_bool()).unwrap_or(false);
+                let total_cycles = data.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+                let last_think_at = data.get("last_think_at").and_then(|v| v.as_i64());
+                let thoughts = data.get("recent_thoughts")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let (badge_class, badge_label) = if !active {
+                    ("soul-status--gray", "Inactive")
+                } else if dormant {
+                    ("soul-status--yellow", "Dormant")
+                } else {
+                    ("soul-status--green", "Active")
+                };
+
+                let last_thought_str = last_think_at
+                    .map(format_relative_time)
+                    .unwrap_or_else(|| "never".to_string());
+
+                let mode_label = if !active {
+                    "Inactive"
+                } else if dormant {
+                    "Dormant"
+                } else {
+                    "Active"
+                };
+
+                view! {
+                    <div class="soul-card">
+                        <div class="soul-header">
+                            <h2>"Soul"</h2>
+                            <span class={format!("soul-status-badge {}", badge_class)}>
+                                {badge_label}
+                            </span>
+                        </div>
+
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <span class="stat-label">"CYCLES"</span>
+                                <span class="stat-value">{total_cycles.to_string()}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"LAST THOUGHT"</span>
+                                <span class="stat-value">{last_thought_str}</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-label">"MODE"</span>
+                                <span class="stat-value">{mode_label}</span>
+                            </div>
+                        </div>
+
+                        {if thoughts.is_empty() && !active {
+                            view! {
+                                <p class="soul-muted">"Soul not active"</p>
+                            }.into_view()
+                        } else if thoughts.is_empty() {
+                            view! {
+                                <p class="soul-muted">"No thoughts recorded yet"</p>
+                            }.into_view()
+                        } else {
+                            view! {
+                                <div class="soul-thoughts">
+                                    <h3>"Recent Thoughts"</h3>
+                                    {thoughts.iter().map(|t| {
+                                        let thought_type = t.get("type")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("unknown")
+                                            .to_string();
+                                        let content = t.get("content")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let created_at = t.get("created_at")
+                                            .and_then(|v| v.as_i64())
+                                            .unwrap_or(0);
+
+                                        let badge_abbr = match thought_type.as_str() {
+                                            "observation" => "obs",
+                                            "reasoning" => "reason",
+                                            "decision" => "decide",
+                                            "reflection" => "reflect",
+                                            _ => &thought_type,
+                                        };
+
+                                        // Truncate long content
+                                        let display_content = if content.len() > 120 {
+                                            format!("{}...", &content[..120])
+                                        } else {
+                                            content
+                                        };
+
+                                        view! {
+                                            <div class="soul-thought">
+                                                <span class={format!("thought-badge thought-badge--{}", thought_type)}>
+                                                    {badge_abbr.to_string()}
+                                                </span>
+                                                <span class="thought-content">{display_content}</span>
+                                                <span class="thought-time">{format_relative_time(created_at)}</span>
+                                            </div>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                </div>
+                            }.into_view()
+                        }}
+                    </div>
+                }.into_view()
+            }}
         </div>
     }
 }

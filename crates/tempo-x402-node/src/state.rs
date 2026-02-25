@@ -4,6 +4,7 @@ use std::sync::Arc;
 use x402_agent::CloneOrchestrator;
 use x402_gateway::state::AppState as GatewayState;
 use x402_identity::InstanceIdentity;
+use x402_soul::SoulDatabase;
 
 /// Node state wrapping gateway state with identity + agent capabilities.
 #[derive(Clone)]
@@ -24,4 +25,8 @@ pub struct NodeState {
     pub clone_price_amount: Option<String>,
     /// Maximum children
     pub clone_max_children: u32,
+    /// Soul database for querying thoughts/state (None if soul init failed)
+    pub soul_db: Option<Arc<SoulDatabase>>,
+    /// Whether the soul is dormant (no Gemini API key)
+    pub soul_dormant: bool,
 }

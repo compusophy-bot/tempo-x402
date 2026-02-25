@@ -112,7 +112,7 @@ impl GatewayConfig {
         let platform_fee_amount = parse_price_to_amount(&platform_fee)?;
 
         // Optional: allowed origins
-        let mut allowed_origins: Vec<String> = env::var("ALLOWED_ORIGINS")
+        let allowed_origins: Vec<String> = env::var("ALLOWED_ORIGINS")
             .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
             .unwrap_or_else(|_| {
                 vec![

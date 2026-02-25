@@ -420,6 +420,18 @@ pub async fn call_endpoint(
     Ok((body, settle))
 }
 
+/// Fetch soul status from the node
+pub async fn fetch_soul_status() -> Result<serde_json::Value, String> {
+    let resp = Request::get(&format!("{}/soul/status", GATEWAY_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 /// Generate random nonce (32 bytes as hex string)
 fn random_nonce() -> String {
     let mut bytes = [0u8; 32];

@@ -544,6 +544,131 @@ a.node-address:hover {
     font-size: 0.875rem;
 }
 
+/* Soul panel */
+.soul-section {
+    margin-bottom: 2rem;
+}
+
+.soul-card {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+}
+
+.soul-card--inactive {
+    opacity: 0.6;
+}
+
+.soul-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.soul-header h2 {
+    font-size: 1.2rem;
+    margin: 0;
+}
+
+.soul-status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.soul-status--green {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.soul-status--yellow {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+.soul-status--gray {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+}
+
+.soul-muted {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.soul-thoughts {
+    margin-top: 1rem;
+}
+
+.soul-thoughts h3 {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.soul-thought {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--surface-light);
+}
+
+.soul-thought:last-child {
+    border-bottom: none;
+}
+
+.thought-badge {
+    flex-shrink: 0;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-family: monospace;
+    text-transform: lowercase;
+}
+
+.thought-badge--observation {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+}
+
+.thought-badge--reasoning {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.thought-badge--decision {
+    background: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+.thought-badge--reflection {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+}
+
+.thought-content {
+    flex: 1;
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.thought-time {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .nav {
