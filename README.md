@@ -133,6 +133,7 @@ crates/
 ├── tempo-x402-node/           # Self-deploying node: gateway + identity + clone orchestration
 ├── tempo-x402-identity/       # Wallet generation, persistence, faucet, parent registration
 ├── tempo-x402-agent/          # Railway API client + clone lifecycle management
+├── tempo-x402-soul/           # Agentic thinking loop powered by Gemini 3 Flash
 ├── tempo-x402-app/            # Leptos WASM demo SPA (not published)
 └── tempo-x402-security-audit/ # 15 security invariant tests enforced on every build
 ```
@@ -148,6 +149,7 @@ crates/
 | [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node with clone orchestration | `cargo add tempo-x402-node` |
 | [`tempo-x402-identity`](https://docs.rs/tempo-x402-identity) | Wallet generation, persistence, faucet funding | `cargo add tempo-x402-identity` |
 | [`tempo-x402-agent`](https://docs.rs/tempo-x402-agent) | Railway API client + clone spawning | `cargo add tempo-x402-agent` |
+| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Agentic thinking loop powered by Gemini | `cargo add tempo-x402-soul` |
 
 ## Gateway API
 
@@ -163,6 +165,7 @@ The gateway lets you monetize any HTTP API without modifying its source code.
 | `GET` | `/analytics` | Free | Per-endpoint payment stats and revenue |
 | `GET` | `/analytics/:slug` | Free | Stats for a single endpoint |
 | `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target API |
+| `GET` | `/soul/status` | Free | Soul thinking loop status (node only) |
 | `GET` | `/health` | Free | Health check |
 | `GET` | `/metrics` | Bearer token | Prometheus metrics |
 
@@ -212,6 +215,8 @@ tip20::approve(&provider, token, facilitator_address, amount).await?;
 | `RATE_LIMIT_RPM` | server, facilitator | Rate limit per minute per IP |
 | `METRICS_TOKEN` | server, facilitator, gateway | Bearer token for `/metrics` endpoint |
 | `WEBHOOK_URLS` | facilitator, gateway | Comma-separated settlement webhook URLs |
+| `GEMINI_API_KEY` | node | Gemini API key for soul thinking (dormant without it) |
+| `SOUL_DB_PATH` | node | Soul database path (default: `./soul.db`) |
 
 ## Security
 

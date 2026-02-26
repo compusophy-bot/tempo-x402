@@ -13,10 +13,11 @@ Binary: `x402-node` on port 4023.
 - `x402-identity` (bootstrap, faucet, registration)
 - `x402-agent` (CloneOrchestrator)
 - `x402-facilitator` (embedded facilitator state, routes)
+- `x402-soul` (SoulDatabase for status queries)
 
 ## Non-Obvious Patterns
 
-- Startup: identity bootstrap → gateway config → embedded facilitator → agent → server (order matters — bootstrap injects env vars used by later steps)
+- Startup: identity bootstrap → gateway config → embedded facilitator → soul init → node state → soul spawn → server (order matters — soul DB must be cloned before spawn consumes it)
 - `create_child_if_under_limit()` in `db.rs` is atomic (`BEGIN IMMEDIATE`) — don't replace with separate check+insert
 - Input validation: UUID format for instance IDs, `0x` + 40 hex for addresses, HTTPS-only for URLs
 - Extends gateway DB via `execute_schema()` — doesn't create a separate database
@@ -30,4 +31,5 @@ Binary: `x402-node` on port 4023.
 - **Clone logic**: Endpoint in `routes/clone.rs`, orchestration in `x402-agent` crate
 - **Identity bootstrap**: `x402-identity` crate — node just calls `bootstrap()`
 - **Database schema**: `db.rs` — uses gateway's `execute_schema()` pattern
-- **Startup order**: `main.rs` — bootstrap must run before gateway config reads env vars
+- **Startup order**: `main.rs` — bootstrap must run before gateway config reads env vars; soul init must happen before NodeState
+- **Soul status**: `routes/soul.rs` — `GET /soul/status` queries `NodeState.soul_db`

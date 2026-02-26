@@ -24,3 +24,4 @@ Crate type: `["cdylib", "rlib"]` — compiles to WASM, no binary.
 - **MetaMask integration**: `wallet.rs` — WASM FFI to `window.ethereum`
 - **Adding dependencies**: Must be WASM-compatible
 - **Dashboard analytics**: `lib.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()` for per-endpoint stats
+- **Soul panel**: `lib.rs` `SoulPanel` component fetches `GET /soul/status` via `api::fetch_soul_status()` in the same 10s refresh loop

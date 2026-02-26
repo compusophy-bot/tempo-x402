@@ -4,7 +4,7 @@
 
 x402 (HTTP 402 Payment Required) implementation for the **Tempo blockchain** using TIP-20 tokens (pathUSD). Pay-per-request API monetization where clients sign EIP-712 payment authorizations and a facilitator settles them on-chain.
 
-Rust workspace. Published as `tempo-x402`, `tempo-x402-server`, `tempo-x402-facilitator`, `tempo-x402-gateway`, `tempo-x402-wallet` on crates.io.
+Rust workspace. Published as `tempo-x402`, `tempo-x402-server`, `tempo-x402-facilitator`, `tempo-x402-gateway`, `tempo-x402-wallet`, `tempo-x402-node`, `tempo-x402-identity`, `tempo-x402-agent`, `tempo-x402-soul` on crates.io.
 
 ## Architecture
 
@@ -28,8 +28,9 @@ crates/
 ├── tempo-x402-node/          # self-deploying node: gateway + identity + clone orchestration
 ├── tempo-x402-identity/      # wallet generation, persistence, faucet, parent registration
 ├── tempo-x402-agent/         # Railway API client + clone orchestration
+├── tempo-x402-soul/          # agentic thinking loop powered by Gemini 3 Flash
 ├── tempo-x402-app/           # Leptos WASM demo SPA (not published)
-└── tempo-x402-security-audit/# test-only: 14 security invariant checks (not published)
+└── tempo-x402-security-audit/# test-only: 15 security invariant checks (not published)
 ```
 
 Package names use `tempo-` prefix for crates.io. Library names stay `x402`, `x402_server`, `x402_facilitator`, `x402_wallet` in code.
