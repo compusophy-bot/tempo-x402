@@ -5160,7 +5160,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "alloy",
  "base64",
@@ -5183,7 +5183,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-agent"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "reqwest",
  "serde",
@@ -5198,7 +5198,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-app"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "base64",
  "console_error_panic_hook",
@@ -5220,7 +5220,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-client"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "alloy",
  "base64",
@@ -5237,7 +5237,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-facilitator"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -5259,7 +5259,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-gateway"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -5288,7 +5288,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-identity"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "alloy",
  "chrono",
@@ -5306,7 +5306,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-node"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "actix-files",
  "actix-governor",
@@ -5334,7 +5334,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-security-audit"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "regex",
  "walkdir",
@@ -5342,7 +5342,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-server"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "actix-cors",
  "actix-governor",
@@ -5365,7 +5365,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-soul"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "chrono",
  "reqwest",
@@ -5381,7 +5381,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-wallet"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "alloy",
  "base64",
