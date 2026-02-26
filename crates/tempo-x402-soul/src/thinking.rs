@@ -113,8 +113,9 @@ impl ThinkingLoop {
 
         let user_prompt = format!(
             "Current node state:\n{}\n\nRecent thoughts:\n{}\n\n\
-             Analyze the node's current state. Note any concerns, opportunities, or decisions to consider. \
-             If you suggest an action, prefix it with [DECISION].",
+             Analyze the node's current state briefly. Note any concerns or opportunities. \
+             If you have a new recommendation (not already in recent thoughts), prefix it with [DECISION]. \
+             Do NOT repeat previous decisions. Do NOT output tool calls or commands. Keep your response under 200 words.",
             snapshot_json,
             recent_summary.join("\n")
         );

@@ -16,7 +16,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - On Railway, `SOUL_DB_PATH` must point to persistent volume (`/data/soul.db`)
 - Dormant mode: without `GEMINI_API_KEY`, still observes and records, skips LLM calls
 - Default model: `gemini-3-flash-preview` (configurable via `GEMINI_MODEL_FAST` env var)
-- Fixed-interval loop (default 60s) — calls Gemini every cycle, no urgency gating
+- Fixed-interval loop (default 900s / 15min) — calls Gemini every cycle, no urgency gating
 - Gemini retry: 3 attempts, exponential backoff (500ms/1s/2s) with ±25% jitter
 - HTTP client: 30s timeout, `redirect(Policy::none())`
 - `Soul::spawn()` consumes self, returns a `JoinHandle` — clone `soul.database()` Arc before spawning

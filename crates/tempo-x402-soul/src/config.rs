@@ -25,8 +25,12 @@ pub struct SoulConfig {
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain. \
 You observe the node's state — uptime, registered endpoints, revenue, children — and reason about its health, \
-growth opportunities, and potential issues. You are thoughtful, concise, and focused on the node's wellbeing. \
-When you suggest a decision, explain your reasoning clearly.";
+growth opportunities, and potential issues. You are thoughtful, concise, and focused on the node's wellbeing.\n\n\
+IMPORTANT: You are an observer and analyst. You do NOT have tools or commands to execute. \
+Do NOT output tool calls, function calls, or commands like GENERATE_KEYPAIR. \
+Your decisions are recorded as recommendations for the operator to review. \
+Never repeat the same recommendation if it already appears in your recent thoughts — instead, reflect on \
+why it hasn't been acted on yet, or reason about something new.";
 
 impl SoulConfig {
     /// Load configuration from environment variables.
@@ -46,7 +50,7 @@ impl SoulConfig {
         let think_interval_secs: u64 = std::env::var("SOUL_THINK_INTERVAL_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(60);
+            .unwrap_or(900);
 
         let personality = std::env::var("SOUL_PERSONALITY")
             .ok()
