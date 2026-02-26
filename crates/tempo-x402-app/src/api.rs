@@ -420,6 +420,28 @@ pub async fn call_endpoint(
     Ok((body, settle))
 }
 
+/// Send a chat message to the soul
+pub async fn send_soul_chat(message: &str) -> Result<serde_json::Value, String> {
+    let body = serde_json::json!({ "message": message });
+
+    let resp = Request::post(&format!("{}/soul/chat", GATEWAY_URL))
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&body).map_err(|e| format!("Failed to serialize: {}", e))?)
+        .map_err(|e| format!("Failed to build request: {}", e))?
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !resp.ok() {
+        let err = resp.text().await.unwrap_or_default();
+        return Err(format!("Chat failed (HTTP {}): {}", resp.status(), err));
+    }
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 /// Fetch soul status from the node
 pub async fn fetch_soul_status() -> Result<serde_json::Value, String> {
     let resp = Request::get(&format!("{}/soul/status", GATEWAY_URL))

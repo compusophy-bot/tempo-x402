@@ -6,8 +6,8 @@ pub enum SoulError {
     #[error("database error: {0}")]
     Database(#[from] rusqlite::Error),
 
-    #[error("gemini API error: {0}")]
-    Gemini(String),
+    #[error("LLM API error: {0}")]
+    Llm(String),
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),

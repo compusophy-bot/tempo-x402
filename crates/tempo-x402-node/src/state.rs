@@ -4,7 +4,7 @@ use std::sync::Arc;
 use x402_agent::CloneOrchestrator;
 use x402_gateway::state::AppState as GatewayState;
 use x402_identity::InstanceIdentity;
-use x402_soul::SoulDatabase;
+use x402_soul::{NodeObserver, SoulConfig, SoulDatabase};
 
 /// Node state wrapping gateway state with identity + agent capabilities.
 #[derive(Clone)]
@@ -27,6 +27,10 @@ pub struct NodeState {
     pub clone_max_children: u32,
     /// Soul database for querying thoughts/state (None if soul init failed)
     pub soul_db: Option<Arc<SoulDatabase>>,
-    /// Whether the soul is dormant (no Gemini API key)
+    /// Whether the soul is dormant (no LLM API key)
     pub soul_dormant: bool,
+    /// Soul config for chat handler (None if soul init failed)
+    pub soul_config: Option<SoulConfig>,
+    /// Soul observer for chat handler (None if soul init failed)
+    pub soul_observer: Option<Arc<dyn NodeObserver>>,
 }

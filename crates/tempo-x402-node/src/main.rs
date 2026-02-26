@@ -186,30 +186,52 @@ async fn main() -> std::io::Result<()> {
     }
 
     // ── Soul init (before NodeState so we can store the DB ref) ────────
-    let (soul_db, soul_dormant, soul_instance, soul_generation) =
+    let (soul_db, soul_dormant, soul_instance, soul_generation, soul_config_for_state) =
         match x402_soul::SoulConfig::from_env() {
             Ok(soul_config) => {
-                let dormant = soul_config.gemini_api_key.is_none();
+                let dormant = soul_config.llm_api_key.is_none();
                 let generation = soul_config.generation;
+                let config_clone = soul_config.clone();
                 match x402_soul::Soul::new(soul_config) {
                     Ok(soul) => {
                         let db = soul.database().clone();
-                        (Some(db), dormant, Some(soul), generation)
+                        (
+                            Some(db),
+                            dormant,
+                            Some(soul),
+                            generation,
+                            Some(config_clone),
+                        )
                     }
                     Err(e) => {
                         tracing::warn!("Soul init failed (non-fatal): {e}");
-                        (None, true, None, generation)
+                        (None, true, None, generation, None)
                     }
                 }
             }
             Err(e) => {
                 tracing::warn!("Soul config failed (non-fatal): {e}");
-                (None, true, None, 0)
+                (None, true, None, 0, None)
             }
         };
 
     // ── Node state ──────────────────────────────────────────────────────
     let started_at = chrono::Utc::now();
+
+    // Build observer early so we can share it between NodeState and soul spawn
+    let soul_observer: Option<std::sync::Arc<dyn x402_soul::NodeObserver>> =
+        if soul_instance.is_some() || soul_config_for_state.is_some() {
+            Some(soul_observer::NodeObserverImpl::new(
+                gateway_state.clone(),
+                identity.clone(),
+                soul_generation,
+                started_at,
+                db_path.clone(),
+            ))
+        } else {
+            None
+        };
+
     let node_state = NodeState {
         gateway: gateway_state,
         identity: identity.clone(),
@@ -221,6 +243,8 @@ async fn main() -> std::io::Result<()> {
         clone_max_children,
         soul_db,
         soul_dormant,
+        soul_config: soul_config_for_state,
+        soul_observer: soul_observer.clone(),
     };
 
     let node_data = web::Data::new(node_state.clone());
@@ -229,19 +253,14 @@ async fn main() -> std::io::Result<()> {
 
     // ── Soul spawn (after NodeState so we can build the observer) ─────
     if let Some(soul) = soul_instance {
-        let observer = soul_observer::NodeObserverImpl::new(
-            node_state.gateway.clone(),
-            identity.clone(),
-            soul_generation,
-            started_at,
-            db_path.clone(),
-        );
-        soul.spawn(observer);
-        tracing::info!(
-            dormant = node_state.soul_dormant,
-            generation = soul_generation,
-            "Soul spawned"
-        );
+        if let Some(observer) = soul_observer {
+            soul.spawn(observer);
+            tracing::info!(
+                dormant = node_state.soul_dormant,
+                generation = soul_generation,
+                "Soul spawned"
+            );
+        }
     }
 
     // ── Background tasks ────────────────────────────────────────────────
@@ -335,6 +354,20 @@ async fn main() -> std::io::Result<()> {
                                 error = %e,
                                 "Health probe: failed to parse response"
                             );
+
+                            // If deploying for >10min and returning bad responses, mark failed
+                            let age_secs = chrono::Utc::now().timestamp() - child.created_at;
+                            if child.status == "deploying" && age_secs > 600 {
+                                tracing::info!(
+                                    instance_id = %child.instance_id,
+                                    "Marking stuck deploying child as failed (bad health response)"
+                                );
+                                let _ = db::mark_child_failed(
+                                    &version_check_state.gateway.db,
+                                    &child.instance_id,
+                                );
+                            }
+
                             continue;
                         }
                     },
@@ -344,6 +377,34 @@ async fn main() -> std::io::Result<()> {
                             error = %e,
                             "Health probe: failed to reach child"
                         );
+
+                        // Mark unreachable children as failed if they've been around long enough
+                        let age_secs = chrono::Utc::now().timestamp() - child.created_at;
+                        let stale = match child.status.as_str() {
+                            "deploying" => age_secs > 600, // 10 min for deploying
+                            "running" => age_secs > 300, // 5 min for running (was reachable before)
+                            _ => false,
+                        };
+
+                        if stale {
+                            tracing::info!(
+                                instance_id = %child.instance_id,
+                                status = %child.status,
+                                age_secs = age_secs,
+                                "Marking unreachable child as failed"
+                            );
+                            if let Err(mark_err) = db::mark_child_failed(
+                                &version_check_state.gateway.db,
+                                &child.instance_id,
+                            ) {
+                                tracing::warn!(
+                                    instance_id = %child.instance_id,
+                                    error = %mark_err,
+                                    "Failed to mark unreachable child as failed"
+                                );
+                            }
+                        }
+
                         continue;
                     }
                 };

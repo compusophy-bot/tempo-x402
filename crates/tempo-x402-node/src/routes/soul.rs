@@ -1,7 +1,7 @@
-//! Soul status endpoint — exposes the soul's thinking state.
+//! Soul endpoints — status and interactive chat.
 
 use actix_web::{web, HttpResponse};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::state::NodeState;
 
@@ -69,6 +69,72 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
     })
 }
 
+#[derive(Deserialize)]
+struct ChatRequest {
+    message: String,
+}
+
+async fn soul_chat(state: web::Data<NodeState>, body: web::Json<ChatRequest>) -> HttpResponse {
+    // Validate soul is active
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "soul is not active"
+            }));
+        }
+    };
+
+    // Validate not dormant
+    if state.soul_dormant {
+        return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+            "error": "soul is dormant (no LLM API key)"
+        }));
+    }
+
+    // Validate message length
+    let message = body.message.trim();
+    if message.is_empty() || message.len() > 4096 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "message must be 1-4096 characters"
+        }));
+    }
+
+    // Get config and observer
+    let config = match &state.soul_config {
+        Some(c) => c,
+        None => {
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "soul config not available"
+            }));
+        }
+    };
+
+    let observer = match &state.soul_observer {
+        Some(o) => o,
+        None => {
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "soul observer not available"
+            }));
+        }
+    };
+
+    match x402_soul::handle_chat(message, config, soul_db, observer).await {
+        Ok(reply) => HttpResponse::Ok().json(serde_json::json!({
+            "reply": reply.reply,
+            "tool_executions": reply.tool_executions,
+            "thought_ids": reply.thought_ids,
+        })),
+        Err(e) => {
+            tracing::warn!(error = %e, "Soul chat failed");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("chat failed: {e}")
+            }))
+        }
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.route("/soul/status", web::get().to(soul_status));
+    cfg.route("/soul/status", web::get().to(soul_status))
+        .route("/soul/chat", web::post().to(soul_chat));
 }

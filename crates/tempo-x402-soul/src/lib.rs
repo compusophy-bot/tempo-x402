@@ -1,26 +1,30 @@
 //! x402-soul: agentic soul for x402 nodes.
 //!
-//! Provides a periodic observe-think-record loop powered by Gemini.
+//! Provides a periodic observe-think-record loop powered by an LLM (currently Gemini).
 //! The soul observes node state via the [`NodeObserver`] trait, reasons
 //! about it, and records thoughts to a dedicated SQLite database.
 //!
-//! Without a Gemini API key, the soul runs in dormant mode: it still
+//! Without an LLM API key, the soul runs in dormant mode: it still
 //! observes and records snapshots, but skips LLM calls.
 
+pub mod chat;
 pub mod config;
 pub mod db;
 pub mod error;
-pub mod gemini;
+pub mod llm;
 pub mod memory;
 pub mod observer;
 pub mod thinking;
+pub mod tools;
 
+pub use chat::{handle_chat, ChatReply};
 pub use config::SoulConfig;
 pub use db::SoulDatabase;
 pub use error::SoulError;
 pub use memory::{Thought, ThoughtType};
 pub use observer::{NodeObserver, NodeSnapshot};
 pub use thinking::ThinkingLoop;
+pub use tools::ToolExecutor;
 
 use std::sync::Arc;
 use tokio::task::JoinHandle;

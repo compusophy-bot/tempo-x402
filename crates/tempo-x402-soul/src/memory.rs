@@ -14,6 +14,12 @@ pub enum ThoughtType {
     Decision,
     /// Self-reflection on past thoughts or patterns.
     Reflection,
+    /// A tool execution (command run by the soul).
+    ToolExecution,
+    /// A user message received via chat.
+    ChatMessage,
+    /// The soul's response to a chat message.
+    ChatResponse,
 }
 
 impl ThoughtType {
@@ -23,6 +29,9 @@ impl ThoughtType {
             Self::Reasoning => "reasoning",
             Self::Decision => "decision",
             Self::Reflection => "reflection",
+            Self::ToolExecution => "tool_execution",
+            Self::ChatMessage => "chat_message",
+            Self::ChatResponse => "chat_response",
         }
     }
 
@@ -32,6 +41,9 @@ impl ThoughtType {
             "reasoning" => Some(Self::Reasoning),
             "decision" => Some(Self::Decision),
             "reflection" => Some(Self::Reflection),
+            "tool_execution" => Some(Self::ToolExecution),
+            "chat_message" => Some(Self::ChatMessage),
+            "chat_response" => Some(Self::ChatResponse),
             _ => None,
         }
     }
