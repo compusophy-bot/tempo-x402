@@ -281,7 +281,7 @@ impl ThinkingLoop {
                 }
             };
 
-            let cycle_result = match self.think_cycle_with_snapshot(&snapshot).await {
+            let cycle_result = match self.think_cycle_with_snapshot(&snapshot, &pacer).await {
                 Ok(result) => result,
                 Err(e) => {
                     tracing::warn!(error = %e, "Soul think cycle failed");
@@ -313,6 +313,7 @@ impl ThinkingLoop {
     async fn think_cycle_with_snapshot(
         &self,
         snapshot: &NodeSnapshot,
+        pacer: &AdaptivePacer,
     ) -> Result<CycleResult, SoulError> {
         let snapshot_json = serde_json::to_string(snapshot)?;
 
@@ -383,7 +384,26 @@ impl ThinkingLoop {
             }
         );
 
-        let system_prompt = prompts::system_prompt_for_mode(mode, &self.config);
+        // Build adaptive system prompt with situational context
+        let total_cycles: u64 = self
+            .db
+            .get_state("total_think_cycles")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        let think_context = prompts::ThinkContext {
+            snapshot,
+            recent_thoughts: &recent,
+            prev_snapshot: pacer.prev_snapshot.as_ref(),
+            boring_streak: pacer.boring_streak,
+            active_streak: pacer.active_streak,
+            total_cycles,
+        };
+
+        let system_prompt =
+            prompts::adaptive_system_prompt(mode, &self.config, Some(&think_context));
 
         // Determine if we should use tools
         let use_tools = self.config.tools_enabled && self.config.llm_api_key.is_some();

@@ -1,10 +1,41 @@
 //! System prompts per agent mode.
+//!
+//! The system prompt adapts based on the soul's situation: how long the node
+//! has been up, what changed, what the soul explored recently, and whether
+//! coding is enabled with a fork workflow.
 
 use crate::config::SoulConfig;
+use crate::memory::{Thought, ThoughtType};
 use crate::mode::AgentMode;
+use crate::observer::NodeSnapshot;
 
-/// Build the system prompt for a given agent mode.
+/// Situational context for adaptive prompt generation.
+pub struct ThinkContext<'a> {
+    /// Current node snapshot.
+    pub snapshot: &'a NodeSnapshot,
+    /// Recent thoughts (last 5-10).
+    pub recent_thoughts: &'a [Thought],
+    /// Previous snapshot (if available) for change detection.
+    pub prev_snapshot: Option<&'a NodeSnapshot>,
+    /// How many boring cycles in a row.
+    pub boring_streak: u32,
+    /// How many active cycles in a row.
+    pub active_streak: u32,
+    /// Total cycle count.
+    pub total_cycles: u64,
+}
+
+/// Build the system prompt for a given agent mode with adaptive context.
 pub fn system_prompt_for_mode(mode: AgentMode, config: &SoulConfig) -> String {
+    adaptive_system_prompt(mode, config, None)
+}
+
+/// Build an adaptive system prompt with situational context.
+pub fn adaptive_system_prompt(
+    mode: AgentMode,
+    config: &SoulConfig,
+    context: Option<&ThinkContext>,
+) -> String {
     let base = &config.personality;
     let lineage = format!(
         "\n\nYou are generation {} in the node lineage.{}",
@@ -30,6 +61,10 @@ pub fn system_prompt_for_mode(mode: AgentMode, config: &SoulConfig) -> String {
         String::new()
     };
 
+    let situation = context
+        .map(|ctx| build_situational_guidance(ctx, config))
+        .unwrap_or_default();
+
     let mode_instructions = match mode {
         AgentMode::Observe => OBSERVE_INSTRUCTIONS.to_string(),
         AgentMode::Chat => CHAT_INSTRUCTIONS.to_string(),
@@ -43,7 +78,138 @@ pub fn system_prompt_for_mode(mode: AgentMode, config: &SoulConfig) -> String {
         AgentMode::Review => REVIEW_INSTRUCTIONS.to_string(),
     };
 
-    format!("{base}{lineage}{coding_context}\n\n{mode_instructions}")
+    format!("{base}{lineage}{coding_context}\n\n{mode_instructions}{situation}")
+}
+
+/// Build situational guidance that adapts the prompt to what's happening now.
+fn build_situational_guidance(ctx: &ThinkContext, config: &SoulConfig) -> String {
+    let mut guidance = Vec::new();
+
+    // Phase-based guidance: what should the soul focus on based on lifecycle stage
+    let uptime = ctx.snapshot.uptime_secs;
+    if uptime < 120 {
+        guidance.push(
+            "PHASE: Fresh startup. Focus on verifying the node booted correctly — \
+             check /health and /endpoints via curl localhost. Don't over-investigate."
+                .to_string(),
+        );
+    } else if uptime < 3600 {
+        guidance.push(
+            "PHASE: Early running. The node is settling in. Check if endpoints are \
+             receiving traffic. If stable, start exploring the codebase to build understanding."
+                .to_string(),
+        );
+    } else if config.coding_enabled && ctx.total_cycles > 10 {
+        guidance.push(
+            "PHASE: Established. You know the node well. Focus on deeper codebase analysis \
+             — look for bugs, improvements, or missing tests. Consider filing issues or \
+             making code changes."
+                .to_string(),
+        );
+    }
+
+    // Change detection: tell the soul what changed
+    if let Some(prev) = ctx.prev_snapshot {
+        let mut changes = Vec::new();
+        if ctx.snapshot.total_payments > prev.total_payments {
+            let delta = ctx.snapshot.total_payments - prev.total_payments;
+            changes.push(format!("{delta} new payment(s)"));
+        }
+        if ctx.snapshot.endpoint_count != prev.endpoint_count {
+            changes.push(format!(
+                "endpoint count: {} → {}",
+                prev.endpoint_count, ctx.snapshot.endpoint_count
+            ));
+        }
+        if ctx.snapshot.children_count != prev.children_count {
+            changes.push(format!(
+                "children: {} → {}",
+                prev.children_count, ctx.snapshot.children_count
+            ));
+        }
+        if ctx.snapshot.total_revenue != prev.total_revenue {
+            changes.push(format!(
+                "revenue: {} → {}",
+                prev.total_revenue, ctx.snapshot.total_revenue
+            ));
+        }
+
+        if !changes.is_empty() {
+            guidance.push(format!("CHANGES since last cycle: {}", changes.join(", ")));
+        } else {
+            guidance.push("NO CHANGES since last cycle. Node state is identical.".to_string());
+        }
+    }
+
+    // Recent activity analysis: what has the soul been doing?
+    let recent_tool_count = ctx
+        .recent_thoughts
+        .iter()
+        .filter(|t| t.thought_type == ThoughtType::ToolExecution)
+        .count();
+    let _recent_decisions = ctx
+        .recent_thoughts
+        .iter()
+        .filter(|t| t.thought_type == ThoughtType::Decision)
+        .count();
+    let recent_topics: Vec<&str> = ctx
+        .recent_thoughts
+        .iter()
+        .filter(|t| t.thought_type == ThoughtType::Reasoning)
+        .filter_map(|t| {
+            if t.content.contains("codebase") || t.content.contains("source") {
+                Some("codebase exploration")
+            } else if t.content.contains("health") || t.content.contains("status") {
+                Some("health monitoring")
+            } else if t.content.contains("revenue") || t.content.contains("payment") {
+                Some("revenue tracking")
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Diversity nudge: if the soul keeps doing the same thing, nudge it elsewhere
+    if ctx.boring_streak >= 3 {
+        if config.coding_enabled {
+            guidance.push(
+                "NUDGE: Nothing has changed for several cycles. Instead of monitoring, \
+                 try reading the source code — pick a crate you haven't explored yet \
+                 (e.g. crates/tempo-x402-gateway/src/). Look for improvements to propose."
+                    .to_string(),
+            );
+        } else {
+            guidance.push(
+                "NUDGE: Nothing has changed for several cycles. Keep this response very brief \
+                 — just acknowledge stability. No need for analysis."
+                    .to_string(),
+            );
+        }
+    } else if recent_tool_count > 8 {
+        guidance.push(
+            "NUDGE: You used many tools recently. This cycle, try to synthesize what you \
+             learned into a brief insight rather than running more commands."
+                .to_string(),
+        );
+    }
+
+    if !recent_topics.is_empty() {
+        let unique: Vec<&str> = {
+            let mut v = recent_topics;
+            v.dedup();
+            v
+        };
+        guidance.push(format!(
+            "Recent focus areas: {}. Consider shifting to something different.",
+            unique.join(", ")
+        ));
+    }
+
+    if guidance.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n--- SITUATIONAL AWARENESS ---\n{}", guidance.join("\n"))
+    }
 }
 
 const OBSERVE_INSTRUCTIONS: &str = "\
