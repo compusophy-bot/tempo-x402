@@ -100,16 +100,43 @@ fn Header() -> impl IntoView {
     let (wallet, set_wallet) =
         expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
 
+    let location = use_location();
+    let (mobile_open, set_mobile_open) = create_signal(false);
+
+    let toggle_mobile = move |_| set_mobile_open.update(|v| *v = !*v);
+
     view! {
         <header class="header">
             <nav class="nav">
                 <a href="/" class="logo">"x402"</a>
-                <div class="nav-links">
-                    <a href="/">"Demo"</a>
-                    <a href="/dashboard">"Dashboard"</a>
-                    <a href="/chat">"Chat"</a>
-                    <a href="https://docs.rs/tempo-x402" target="_blank">"Docs"</a>
-                    <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
+                <button class="mobile-nav-toggle" on:click=toggle_mobile>
+                    {move || if mobile_open.get() { "\u{2715}" } else { "\u{2630}" }}
+                </button>
+                <div class=move || {
+                    if mobile_open.get() { "nav-links open" } else { "nav-links" }
+                }>
+                    {move || {
+                        let path = location.pathname.get();
+                        view! {
+                            <a
+                                href="/"
+                                class=if path == "/" { "active" } else { "" }
+                                on:click=move |_| set_mobile_open.set(false)
+                            >"Demo"</a>
+                            <a
+                                href="/dashboard"
+                                class=if path == "/dashboard" { "active" } else { "" }
+                                on:click=move |_| set_mobile_open.set(false)
+                            >"Dashboard"</a>
+                            <a
+                                href="/chat"
+                                class=if path == "/chat" { "active" } else { "" }
+                                on:click=move |_| set_mobile_open.set(false)
+                            >"Chat"</a>
+                            <a href="https://docs.rs/tempo-x402" target="_blank">"Docs"</a>
+                            <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
+                        }
+                    }}
                 </div>
                 <WalletButtons wallet=wallet set_wallet=set_wallet />
             </nav>
@@ -150,7 +177,6 @@ fn WalletButtons(
                 let address = state.address.clone().unwrap_or_default();
                 set_wallet.set(state);
                 if is_new {
-                    // Only fund brand-new wallets
                     spawn_local(async move {
                         match wallet::fund_address(&address).await {
                             Ok(_) => {
@@ -177,8 +203,6 @@ fn WalletButtons(
     };
 
     let disconnect = move |_| {
-        // Disconnect only clears session state — the stored key remains in localStorage.
-        // Users must explicitly "Delete Wallet" to remove the key.
         set_wallet.set(WalletState::default());
     };
 
@@ -224,7 +248,7 @@ fn WalletButtons(
                     <div class="wallet-info">
                         <span class="wallet-mode-badge">{mode_label}</span>
                         <span class="wallet-address">{short}</span>
-                        <button class="btn btn-secondary" on:click=disconnect>
+                        <button class="btn btn-secondary btn-sm" on:click=disconnect>
                             "Disconnect"
                         </button>
                     </div>
@@ -302,7 +326,6 @@ fn WalletManagement() -> impl IntoView {
                 <h4>"Wallet Management"</h4>
 
                 <div class="wallet-actions">
-                    // --- Reveal / Copy ---
                     <button class="btn btn-secondary btn-sm" on:click=toggle_reveal>
                         {move || if show_key.get() { "Hide Key" } else { "Reveal Key" }}
                     </button>
@@ -316,12 +339,10 @@ fn WalletManagement() -> impl IntoView {
                         </div>
                     </Show>
 
-                    // --- Download JSON ---
                     <button class="btn btn-secondary btn-sm" on:click=download_json>
                         "Download Backup"
                     </button>
 
-                    // --- Import ---
                     <button class="btn btn-secondary btn-sm" on:click=toggle_import>
                         {move || if show_import.get() { "Cancel Import" } else { "Import Key" }}
                     </button>
@@ -347,7 +368,6 @@ fn WalletManagement() -> impl IntoView {
                         </div>
                     </Show>
 
-                    // --- Delete (destructive) ---
                     <Show
                         when=move || confirm_delete.get()
                         fallback=move || view! {
@@ -387,7 +407,6 @@ fn InstancePanel() -> impl IntoView {
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal(None::<String>);
 
-    // Fetch instance info on mount
     spawn_local(async move {
         let base = api::gateway_base_url();
         let url = format!("{}/instance/info", base);
@@ -521,6 +540,172 @@ fn InstancePanel() -> impl IntoView {
     }
 }
 
+/// Endpoint registration form component
+#[component]
+fn EndpointRegistration() -> impl IntoView {
+    let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+
+    let (slug, set_slug) = create_signal(String::new());
+    let (target_url, set_target_url) = create_signal(String::new());
+    let (price, set_price) = create_signal(String::from("0.001"));
+    let (_description, set_description) = create_signal(String::new());
+    let (loading, set_loading) = create_signal(false);
+    let (error, set_error) = create_signal(None::<String>);
+    let (success, set_success) = create_signal(None::<String>);
+
+    let slug_valid = move || {
+        let s = slug.get();
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    };
+
+    let url_valid = move || {
+        let u = target_url.get();
+        u.starts_with("https://") || u.starts_with("http://")
+    };
+
+    let price_valid = move || {
+        let p = price.get();
+        p.parse::<f64>().map(|v| v > 0.0).unwrap_or(false)
+    };
+
+    let can_submit = move || {
+        wallet.get().connected && slug_valid() && url_valid() && price_valid() && !loading.get()
+    };
+
+    let do_register = move |_| {
+        if !can_submit() {
+            return;
+        }
+
+        set_loading.set(true);
+        set_error.set(None);
+        set_success.set(None);
+
+        let s = slug.get();
+        let u = target_url.get();
+        let p = price.get();
+
+        spawn_local(async move {
+            match api::register_endpoint(&s, &u, &p).await {
+                Ok(resp) => {
+                    let gw_url = resp
+                        .get("gateway_url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    set_success.set(Some(format!(
+                        "Registered /g/{} -> {} (gateway: {})",
+                        s, u, gw_url
+                    )));
+                    set_slug.set(String::new());
+                    set_target_url.set(String::new());
+                    set_price.set("0.001".to_string());
+                    set_description.set(String::new());
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                }
+            }
+            set_loading.set(false);
+        });
+    };
+
+    view! {
+        <div class="registration-card">
+            <h3>"Register an Endpoint"</h3>
+            <p class="registration-subtitle">
+                "Expose any URL behind a paywall — clients pay per request via the x402 protocol"
+            </p>
+
+            <div class="registration-form">
+                <div class="form-group">
+                    <label>"Slug"</label>
+                    <input
+                        type="text"
+                        placeholder="my-api"
+                        prop:value=move || slug.get()
+                        on:input=move |ev| set_slug.set(event_target_value(&ev))
+                    />
+                    {move || {
+                        let s = slug.get();
+                        if !s.is_empty() && !slug_valid() {
+                            view! { <p class="input-error">"Only alphanumeric, hyphens, underscores"</p> }.into_view()
+                        } else if !s.is_empty() {
+                            view! { <p class="input-hint">{format!("Access via /g/{}", s)}</p> }.into_view()
+                        } else {
+                            view! { <p class="input-hint">"URL-safe identifier"</p> }.into_view()
+                        }
+                    }}
+                </div>
+                <div class="form-group">
+                    <label>"Target URL"</label>
+                    <input
+                        type="text"
+                        placeholder="https://api.example.com"
+                        prop:value=move || target_url.get()
+                        on:input=move |ev| set_target_url.set(event_target_value(&ev))
+                    />
+                    {move || {
+                        let u = target_url.get();
+                        if !u.is_empty() && !url_valid() {
+                            view! { <p class="input-error">"Must start with https:// or http://"</p> }.into_view()
+                        } else {
+                            view! { <p class="input-hint">"Upstream URL to proxy requests to"</p> }.into_view()
+                        }
+                    }}
+                </div>
+                <div class="form-group">
+                    <label>"Price (USD)"</label>
+                    <input
+                        type="text"
+                        placeholder="0.001"
+                        prop:value=move || price.get()
+                        on:input=move |ev| set_price.set(event_target_value(&ev))
+                    />
+                    {move || {
+                        if !price_valid() && !price.get().is_empty() {
+                            view! { <p class="input-error">"Enter a positive number"</p> }.into_view()
+                        } else {
+                            view! { <p class="input-hint">"Per-request cost in pathUSD"</p> }.into_view()
+                        }
+                    }}
+                </div>
+            </div>
+
+            <div class="registration-actions">
+                <button
+                    class="btn btn-primary"
+                    on:click=do_register
+                    disabled=move || !can_submit()
+                >
+                    {move || if loading.get() { "Registering..." } else { "Register Endpoint" }}
+                </button>
+                {move || {
+                    if !wallet.get().connected {
+                        view! { <span class="soul-muted">"Connect wallet to register"</span> }.into_view()
+                    } else {
+                        view! { <span></span> }.into_view()
+                    }
+                }}
+            </div>
+
+            <Show when=move || error.get().is_some() fallback=|| ()>
+                <p class="error-text" style="margin-top: 12px">
+                    {move || error.get().unwrap_or_default()}
+                </p>
+            </Show>
+
+            <Show when=move || success.get().is_some() fallback=|| ()>
+                <div class="registration-success" style="margin-top: 12px">
+                    {move || success.get().unwrap_or_default()}
+                </div>
+            </Show>
+        </div>
+    }
+}
+
 /// Home page with payment demo
 #[component]
 fn HomePage() -> impl IntoView {
@@ -533,6 +718,7 @@ fn HomePage() -> impl IntoView {
 
             <PaymentDemo />
             <WalletManagement />
+            <EndpointRegistration />
             <InstancePanel />
 
             <div class="info-section">
@@ -673,6 +859,7 @@ fn DashboardPage() -> impl IntoView {
     let (child_health, set_child_health) =
         create_signal(std::collections::HashMap::<String, serde_json::Value>::new());
     let (soul_status, set_soul_status) = create_signal(None::<serde_json::Value>);
+    let (mind_status, set_mind_status) = create_signal(None::<serde_json::Value>);
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal(None::<String>);
     let (tick, set_tick) = create_signal(0u32);
@@ -689,7 +876,6 @@ fn DashboardPage() -> impl IntoView {
             {
                 Ok(resp) if resp.ok() => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        // Fetch child health for each child with a URL
                         if let Some(children) = data.get("children").and_then(|v| v.as_array()) {
                             for child in children {
                                 if let Some(url) = child.get("url").and_then(|v| v.as_str()) {
@@ -743,6 +929,12 @@ fn DashboardPage() -> impl IntoView {
                 set_soul_status.set(Some(data));
             }
 
+            // Fetch mind status (graceful — 404 means not enabled)
+            match api::fetch_mind_status().await {
+                Ok(data) => set_mind_status.set(Some(data)),
+                Err(_) => set_mind_status.set(None),
+            }
+
             set_loading.set(false);
         });
     };
@@ -768,7 +960,6 @@ fn DashboardPage() -> impl IntoView {
                     <span class="live-dot"></span>
                     "Live"
                     {move || {
-                        // Touch tick to ensure reactivity
                         let _ = tick.get();
                     }}
                 </div>
@@ -852,22 +1043,22 @@ fn DashboardPage() -> impl IntoView {
                         // Stats cards
                         <div class="stats-grid">
                             <div class="stat-card">
-                                <span class="stat-label">"STATUS"</span>
+                                <span class="stat-label">"Status"</span>
                                 <span class="stat-value">
                                     <span class="status-dot status-dot--green"></span>
                                     " Online"
                                 </span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"VERSION"</span>
+                                <span class="stat-label">"Version"</span>
                                 <span class="stat-value">{format!("v{}", version)}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"UPTIME"</span>
+                                <span class="stat-label">"Uptime"</span>
                                 <span class="stat-value">{format_uptime(uptime)}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"CLONES"</span>
+                                <span class="stat-label">"Clones"</span>
                                 <span class="stat-value">
                                     {format!("{}/{}", children_count, max_children)}
                                     {if clone_available {
@@ -879,24 +1070,36 @@ fn DashboardPage() -> impl IntoView {
                             </div>
                         </div>
 
-                        // Analytics stats cards
+                        // Analytics stats
                         <div class="stats-grid">
                             <div class="stat-card">
-                                <span class="stat-label">"TOTAL PAYMENTS"</span>
+                                <span class="stat-label">"Total Payments"</span>
                                 <span class="stat-value">{total_payments.to_string()}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"TOTAL REVENUE"</span>
+                                <span class="stat-label">"Total Revenue"</span>
                                 <span class="stat-value">{total_revenue_usd}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"ACTIVE ENDPOINTS"</span>
+                                <span class="stat-label">"Active Endpoints"</span>
                                 <span class="stat-value">{active_endpoints.to_string()}</span>
                             </div>
                         </div>
 
-                        // Soul panel
-                        <SoulPanel status=soul_status />
+                        // Mind panel (if available), otherwise Soul panel
+                        {move || {
+                            let ms = mind_status.get();
+                            if ms.is_some() {
+                                view! {
+                                    <MindPanel status=mind_status />
+                                    <SoulPanel status=soul_status />
+                                }.into_view()
+                            } else {
+                                view! {
+                                    <SoulPanel status=soul_status />
+                                }.into_view()
+                            }
+                        }}
 
                         // Network topology
                         <div class="topology-section">
@@ -912,7 +1115,7 @@ fn DashboardPage() -> impl IntoView {
                                         <code class="node-address">{shorten_address(&address)}</code>
                                         <div class="node-meta">
                                             <span>{format!("v{}", version)}</span>
-                                            <span>{format!("↑ {}", format_uptime(uptime))}</span>
+                                            <span>{format!("up {}", format_uptime(uptime))}</span>
                                         </div>
                                         <div class="node-meta">
                                             <span>{format!("clone: {}  {}/{} slots", clone_price, children_count, max_children)}</span>
@@ -924,7 +1127,7 @@ fn DashboardPage() -> impl IntoView {
                                                 .unwrap_or_else(|| "parent".to_string());
                                             view! {
                                                 <div class="node-parent-link">
-                                                    "↑ "
+                                                    "^ "
                                                     <a href=url target="_blank">{parent_short}</a>
                                                 </div>
                                             }
@@ -932,7 +1135,7 @@ fn DashboardPage() -> impl IntoView {
                                     </div>
                                 </div>
 
-                                // Connector
+                                // Connector + children
                                 {if !children.is_empty() {
                                     let children_view = children;
                                     Some(view! {
@@ -1018,7 +1221,7 @@ fn DashboardPage() -> impl IntoView {
                         <div class="endpoints-section">
                             <h2>{format!("Registered Endpoints ({})", ep_count)}</h2>
                             {if eps.is_empty() {
-                                view! { <p class="empty">"No endpoints registered"</p> }.into_view()
+                                view! { <p class="empty">"No endpoints registered yet. Register one from the Demo page."</p> }.into_view()
                             } else {
                                 let analytics_eps = analytics_endpoints.clone();
                                 view! {
@@ -1048,7 +1251,6 @@ fn DashboardPage() -> impl IntoView {
                                                 .and_then(|v| v.as_str())
                                                 .map(String::from);
 
-                                            // Look up analytics stats for this slug
                                             let ep_stats = analytics_eps.iter().find(|a| {
                                                 a.get("slug").and_then(|v| v.as_str()) == Some(&slug)
                                             });
@@ -1115,9 +1317,114 @@ fn format_relative_time(unix_ts: i64) -> String {
     }
 }
 
-/// Soul observability panel
+/// Format a unix timestamp as HH:MM
+fn format_timestamp(unix_ts: i64) -> String {
+    let date = js_sys::Date::new_0();
+    date.set_time((unix_ts as f64) * 1000.0);
+    let h = date.get_hours();
+    let m = date.get_minutes();
+    format!("{:02}:{:02}", h, m)
+}
+
+/// Mind status panel — dual-hemisphere display
+#[component]
+fn MindPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
+    view! {
+        <div class="mind-section">
+            {move || {
+                let data = match status.get() {
+                    Some(d) => d,
+                    None => return view! { <span></span> }.into_view(),
+                };
+
+                let left = data.get("left").cloned();
+                let right = data.get("right").cloned();
+
+                let render_hemisphere = |hemi: Option<serde_json::Value>, side: &str| {
+                    let data = hemi.unwrap_or_default();
+                    let active = data.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let cycles = data.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let last_think = data.get("last_think_at")
+                        .and_then(|v| v.as_i64())
+                        .map(format_relative_time)
+                        .unwrap_or_else(|| "never".to_string());
+                    let last_thought = data.get("recent_thoughts")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|t| t.get("content"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let truncated = if last_thought.len() > 100 {
+                        format!("{}...", &last_thought[..100])
+                    } else {
+                        last_thought
+                    };
+
+                    let (badge_class, badge_text) = if active {
+                        ("soul-status--green", "Active")
+                    } else {
+                        ("soul-status--gray", "Inactive")
+                    };
+
+                    let hemisphere_class = format!("mind-hemisphere mind-hemisphere--{}", side);
+                    let title_class = format!("hemisphere-title hemisphere-title--{}", side);
+                    let label = if side == "left" { "Left (Analytical)" } else { "Right (Holistic)" };
+
+                    view! {
+                        <div class=hemisphere_class>
+                            <div class="hemisphere-header">
+                                <span class=title_class>{label}</span>
+                                <span class={format!("soul-status-badge {}", badge_class)}>
+                                    {badge_text}
+                                </span>
+                            </div>
+                            <div class="hemisphere-stat">
+                                <span class="hemisphere-stat-label">"Cycles"</span>
+                                <span class="hemisphere-stat-value">{cycles.to_string()}</span>
+                            </div>
+                            <div class="hemisphere-stat">
+                                <span class="hemisphere-stat-label">"Last thought"</span>
+                                <span class="hemisphere-stat-value">{last_think}</span>
+                            </div>
+                            {if !truncated.is_empty() {
+                                Some(view! {
+                                    <div class="hemisphere-thought">{truncated}</div>
+                                })
+                            } else {
+                                None
+                            }}
+                        </div>
+                    }
+                };
+
+                view! {
+                    <div class="mind-card">
+                        <div class="mind-header">
+                            <h2>"Mind"</h2>
+                            <span class="soul-status-badge soul-status--green">"Enabled"</span>
+                        </div>
+                        <div class="mind-hemispheres">
+                            {render_hemisphere(left, "left")}
+                            <div class="mind-callosum">
+                                <div class="callosum-line"></div>
+                                <span class="callosum-label">"Callosum"</span>
+                                <div class="callosum-line"></div>
+                            </div>
+                            {render_hemisphere(right, "right")}
+                        </div>
+                    </div>
+                }.into_view()
+            }}
+        </div>
+    }
+}
+
+/// Soul observability panel — enhanced with mode, flags, expandable thoughts
 #[component]
 fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
+    let (expanded_idx, set_expanded_idx) = create_signal(None::<usize>);
+
     view! {
         <div class="soul-section">
             {move || {
@@ -1143,6 +1450,15 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                     .cloned()
                     .unwrap_or_default();
 
+                // Mode from status response
+                let mode = data.get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(if !active { "inactive" } else if dormant { "dormant" } else { "observe" })
+                    .to_string();
+
+                let tools_enabled = data.get("tools_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+                let coding_enabled = data.get("coding_enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+
                 let (badge_class, badge_label) = if !active {
                     ("soul-status--gray", "Inactive")
                 } else if dormant {
@@ -1151,41 +1467,68 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                     ("soul-status--green", "Active")
                 };
 
+                let mode_class = match mode.as_str() {
+                    "observe" => "soul-mode--observe",
+                    "chat" => "soul-mode--chat",
+                    "code" => "soul-mode--code",
+                    "review" => "soul-mode--review",
+                    _ => "soul-mode--observe",
+                };
+
                 let last_thought_str = last_think_at
                     .map(format_relative_time)
                     .unwrap_or_else(|| "never".to_string());
-
-                let mode_label = if !active {
-                    "Inactive"
-                } else if dormant {
-                    "Dormant"
-                } else {
-                    "Active"
-                };
 
                 view! {
                     <div class="soul-card">
                         <div class="soul-header">
                             <h2>"Soul"</h2>
-                            <span class={format!("soul-status-badge {}", badge_class)}>
-                                {badge_label}
-                            </span>
+                            <div class="soul-header-badges">
+                                {if active && !dormant {
+                                    Some(view! {
+                                        <span class={format!("soul-mode-badge {}", mode_class)}>
+                                            {mode.clone()}
+                                        </span>
+                                    })
+                                } else {
+                                    None
+                                }}
+                                <span class={format!("soul-status-badge {}", badge_class)}>
+                                    {badge_label}
+                                </span>
+                            </div>
                         </div>
 
                         <div class="stats-grid">
                             <div class="stat-card">
-                                <span class="stat-label">"CYCLES"</span>
+                                <span class="stat-label">"Cycles"</span>
                                 <span class="stat-value">{total_cycles.to_string()}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"LAST THOUGHT"</span>
+                                <span class="stat-label">"Last Thought"</span>
                                 <span class="stat-value">{last_thought_str}</span>
                             </div>
                             <div class="stat-card">
-                                <span class="stat-label">"MODE"</span>
-                                <span class="stat-value">{mode_label}</span>
+                                <span class="stat-label">"Mode"</span>
+                                <span class="stat-value">{mode.clone()}</span>
                             </div>
                         </div>
+
+                        // Feature flags
+                        {if active {
+                            Some(view! {
+                                <div class="soul-flags">
+                                    <span class={if tools_enabled { "soul-flag soul-flag--on" } else { "soul-flag" }}>
+                                        {if tools_enabled { "tools: on" } else { "tools: off" }}
+                                    </span>
+                                    <span class={if coding_enabled { "soul-flag soul-flag--on" } else { "soul-flag" }}>
+                                        {if coding_enabled { "coding: on" } else { "coding: off" }}
+                                    </span>
+                                </div>
+                            })
+                        } else {
+                            None
+                        }}
 
                         {if thoughts.is_empty() && !active {
                             view! {
@@ -1196,10 +1539,11 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                 <p class="soul-muted">"No thoughts recorded yet"</p>
                             }.into_view()
                         } else {
+                            let expanded = expanded_idx.get();
                             view! {
                                 <div class="soul-thoughts">
                                     <h3>"Recent Thoughts"</h3>
-                                    {thoughts.iter().map(|t| {
+                                    {thoughts.iter().enumerate().map(|(idx, t)| {
                                         let thought_type = t.get("type")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("unknown")
@@ -1217,22 +1561,48 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                             "reasoning" => "reason",
                                             "decision" => "decide",
                                             "reflection" => "reflect",
+                                            "mutation" => "mutate",
+                                            "cross_hemisphere" => "cross",
+                                            "escalation" => "escalate",
+                                            "memory_consolidation" => "memory",
                                             _ => &thought_type,
                                         };
 
-                                        // Truncate long content
-                                        let display_content = if content.len() > 120 {
-                                            format!("{}...", &content[..120])
+                                        let is_expanded = expanded == Some(idx);
+                                        let display_content = if is_expanded || content.len() <= 120 {
+                                            content.clone()
                                         } else {
-                                            content
+                                            format!("{}...", &content[..120])
+                                        };
+                                        let is_truncatable = content.len() > 120;
+                                        let content_class = if is_expanded {
+                                            "thought-content thought-content--expanded"
+                                        } else {
+                                            "thought-content"
                                         };
 
                                         view! {
-                                            <div class="soul-thought">
+                                            <div
+                                                class="soul-thought"
+                                                on:click=move |_| {
+                                                    if is_truncatable {
+                                                        set_expanded_idx.set(
+                                                            if expanded == Some(idx) { None } else { Some(idx) }
+                                                        );
+                                                    }
+                                                }
+                                            >
                                                 <span class={format!("thought-badge thought-badge--{}", thought_type)}>
                                                     {badge_abbr.to_string()}
                                                 </span>
-                                                <span class="thought-content">{display_content}</span>
+                                                <div class=content_class>
+                                                    {display_content}
+                                                    {if is_truncatable && !is_expanded {
+                                                        Some(view! { <div class="thought-expand-hint">"click to expand"</div> })
+                                                    } else {
+                                                        None
+                                                    }}
+                                                </div>
                                                 <span class="thought-time">{format_relative_time(created_at)}</span>
                                             </div>
                                         }
@@ -1253,15 +1623,37 @@ struct ChatDisplayMessage {
     role: &'static str, // "user" or "soul"
     content: String,
     tool_executions: Vec<serde_json::Value>,
+    timestamp: i64,
+    hemisphere: Option<String>,
 }
 
-/// Interactive chat page for talking to the soul
+/// Interactive chat page with mind/soul toggle
 #[component]
 fn ChatPage() -> impl IntoView {
     let (messages, set_messages) = create_signal(Vec::<ChatDisplayMessage>::new());
     let (input, set_input) = create_signal(String::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(None::<String>);
+    let (use_mind, set_use_mind) = create_signal(false);
+    let (mind_available, set_mind_available) = create_signal(false);
+
+    // Check if mind is available on mount
+    spawn_local(async move {
+        if api::fetch_mind_status().await.is_ok() {
+            set_mind_available.set(true);
+        }
+    });
+
+    // Auto-scroll ref
+    let messages_ref = create_node_ref::<html::Div>();
+
+    let scroll_to_bottom = move || {
+        if let Some(el) = messages_ref.get() {
+            el.set_scroll_top(el.scroll_height());
+        }
+    };
+
+    let now_ts = move || (js_sys::Date::now() / 1000.0) as i64;
 
     let do_send = move || {
         let msg = input.get().trim().to_string();
@@ -1269,20 +1661,30 @@ fn ChatPage() -> impl IntoView {
             return;
         }
 
-        // Add user message
+        let ts = now_ts();
         set_messages.update(|msgs| {
             msgs.push(ChatDisplayMessage {
                 role: "user",
                 content: msg.clone(),
                 tool_executions: vec![],
+                timestamp: ts,
+                hemisphere: None,
             });
         });
         set_input.set(String::new());
         set_loading.set(true);
         set_error.set(None);
 
+        let is_mind = use_mind.get();
+
         spawn_local(async move {
-            match api::send_soul_chat(&msg).await {
+            let result = if is_mind {
+                api::send_mind_chat(&msg).await
+            } else {
+                api::send_soul_chat(&msg).await
+            };
+
+            match result {
                 Ok(resp) => {
                     let reply = resp
                         .get("reply")
@@ -1294,12 +1696,19 @@ fn ChatPage() -> impl IntoView {
                         .and_then(|v| v.as_array())
                         .cloned()
                         .unwrap_or_default();
+                    let hemisphere = resp
+                        .get("hemisphere")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
 
+                    let ts = (js_sys::Date::now() / 1000.0) as i64;
                     set_messages.update(|msgs| {
                         msgs.push(ChatDisplayMessage {
                             role: "soul",
                             content: reply,
                             tool_executions: tools,
+                            timestamp: ts,
+                            hemisphere,
                         });
                     });
                 }
@@ -1308,7 +1717,16 @@ fn ChatPage() -> impl IntoView {
                 }
             }
             set_loading.set(false);
+            scroll_to_bottom();
         });
+
+        // Scroll after adding user message
+        scroll_to_bottom();
+    };
+
+    let clear_chat = move |_| {
+        set_messages.set(Vec::new());
+        set_error.set(None);
     };
 
     let on_click = move |_: web_sys::MouseEvent| {
@@ -1325,11 +1743,29 @@ fn ChatPage() -> impl IntoView {
     view! {
         <div class="chat-page">
             <div class="chat-header">
-                <h1>"Soul Chat"</h1>
-                <p class="subtitle">"Talk to this node's soul"</p>
+                <h1>{move || if use_mind.get() { "Mind Chat" } else { "Soul Chat" }}</h1>
+                <div class="chat-header-controls">
+                    <div class="chat-tabs">
+                        <button
+                            class=move || if !use_mind.get() { "chat-tab active" } else { "chat-tab" }
+                            on:click=move |_| set_use_mind.set(false)
+                        >
+                            "Soul"
+                        </button>
+                        <Show when=move || mind_available.get() fallback=|| ()>
+                            <button
+                                class=move || if use_mind.get() { "chat-tab active" } else { "chat-tab" }
+                                on:click=move |_| set_use_mind.set(true)
+                            >
+                                "Mind"
+                            </button>
+                        </Show>
+                    </div>
+                    <button class="chat-clear-btn" on:click=clear_chat>"Clear"</button>
+                </div>
             </div>
 
-            <div class="chat-messages">
+            <div class="chat-messages" node_ref=messages_ref>
                 <For
                     each=move || {
                         let msgs = messages.get();
@@ -1339,10 +1775,20 @@ fn ChatPage() -> impl IntoView {
                     children=move |(_, msg)| {
                         let class = format!("chat-message {}", msg.role);
                         let tools = msg.tool_executions.clone();
+                        let ts = msg.timestamp;
+                        let hemisphere = msg.hemisphere.clone();
                         view! {
                             <div class=class>
-                                <div class="chat-message-role">
-                                    {if msg.role == "user" { "You" } else { "Soul" }}
+                                <div class="chat-message-header">
+                                    <div style="display:flex;gap:6px;align-items:center">
+                                        <span class="chat-message-role">
+                                            {if msg.role == "user" { "You" } else { "Soul" }}
+                                        </span>
+                                        {hemisphere.map(|h| view! {
+                                            <span class="chat-hemisphere-tag">{h}</span>
+                                        })}
+                                    </div>
+                                    <span class="chat-message-time">{format_timestamp(ts)}</span>
                                 </div>
                                 <div class="chat-message-content">
                                     {msg.content.clone()}
@@ -1420,7 +1866,13 @@ fn ChatPage() -> impl IntoView {
                 <input
                     type="text"
                     class="chat-input"
-                    placeholder="Ask the soul something..."
+                    placeholder=move || {
+                        if use_mind.get() {
+                            "Ask the mind something..."
+                        } else {
+                            "Ask the soul something..."
+                        }
+                    }
                     prop:value=move || input.get()
                     on:input=move |ev| set_input.set(event_target_value(&ev))
                     on:keydown=on_keydown
@@ -1438,7 +1890,7 @@ fn ChatPage() -> impl IntoView {
     }
 }
 
-/// Footer
+/// Footer with version
 #[component]
 fn Footer() -> impl IntoView {
     view! {
@@ -1448,6 +1900,7 @@ fn Footer() -> impl IntoView {
                 <a href="https://github.com/compusophy/tempo-x402">"tempo-x402"</a>
                 " on Tempo Moderato"
             </p>
+            <p class="footer-version">"v0.9.0"</p>
         </footer>
     }
 }
