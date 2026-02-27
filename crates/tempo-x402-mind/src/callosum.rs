@@ -85,11 +85,37 @@ impl Callosum {
 
     /// Share (excitatory): read recent thoughts from each hemisphere
     /// and inject CrossHemisphere summaries into the other.
+    ///
+    /// Filters out CrossHemisphere and Escalation thoughts to prevent
+    /// infinite echo loops (where injected thoughts get re-injected back).
     fn share_thoughts(&self) -> Result<(), x402_soul::SoulError> {
-        // Get left's recent thoughts
-        let left_recent = self.left_db.recent_thoughts(3)?;
-        // Get right's recent thoughts
-        let right_recent = self.right_db.recent_thoughts(3)?;
+        // Get left's recent thoughts, excluding cross-hemisphere and escalation
+        // to prevent infinite echo loops
+        let left_recent: Vec<Thought> = self
+            .left_db
+            .recent_thoughts(5)?
+            .into_iter()
+            .filter(|t| {
+                !matches!(
+                    t.thought_type,
+                    ThoughtType::CrossHemisphere | ThoughtType::Escalation
+                )
+            })
+            .take(3)
+            .collect();
+        // Get right's recent thoughts, same filtering
+        let right_recent: Vec<Thought> = self
+            .right_db
+            .recent_thoughts(5)?
+            .into_iter()
+            .filter(|t| {
+                !matches!(
+                    t.thought_type,
+                    ThoughtType::CrossHemisphere | ThoughtType::Escalation
+                )
+            })
+            .take(3)
+            .collect();
 
         // Inject left's thoughts into right's DB as CrossHemisphere
         if !left_recent.is_empty() {

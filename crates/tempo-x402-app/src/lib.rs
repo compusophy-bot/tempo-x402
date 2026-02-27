@@ -841,23 +841,12 @@ fn format_uptime(secs: i64) -> String {
     }
 }
 
-/// Shorten an address for display
-fn shorten_address(addr: &str) -> String {
-    if addr.len() > 12 {
-        format!("{}...{}", &addr[..6], &addr[addr.len() - 4..])
-    } else {
-        addr.to_string()
-    }
-}
-
-/// Dashboard page with live network topology
+/// Dashboard page
 #[component]
 fn DashboardPage() -> impl IntoView {
     let (info, set_info) = create_signal(None::<serde_json::Value>);
     let (endpoints, set_endpoints) = create_signal(Vec::<serde_json::Value>::new());
     let (analytics, set_analytics) = create_signal(None::<serde_json::Value>);
-    let (child_health, set_child_health) =
-        create_signal(std::collections::HashMap::<String, serde_json::Value>::new());
     let (soul_status, set_soul_status) = create_signal(None::<serde_json::Value>);
     let (mind_status, set_mind_status) = create_signal(None::<serde_json::Value>);
     let (loading, set_loading) = create_signal(true);
@@ -876,33 +865,6 @@ fn DashboardPage() -> impl IntoView {
             {
                 Ok(resp) if resp.ok() => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(children) = data.get("children").and_then(|v| v.as_array()) {
-                            for child in children {
-                                if let Some(url) = child.get("url").and_then(|v| v.as_str()) {
-                                    let url = url.to_string();
-                                    let child_id = child
-                                        .get("instance_id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("unknown")
-                                        .to_string();
-                                    spawn_local(async move {
-                                        if let Ok(resp) =
-                                            gloo_net::http::Request::get(&format!("{}/health", url))
-                                                .send()
-                                                .await
-                                        {
-                                            if let Ok(health) =
-                                                resp.json::<serde_json::Value>().await
-                                            {
-                                                set_child_health.update(|map| {
-                                                    map.insert(child_id, health);
-                                                });
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
                         set_info.set(Some(data));
                     }
                 }
@@ -984,41 +946,6 @@ fn DashboardPage() -> impl IntoView {
                     let uptime = data.get("uptime_seconds")
                         .and_then(|v| v.as_i64())
                         .unwrap_or(0);
-                    let children_count = data.get("children_count")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    let max_children = data.get("clone_max_children")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(10);
-                    let clone_available = data.get("clone_available")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    let clone_price = data.get("clone_price")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("N/A")
-                        .to_string();
-
-                    let identity = data.get("identity").cloned();
-                    let address = identity.as_ref()
-                        .and_then(|id| id.get("address"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("N/A")
-                        .to_string();
-                    let parent_url = identity.as_ref()
-                        .and_then(|id| id.get("parent_url"))
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    let parent_address = identity.as_ref()
-                        .and_then(|id| id.get("parent_address"))
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    let children = data.get("children")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-
-                    let health_map = child_health.get();
                     let eps = endpoints.get();
                     let ep_count = eps.len();
 
@@ -1057,17 +984,6 @@ fn DashboardPage() -> impl IntoView {
                                 <span class="stat-label">"Uptime"</span>
                                 <span class="stat-value">{format_uptime(uptime)}</span>
                             </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Clones"</span>
-                                <span class="stat-value">
-                                    {format!("{}/{}", children_count, max_children)}
-                                    {if clone_available {
-                                        " available"
-                                    } else {
-                                        ""
-                                    }}
-                                </span>
-                            </div>
                         </div>
 
                         // Analytics stats
@@ -1100,122 +1016,6 @@ fn DashboardPage() -> impl IntoView {
                                 }.into_view()
                             }
                         }}
-
-                        // Network topology
-                        <div class="topology-section">
-                            <h2>"Network Topology"</h2>
-                            <div class="topology">
-                                // Parent node
-                                <div class="topology-level">
-                                    <div class="node-card node-card--parent">
-                                        <div class="node-header">
-                                            <span class="status-dot status-dot--green"></span>
-                                            <strong>"Parent (this node)"</strong>
-                                        </div>
-                                        <code class="node-address">{shorten_address(&address)}</code>
-                                        <div class="node-meta">
-                                            <span>{format!("v{}", version)}</span>
-                                            <span>{format!("up {}", format_uptime(uptime))}</span>
-                                        </div>
-                                        <div class="node-meta">
-                                            <span>{format!("clone: {}  {}/{} slots", clone_price, children_count, max_children)}</span>
-                                        </div>
-                                        {parent_url.map(|url| {
-                                            let parent_short = parent_address
-                                                .as_deref()
-                                                .map(shorten_address)
-                                                .unwrap_or_else(|| "parent".to_string());
-                                            view! {
-                                                <div class="node-parent-link">
-                                                    "^ "
-                                                    <a href=url target="_blank">{parent_short}</a>
-                                                </div>
-                                            }
-                                        })}
-                                    </div>
-                                </div>
-
-                                // Connector + children
-                                {if !children.is_empty() {
-                                    let children_view = children;
-                                    Some(view! {
-                                    <div class="connector-vertical"></div>
-                                    <div class="topology-level topology-level--children">
-                                        {children_view.iter().map(|child| {
-                                            let child_id = child.get("instance_id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("unknown")
-                                                .to_string();
-                                            let child_url = child.get("url")
-                                                .and_then(|v| v.as_str())
-                                                .map(String::from);
-                                            let child_status = child.get("status")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("unknown")
-                                                .to_string();
-                                            let child_address = child.get("address")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("")
-                                                .to_string();
-
-                                            let health = health_map.get(&child_id).cloned();
-
-                                            let (dot_class, status_label) = match child_status.as_str() {
-                                                "running" => ("status-dot--green", "running"),
-                                                "deploying" | "building" => ("status-dot--yellow", &*child_status),
-                                                "failed" | "error" => ("status-dot--red", &*child_status),
-                                                _ => ("status-dot--yellow", &*child_status),
-                                            };
-
-                                            let child_version = health.as_ref()
-                                                .and_then(|h| h.get("version"))
-                                                .and_then(|v| v.as_str())
-                                                .map(|v| format!("v{}", v))
-                                                .unwrap_or_else(|| {
-                                                    if child_status == "running" {
-                                                        "loading...".to_string()
-                                                    } else {
-                                                        "v?.?.?".to_string()
-                                                    }
-                                                });
-
-                                            let display_addr = if child_address.is_empty() {
-                                                child_id.clone()
-                                            } else {
-                                                shorten_address(&child_address)
-                                            };
-
-                                            view! {
-                                                <div class="node-card node-card--child">
-                                                    <div class="node-header">
-                                                        <span class={format!("status-dot {}", dot_class)}></span>
-                                                        <strong>{status_label.to_string()}</strong>
-                                                    </div>
-                                                    {child_url.as_ref().map(|url| view! {
-                                                        <a href=url.clone() target="_blank" class="node-address">
-                                                            {display_addr.clone()}
-                                                        </a>
-                                                    })}
-                                                    {if child_url.is_none() {
-                                                        Some(view! {
-                                                            <code class="node-address">{display_addr.clone()}</code>
-                                                        })
-                                                    } else {
-                                                        None
-                                                    }}
-                                                    <div class="node-meta">
-                                                        <span>{child_version}</span>
-                                                    </div>
-                                                </div>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                    })
-                                } else {
-                                    None
-                                }}
-                            </div>
-                        </div>
 
                         // Endpoints table
                         <div class="endpoints-section">
