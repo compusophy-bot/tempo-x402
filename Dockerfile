@@ -1,27 +1,23 @@
-# Stage 1: Build the WASM SPA with Trunk
-FROM rust:1.89-bookworm AS spa-builder
+# Stage 1: Build everything (SPA + binaries) in one stage to share cache invalidation
+FROM rust:1.89-bookworm AS builder
 
+ARG GIT_SHA=dev
+ENV GIT_SHA=${GIT_SHA}
+
+# Install WASM toolchain for SPA build
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo install trunk wasm-bindgen-cli
 
 WORKDIR /app
 COPY . .
 
-# Build the SPA
+# Build the SPA first (Trunk compiles Leptos to WASM)
 RUN cd crates/tempo-x402-app && trunk build --release
 
-# Stage 2: Build the gateway and node binaries
-FROM rust:1.89-bookworm AS builder
-
-ARG GIT_SHA=dev
-ENV GIT_SHA=${GIT_SHA}
-
-WORKDIR /app
-COPY . .
-
+# Build the gateway and node binaries
 RUN cargo build --release --package tempo-x402-gateway --package tempo-x402-node
 
-# Stage 3: Runtime
+# Stage 2: Runtime
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y ca-certificates gosu && rm -rf /var/lib/apt/lists/*
@@ -30,7 +26,7 @@ RUN groupadd -r app && useradd -r -g app -d /app app
 
 COPY --from=builder /app/target/release/x402-gateway /usr/local/bin/x402-gateway
 COPY --from=builder /app/target/release/x402-node /usr/local/bin/x402-node
-COPY --from=spa-builder /app/crates/tempo-x402-app/dist /app/spa
+COPY --from=builder /app/crates/tempo-x402-app/dist /app/spa
 
 RUN chown -R app:app /app
 
