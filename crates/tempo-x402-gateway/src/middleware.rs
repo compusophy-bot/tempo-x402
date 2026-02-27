@@ -1,5 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse};
 use alloy::primitives::Address;
+use base64::Engine;
 use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
 use x402::hmac::compute_hmac;
 use x402::payment::{PaymentPayload, PaymentRequiredBody, PaymentRequirements};
@@ -68,17 +69,21 @@ pub fn payment_required_response(requirements: PaymentRequirements) -> HttpRespo
         .json(body)
 }
 
-/// Extract and decode the PAYMENT-SIGNATURE header
+/// Extract and decode the PAYMENT-SIGNATURE header.
+/// Supports both Base64-encoded JSON and raw JSON (for development/testing).
 pub fn extract_payment_header(req: &HttpRequest) -> Option<PaymentPayload> {
     let header = req.headers().get("PAYMENT-SIGNATURE")?;
     let header_str = header.to_str().ok()?;
 
-    // Base64 decode
-    let decoded =
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, header_str).ok()?;
+    // Try Base64 decode first
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(header_str) {
+        if let Ok(payload) = serde_json::from_slice(&decoded) {
+            return Some(payload);
+        }
+    }
 
-    // Parse JSON
-    serde_json::from_slice(&decoded).ok()
+    // Fallback: try parsing as raw JSON
+    serde_json::from_str(header_str).ok()
 }
 
 /// Extract the payer address from the PAYMENT-SIGNATURE header without settling.
@@ -179,10 +184,7 @@ pub fn payment_response_header(settle: &SettleResponse, hmac_secret: Option<&[u8
         "network": settle.network,
         "payer": settle.payer.map(|a| format!("{:#x}", a)),
     });
-    let encoded = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        response.to_string(),
-    );
+    let encoded = base64::engine::general_purpose::STANDARD.encode(response.to_string());
     if let Some(secret) = hmac_secret {
         let mac = compute_hmac(secret, encoded.as_bytes());
         format!("{}.{}", encoded, mac)
