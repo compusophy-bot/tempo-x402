@@ -16,7 +16,7 @@ use crate::memory::{Thought, ThoughtType};
 use crate::mode;
 use crate::observer::NodeObserver;
 use crate::prompts;
-use crate::thinking::{run_tool_loop, ToolExecution};
+use crate::thinking::{run_tool_loop_with_model, ToolExecution};
 use crate::tool_registry::ToolRegistry;
 use crate::tools::ToolExecutor;
 
@@ -149,7 +149,8 @@ pub async fn handle_chat(
                     instance_id.clone(),
                     config.github_token.clone(),
                 )
-                .with_fork(config.fork_repo.clone(), config.upstream_repo.clone()),
+                .with_fork(config.fork_repo.clone(), config.upstream_repo.clone())
+                .with_direct_push(config.direct_push),
             );
             tool_executor = tool_executor.with_coding(git, db.clone());
         }
@@ -165,7 +166,9 @@ pub async fn handle_chat(
         tool_executor = tool_executor.with_registry(registry);
     }
 
-    let result = run_tool_loop(
+    // Use deep model for code mode (deeper reasoning for modifications)
+    let use_deep = agent_mode == mode::AgentMode::Code;
+    let result = run_tool_loop_with_model(
         &llm,
         &system_prompt,
         &mut conversation,
@@ -173,6 +176,7 @@ pub async fn handle_chat(
         &tool_executor,
         db,
         max_calls,
+        use_deep,
     )
     .await?;
 

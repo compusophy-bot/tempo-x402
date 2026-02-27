@@ -47,6 +47,10 @@ pub struct SoulConfig {
     /// Upstream repo for issues/PRs (env: SOUL_UPSTREAM_REPO, e.g. "compusophy/tempo-x402").
     /// Used as the target for PRs and issue creation.
     pub upstream_repo: Option<String>,
+    /// Direct push mode (env: SOUL_DIRECT_PUSH, default: false).
+    /// When true, push directly to fork's main branch instead of vm/ branch.
+    /// Safety: cargo check + test still gate every commit. Used for self-editing instances.
+    pub direct_push: bool,
 }
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain.\n\
@@ -151,6 +155,10 @@ impl SoulConfig {
             .ok()
             .filter(|s| !s.is_empty());
 
+        let direct_push = std::env::var("SOUL_DIRECT_PUSH")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -172,6 +180,7 @@ impl SoulConfig {
             dynamic_tools_enabled,
             fork_repo,
             upstream_repo,
+            direct_push,
         })
     }
 }

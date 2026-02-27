@@ -202,13 +202,15 @@ impl ThinkingLoop {
                         instance_id.clone(),
                         config.github_token.clone(),
                     )
-                    .with_fork(config.fork_repo.clone(), config.upstream_repo.clone()),
+                    .with_fork(config.fork_repo.clone(), config.upstream_repo.clone())
+                    .with_direct_push(config.direct_push),
                 );
                 tool_executor = tool_executor.with_coding(git, db.clone());
                 tracing::info!(
                     instance_id = %instance_id,
                     fork = ?config.fork_repo,
                     upstream = ?config.upstream_repo,
+                    direct_push = config.direct_push,
                     "Soul coding enabled"
                 );
             } else {
@@ -251,15 +253,17 @@ impl ThinkingLoop {
                 .with_fork(
                     self.config.fork_repo.clone(),
                     self.config.upstream_repo.clone(),
-                );
+                )
+                .with_direct_push(self.config.direct_push);
                 match git.init_workspace().await {
                     Ok(r) => tracing::info!(output = %r.output, "Git workspace initialized"),
                     Err(e) => tracing::warn!(error = %e, "Failed to initialize git workspace"),
                 }
-                // Ensure VM branch exists
+                // Ensure correct branch
+                let branch_label = if self.config.direct_push { "main (direct push)" } else { "VM branch" };
                 match git.ensure_branch().await {
-                    Ok(r) => tracing::info!(output = %r.output, "VM branch ready"),
-                    Err(e) => tracing::warn!(error = %e, "Failed to ensure VM branch"),
+                    Ok(r) => tracing::info!(output = %r.output, "{} ready", branch_label),
+                    Err(e) => tracing::warn!(error = %e, "Failed to ensure {}", branch_label),
                 }
             }
         }
@@ -431,8 +435,9 @@ impl ThinkingLoop {
             parts: vec![ConversationPart::Text(user_prompt)],
         }];
 
-        // Agentic tool loop
-        let result = run_tool_loop(
+        // Agentic tool loop — use deep model for self-editing instances
+        let use_deep = self.config.direct_push && self.config.autonomous_coding;
+        let result = run_tool_loop_with_model(
             llm,
             &system_prompt,
             &mut conversation,
@@ -440,6 +445,7 @@ impl ThinkingLoop {
             &self.tool_executor,
             &self.db,
             self.config.max_tool_calls,
+            use_deep,
         )
         .await?;
 
@@ -521,7 +527,10 @@ pub struct ToolLoopResult {
 
 /// Run the agentic tool loop: repeatedly call the LLM, execute any tool calls,
 /// and return the final text response plus a log of all tool executions.
-pub(crate) async fn run_tool_loop(
+/// Run the agentic tool loop: repeatedly call the LLM, execute any tool calls,
+/// and return the final text response plus a log of all tool executions.
+/// When `use_deep` is true, uses the deeper/think model (e.g. Gemini Pro).
+pub(crate) async fn run_tool_loop_with_model(
     llm: &LlmClient,
     system_prompt: &str,
     conversation: &mut Vec<ConversationMessage>,
@@ -529,15 +538,20 @@ pub(crate) async fn run_tool_loop(
     tool_executor: &ToolExecutor,
     db: &Arc<SoulDatabase>,
     max_tool_calls: u32,
+    use_deep: bool,
 ) -> Result<ToolLoopResult, SoulError> {
     let mut tool_calls_made = 0u32;
     let mut final_text = String::new();
     let mut tool_executions = Vec::new();
 
     for _ in 0..=max_tool_calls {
-        let result = llm
-            .think_with_tools(system_prompt, conversation, tool_declarations)
-            .await?;
+        let result = if use_deep {
+            llm.think_deep_with_tools(system_prompt, conversation, tool_declarations)
+                .await?
+        } else {
+            llm.think_with_tools(system_prompt, conversation, tool_declarations)
+                .await?
+        };
 
         match result {
             LlmResult::Text(text) => {

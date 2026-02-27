@@ -237,11 +237,130 @@ impl LlmClient {
         self.send_request(&request).await
     }
 
+    /// Send a request using the deep/think model (e.g. Gemini Pro).
+    /// Used for code review, complex reasoning, and self-modification.
+    pub async fn think_deep(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<String, SoulError> {
+        let request = GeminiRequest {
+            contents: vec![Content {
+                role: Some("user".to_string()),
+                parts: vec![Part {
+                    text: Some(user_prompt.to_string()),
+                    function_call: None,
+                    function_response: None,
+                    thought_signature: None,
+                }],
+            }],
+            system_instruction: Some(Content {
+                role: None,
+                parts: vec![Part {
+                    text: Some(system_prompt.to_string()),
+                    function_call: None,
+                    function_response: None,
+                    thought_signature: None,
+                }],
+            }),
+            tools: None,
+        };
+
+        let result = self.send_request_with_model(&request, true).await?;
+        match result {
+            LlmResult::Text(text) => Ok(text),
+            LlmResult::FunctionCall(_) => Err(SoulError::Llm(
+                "unexpected function call in think_deep".to_string(),
+            )),
+        }
+    }
+
+    /// Send a request using the deep/think model with tools.
+    pub async fn think_deep_with_tools(
+        &self,
+        system_prompt: &str,
+        conversation: &[ConversationMessage],
+        tools: &[FunctionDeclaration],
+    ) -> Result<LlmResult, SoulError> {
+        let contents: Vec<Content> = conversation
+            .iter()
+            .map(|msg| Content {
+                role: Some(msg.role.clone()),
+                parts: msg
+                    .parts
+                    .iter()
+                    .map(|p| match p {
+                        ConversationPart::Text(t) => Part {
+                            text: Some(t.clone()),
+                            function_call: None,
+                            function_response: None,
+                            thought_signature: None,
+                        },
+                        ConversationPart::FunctionCall(fc) => {
+                            let mut clean_fc = fc.clone();
+                            clean_fc.thought_signature = None;
+                            Part {
+                                text: None,
+                                function_call: Some(clean_fc),
+                                function_response: None,
+                                thought_signature: fc.thought_signature.clone(),
+                            }
+                        }
+                        ConversationPart::FunctionResponse(fr) => Part {
+                            text: None,
+                            function_call: None,
+                            function_response: Some(fr.clone()),
+                            thought_signature: None,
+                        },
+                    })
+                    .collect(),
+            })
+            .collect();
+
+        let tool_decls = if tools.is_empty() {
+            None
+        } else {
+            Some(vec![ToolDeclaration {
+                function_declarations: tools.to_vec(),
+            }])
+        };
+
+        let request = GeminiRequest {
+            contents,
+            system_instruction: Some(Content {
+                role: None,
+                parts: vec![Part {
+                    text: Some(system_prompt.to_string()),
+                    function_call: None,
+                    function_response: None,
+                    thought_signature: None,
+                }],
+            }),
+            tools: tool_decls,
+        };
+
+        self.send_request_with_model(&request, true).await
+    }
+
     /// Low-level: send a request to the Gemini API and parse the response.
     async fn send_request(&self, request: &GeminiRequest) -> Result<LlmResult, SoulError> {
+        self.send_request_with_model(request, false).await
+    }
+
+    /// Low-level: send a request to the Gemini API, optionally using the deep model.
+    async fn send_request_with_model(
+        &self,
+        request: &GeminiRequest,
+        use_deep: bool,
+    ) -> Result<LlmResult, SoulError> {
+        let model = if use_deep {
+            &self.model_think
+        } else {
+            &self.model_fast
+        };
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.model_fast, self.api_key
+            model, self.api_key
         );
 
         let backoff_ms = [500u64, 1000, 2000];

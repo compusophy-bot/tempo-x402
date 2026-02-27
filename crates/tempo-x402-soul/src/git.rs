@@ -18,6 +18,9 @@ pub struct GitContext {
     upstream_repo: Option<String>,
     /// Whether the fork remote has been configured this session.
     fork_configured: std::sync::atomic::AtomicBool,
+    /// Direct push mode: push to fork's main instead of vm/ branch.
+    /// The soul owns the fork and can push directly. Safety comes from cargo check + test.
+    direct_push: bool,
 }
 
 /// Result of a git operation.
@@ -39,6 +42,7 @@ impl GitContext {
             fork_repo: None,
             upstream_repo: None,
             fork_configured: std::sync::atomic::AtomicBool::new(false),
+            direct_push: false,
         }
     }
 
@@ -46,6 +50,15 @@ impl GitContext {
     pub fn with_fork(mut self, fork_repo: Option<String>, upstream_repo: Option<String>) -> Self {
         self.fork_repo = fork_repo;
         self.upstream_repo = upstream_repo;
+        self
+    }
+
+    /// Enable direct push mode: push to fork's main branch directly.
+    pub fn with_direct_push(mut self, direct_push: bool) -> Self {
+        if direct_push {
+            self.direct_push = true;
+            self.branch_name = "main".to_string();
+        }
         self
     }
 
@@ -162,8 +175,8 @@ impl GitContext {
         })
     }
 
-    /// Ensure the VM branch exists and is checked out.
-    /// Creates from current HEAD if it doesn't exist.
+    /// Ensure the correct branch exists and is checked out.
+    /// In direct push mode, stays on main. Otherwise creates vm/<id> from HEAD.
     pub async fn ensure_branch(&self) -> Result<GitResult, String> {
         // Check current branch
         let current = self.run_git(&["rev-parse", "--abbrev-ref", "HEAD"]).await?;
@@ -172,6 +185,11 @@ impl GitContext {
                 success: true,
                 output: format!("already on branch {}", self.branch_name),
             });
+        }
+
+        // In direct push mode, just checkout main
+        if self.direct_push {
+            return self.run_git(&["checkout", "main"]).await;
         }
 
         // Try to checkout existing branch

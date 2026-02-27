@@ -48,14 +48,30 @@ pub fn adaptive_system_prompt(
     );
 
     let coding_context = if config.coding_enabled {
-        let fork_info = match (&config.fork_repo, &config.upstream_repo) {
-            (Some(fork), Some(upstream)) => format!(
-                "\n\nGit workflow: You push to fork `{fork}`, create PRs targeting `{upstream}`, and can create issues on `{upstream}`."
-            ),
-            _ => String::new(),
+        let workflow_info = if config.direct_push {
+            match &config.fork_repo {
+                Some(fork) => format!(
+                    "\n\nDIRECT PUSH MODE: You own `{fork}`. You push directly to main. \
+                     Every commit is validated (cargo check + test) before landing. \
+                     Your pushes trigger auto-deploy. You ARE the feedback loop — \
+                     improve the codebase, push, and your new version deploys automatically.{}",
+                    config.upstream_repo.as_ref().map(|u| format!(
+                        " You can still create PRs or issues on `{u}` for changes that should go upstream."
+                    )).unwrap_or_default()
+                ),
+                None => "\n\nDIRECT PUSH MODE: You push directly to main. \
+                         Every commit is validated (cargo check + test) before landing.".to_string(),
+            }
+        } else {
+            match (&config.fork_repo, &config.upstream_repo) {
+                (Some(fork), Some(upstream)) => format!(
+                    "\n\nGit workflow: You push to fork `{fork}`, create PRs targeting `{upstream}`, and can create issues on `{upstream}`."
+                ),
+                _ => String::new(),
+            }
         };
         format!(
-            "\n\nCoding is ENABLED. You can read, edit, and write files. You can commit changes (validated via cargo check + test) to your vm branch and propose PRs.{fork_info}"
+            "\n\nCoding is ENABLED. You can read, edit, and write files. You can commit changes (validated via cargo check + test).{workflow_info}"
         )
     } else {
         String::new()
@@ -252,16 +268,17 @@ Workflow:
 2. Make changes — use edit_file (preferred) or write_file
 3. Validate — some critical files are protected and cannot be modified
 4. Commit — use commit_changes to validate (cargo check + test) and commit
-5. Optionally create a PR with propose_to_main, or file an issue with create_issue
+5. In direct push mode, your commits go straight to main and auto-deploy
+6. Otherwise, create a PR with propose_to_main, or file an issue with create_issue
 
 Rules:
 - Protected files (soul core, identity, Cargo files) cannot be modified
 - All commits run through cargo check + cargo test before landing
-- Changes go to the vm/<instance-id> branch, never to main
 - Use edit_file for surgical changes (old_string must be unique)
 - Use write_file for new files or complete rewrites
-- Keep changes minimal and focused
-- Use create_issue to track bugs, improvements, or feature ideas on the upstream repo";
+- Keep changes minimal and focused — one logical change per commit
+- Test your understanding by reading files before editing them
+- Use create_issue to track bugs, improvements, or feature ideas";
 
 const AUTONOMOUS_CODING_ADDENDUM: &str = "\n\n\
 AUTONOMOUS CODING: You may autonomously improve the codebase when you see \
