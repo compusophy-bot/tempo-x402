@@ -143,11 +143,14 @@ pub async fn handle_chat(
     // Enable coding on the executor if in Code mode
     if agent_mode == mode::AgentMode::Code && config.coding_enabled {
         if let Some(instance_id) = &config.instance_id {
-            let git = Arc::new(GitContext::new(
-                config.workspace_root.clone(),
-                instance_id.clone(),
-                config.github_token.clone(),
-            ));
+            let git = Arc::new(
+                GitContext::new(
+                    config.workspace_root.clone(),
+                    instance_id.clone(),
+                    config.github_token.clone(),
+                )
+                .with_fork(config.fork_repo.clone(), config.upstream_repo.clone()),
+            );
             tool_executor = tool_executor.with_coding(git, db.clone());
         }
     }

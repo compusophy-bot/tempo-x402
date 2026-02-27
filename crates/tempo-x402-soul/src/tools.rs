@@ -171,6 +171,19 @@ impl ToolExecutor {
                     .unwrap_or("Automated PR from soul agent");
                 self.propose_to_main(title, body).await
             }
+            "create_issue" => {
+                let title = args
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'title' argument".to_string())?;
+                let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
+                let labels: Vec<&str> = args
+                    .get("labels")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                    .unwrap_or_default();
+                self.create_issue(title, body, &labels).await
+            }
             _ => {
                 // Check meta-tools and dynamic tools via registry
                 if let Some(ref registry) = self.registry {
@@ -617,6 +630,35 @@ impl ToolExecutor {
             duration_ms,
         })
     }
+
+    /// Create an issue on the upstream repo.
+    async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[&str],
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        if !self.coding_enabled {
+            return Err("coding is not enabled".to_string());
+        }
+
+        let git = self
+            .git
+            .as_ref()
+            .ok_or_else(|| "git context not available".to_string())?;
+
+        let result = git.create_issue(title, body, labels).await?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        Ok(ToolResult {
+            stdout: result.output,
+            stderr: String::new(),
+            exit_code: if result.success { 0 } else { 1 },
+            duration_ms,
+        })
+    }
 }
 
 /// Return the list of function declarations for the LLM's tools parameter.
@@ -768,7 +810,7 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
 
         tools.push(FunctionDeclaration {
             name: "propose_to_main".to_string(),
-            description: "Create a pull request from the VM branch to main for human review."
+            description: "Create a pull request from the VM branch to main for human review. If fork workflow is configured, creates a cross-fork PR."
                 .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -780,6 +822,31 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     "body": {
                         "type": "string",
                         "description": "PR body/description with details of changes"
+                    }
+                },
+                "required": ["title"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "create_issue".to_string(),
+            description: "Create a GitHub issue on the upstream repository. Use for bug reports, feature requests, improvement ideas, or tracking work."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Issue title (short, descriptive)"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Issue body with details, context, and proposed approach"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional labels to apply (e.g. ['enhancement', 'bug'])"
                     }
                 },
                 "required": ["title"]

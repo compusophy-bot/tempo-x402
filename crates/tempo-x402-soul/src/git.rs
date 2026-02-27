@@ -2,6 +2,9 @@
 //!
 //! Each VM operates on a `vm/<instance-id>` branch. Changes are committed
 //! and pushed to this branch, never directly to main.
+//!
+//! Fork-based workflow: when `fork_repo` is set, the soul pushes to a fork
+//! and creates cross-fork PRs targeting the upstream repo.
 
 /// Git context for a specific VM instance.
 pub struct GitContext {
@@ -9,6 +12,12 @@ pub struct GitContext {
     instance_id: String,
     branch_name: String,
     github_token: Option<String>,
+    /// Fork repo (e.g. "compusophy-bot/tempo-x402"). When set, push goes to fork.
+    fork_repo: Option<String>,
+    /// Upstream repo (e.g. "compusophy/tempo-x402"). Target for PRs and issues.
+    upstream_repo: Option<String>,
+    /// Whether the fork remote has been configured this session.
+    fork_configured: std::sync::atomic::AtomicBool,
 }
 
 /// Result of a git operation.
@@ -27,7 +36,17 @@ impl GitContext {
             instance_id,
             branch_name,
             github_token,
+            fork_repo: None,
+            upstream_repo: None,
+            fork_configured: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Set the fork repo for push operations.
+    pub fn with_fork(mut self, fork_repo: Option<String>, upstream_repo: Option<String>) -> Self {
+        self.fork_repo = fork_repo;
+        self.upstream_repo = upstream_repo;
+        self
     }
 
     /// Get the branch name for this VM.
@@ -38,6 +57,109 @@ impl GitContext {
     /// Get the instance ID.
     pub fn instance_id(&self) -> &str {
         &self.instance_id
+    }
+
+    /// Whether fork-based workflow is active.
+    fn uses_fork(&self) -> bool {
+        self.fork_repo.is_some()
+    }
+
+    /// The remote name to push to ("fork" if fork workflow, "origin" otherwise).
+    fn push_remote(&self) -> &str {
+        if self.uses_fork() {
+            "fork"
+        } else {
+            "origin"
+        }
+    }
+
+    /// Initialize the workspace as a git repo if it isn't one already.
+    /// If fork_repo is set, clones it (shallow). Otherwise initializes empty.
+    pub async fn init_workspace(&self) -> Result<GitResult, String> {
+        // Check if already a git repo
+        if is_git_repo(&self.workspace_root).await {
+            return Ok(GitResult {
+                success: true,
+                output: "workspace is already a git repo".to_string(),
+            });
+        }
+
+        // If we have a fork repo and token, clone it
+        if let (Some(fork_repo), Some(token)) = (&self.fork_repo, &self.github_token) {
+            let clone_url = format!("https://x-access-token:{token}@github.com/{fork_repo}.git");
+
+            tracing::info!(fork = %fork_repo, "cloning fork into workspace");
+
+            // Clone into a temp dir, then move .git into workspace
+            let tmp_dir = format!("{}/.git-clone-tmp", self.workspace_root);
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(120),
+                tokio::process::Command::new("git")
+                    .args(["clone", "--depth", "1", &clone_url, &tmp_dir])
+                    .output(),
+            )
+            .await
+            .map_err(|_| "git clone timed out after 120s".to_string())?
+            .map_err(|e| format!("git clone failed: {e}"))?;
+
+            if !result.status.success() {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                return Err(format!("git clone failed: {stderr}"));
+            }
+
+            // Move .git from clone into workspace
+            let git_src = format!("{tmp_dir}/.git");
+            let git_dst = format!("{}/.git", self.workspace_root);
+            tokio::fs::rename(&git_src, &git_dst)
+                .await
+                .map_err(|e| format!("failed to move .git: {e}"))?;
+
+            // Clean up temp clone
+            let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+
+            // Reset to match workspace files (don't lose the actual source in /app)
+            self.run_git(&["reset", "HEAD"]).await?;
+
+            // Configure git user for commits
+            self.run_git(&["config", "user.email", "soul@x402.tempo.xyz"])
+                .await?;
+            self.run_git(&["config", "user.name", "x402-soul"]).await?;
+
+            // Add upstream remote if configured
+            if let Some(upstream_repo) = &self.upstream_repo {
+                let upstream_url = format!("https://github.com/{upstream_repo}.git");
+                let _ = self
+                    .run_git(&["remote", "add", "upstream", &upstream_url])
+                    .await;
+            }
+
+            // The clone already has origin pointing to the fork with auth
+            self.fork_configured
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+
+            tracing::info!("workspace initialized from fork clone");
+            return Ok(GitResult {
+                success: true,
+                output: format!("cloned fork {fork_repo} into workspace"),
+            });
+        }
+
+        // Fallback: just init an empty repo
+        let result = tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&self.workspace_root)
+            .output()
+            .await
+            .map_err(|e| format!("git init failed: {e}"))?;
+
+        self.run_git(&["config", "user.email", "soul@x402.tempo.xyz"])
+            .await?;
+        self.run_git(&["config", "user.name", "x402-soul"]).await?;
+
+        Ok(GitResult {
+            success: result.status.success(),
+            output: "initialized empty git repo".to_string(),
+        })
     }
 
     /// Ensure the VM branch exists and is checked out.
@@ -90,14 +212,15 @@ impl GitContext {
         self.run_git(&["commit", "-m", message]).await
     }
 
-    /// Push the VM branch to origin.
+    /// Push the VM branch to the appropriate remote (fork or origin).
     pub async fn push(&self) -> Result<GitResult, String> {
         // Set up auth if we have a token
         if let Some(token) = &self.github_token {
             self.configure_auth(token).await?;
         }
 
-        self.run_git(&["push", "-u", "origin", &self.branch_name])
+        let remote = self.push_remote();
+        self.run_git(&["push", "-u", remote, &self.branch_name])
             .await
     }
 
@@ -116,7 +239,8 @@ impl GitContext {
 
         // Force push only the VM branch
         if self.github_token.is_some() {
-            self.run_git(&["push", "--force", "origin", &self.branch_name])
+            let remote = self.push_remote();
+            self.run_git(&["push", "--force", remote, &self.branch_name])
                 .await
         } else {
             Ok(reset)
@@ -129,22 +253,42 @@ impl GitContext {
     }
 
     /// Create a PR from the VM branch to main using `gh`.
+    /// If fork workflow is active, creates a cross-fork PR.
     pub async fn create_pr(&self, title: &str, body: &str) -> Result<GitResult, String> {
+        let mut args = vec![
+            "pr".to_string(),
+            "create".to_string(),
+            "--base".to_string(),
+            "main".to_string(),
+        ];
+
+        if let (Some(fork_repo), Some(upstream_repo)) = (&self.fork_repo, &self.upstream_repo) {
+            // Cross-fork PR: --repo upstream --head fork_owner:branch
+            let fork_owner = fork_repo.split('/').next().unwrap_or(fork_repo.as_str());
+            let head = format!("{fork_owner}:{}", self.branch_name);
+            args.extend([
+                "--repo".to_string(),
+                upstream_repo.clone(),
+                "--head".to_string(),
+                head,
+            ]);
+        } else {
+            args.extend(["--head".to_string(), self.branch_name.clone()]);
+        }
+
+        args.extend([
+            "--title".to_string(),
+            title.to_string(),
+            "--body".to_string(),
+            body.to_string(),
+        ]);
+
+        let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             tokio::process::Command::new("gh")
-                .args([
-                    "pr",
-                    "create",
-                    "--base",
-                    "main",
-                    "--head",
-                    &self.branch_name,
-                    "--title",
-                    title,
-                    "--body",
-                    body,
-                ])
+                .args(&args_refs)
                 .current_dir(&self.workspace_root)
                 .env("GH_TOKEN", self.github_token.as_deref().unwrap_or(""))
                 .output(),
@@ -166,10 +310,102 @@ impl GitContext {
         })
     }
 
+    /// Create an issue on the upstream repo (or origin repo) using `gh`.
+    pub async fn create_issue(
+        &self,
+        title: &str,
+        body: &str,
+        labels: &[&str],
+    ) -> Result<GitResult, String> {
+        let repo = self
+            .upstream_repo
+            .as_deref()
+            .ok_or_else(|| "no upstream repo configured (set SOUL_UPSTREAM_REPO)".to_string())?;
+
+        let mut args = vec![
+            "issue".to_string(),
+            "create".to_string(),
+            "--repo".to_string(),
+            repo.to_string(),
+            "--title".to_string(),
+            title.to_string(),
+            "--body".to_string(),
+            body.to_string(),
+        ];
+
+        for label in labels {
+            args.extend(["--label".to_string(), label.to_string()]);
+        }
+
+        let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            tokio::process::Command::new("gh")
+                .args(&args_refs)
+                .current_dir(&self.workspace_root)
+                .env("GH_TOKEN", self.github_token.as_deref().unwrap_or(""))
+                .output(),
+        )
+        .await
+        .map_err(|_| "gh issue create timed out after 30s".to_string())?
+        .map_err(|e| format!("gh issue create failed: {e}"))?;
+
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+
+        Ok(GitResult {
+            success: result.status.success(),
+            output: if result.status.success() {
+                stdout
+            } else {
+                format!("{stdout}\n{stderr}")
+            },
+        })
+    }
+
     /// Configure git auth using the GitHub token.
+    /// Sets up both origin auth and fork remote (if fork workflow is active).
     async fn configure_auth(&self, token: &str) -> Result<(), String> {
-        // Get current remote URL
-        let remote = self.run_git(&["remote", "get-url", "origin"]).await?;
+        // Configure origin auth
+        self.configure_remote_auth("origin", token).await?;
+
+        // If fork workflow, add/configure the "fork" remote
+        if let Some(fork_repo) = &self.fork_repo {
+            if !self
+                .fork_configured
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let fork_url = format!("https://x-access-token:{token}@github.com/{fork_repo}.git");
+
+                // Check if fork remote exists
+                let check = self.run_git(&["remote", "get-url", "fork"]).await;
+                match check {
+                    Ok(r) if r.success => {
+                        // Update existing fork remote URL
+                        if !r.output.trim().contains("x-access-token") {
+                            self.run_git(&["remote", "set-url", "fork", &fork_url])
+                                .await?;
+                        }
+                    }
+                    _ => {
+                        // Add new fork remote
+                        self.run_git(&["remote", "add", "fork", &fork_url]).await?;
+                    }
+                }
+
+                self.fork_configured
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                tracing::info!(fork = %fork_repo, "configured fork remote");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Configure auth for a specific remote.
+    async fn configure_remote_auth(&self, remote_name: &str, token: &str) -> Result<(), String> {
+        let remote = self.run_git(&["remote", "get-url", remote_name]).await?;
         let url = remote.output.trim();
 
         // If already using token URL, skip
@@ -187,10 +423,11 @@ impl GitContext {
             let path = url.strip_prefix("git@github.com:").unwrap_or(url);
             format!("https://x-access-token:{token}@github.com/{path}")
         } else {
-            return Err(format!("unexpected remote URL format: {url}"));
+            // Might be already a token URL for a different token, or unknown format
+            return Ok(());
         };
 
-        self.run_git(&["remote", "set-url", "origin", &new_url])
+        self.run_git(&["remote", "set-url", remote_name, &new_url])
             .await?;
         Ok(())
     }

@@ -81,6 +81,8 @@ Each crate has its own `CLAUDE.md` with local context. Read that first when work
 | `SOUL_DYNAMIC_TOOLS_ENABLED` | node | Enable dynamic tool registry (default: false) |
 | `HEALTH_PROBE_INTERVAL_SECS` | node | Health probe interval in seconds (default: 300) |
 | `MIND_ENABLED` | node | Enable dual-soul architecture (default: false) |
+| `SOUL_FORK_REPO` | node | Fork repo for soul push (e.g. `compusophy-bot/tempo-x402`) |
+| `SOUL_UPSTREAM_REPO` | node | Upstream repo for soul PRs/issues (e.g. `compusophy/tempo-x402`) |
 
 ## Commands
 

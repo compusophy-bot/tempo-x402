@@ -45,14 +45,19 @@ impl ThinkingLoop {
         // Set up coding if enabled and instance_id is available
         if config.coding_enabled {
             if let Some(instance_id) = &config.instance_id {
-                let git = Arc::new(GitContext::new(
-                    config.workspace_root.clone(),
-                    instance_id.clone(),
-                    config.github_token.clone(),
-                ));
+                let git = Arc::new(
+                    GitContext::new(
+                        config.workspace_root.clone(),
+                        instance_id.clone(),
+                        config.github_token.clone(),
+                    )
+                    .with_fork(config.fork_repo.clone(), config.upstream_repo.clone()),
+                );
                 tool_executor = tool_executor.with_coding(git, db.clone());
                 tracing::info!(
                     instance_id = %instance_id,
+                    fork = ?config.fork_repo,
+                    upstream = ?config.upstream_repo,
                     "Soul coding enabled"
                 );
             } else {
@@ -83,6 +88,30 @@ impl ThinkingLoop {
     /// Run the thinking loop forever at a fixed interval.
     pub async fn run(&self) {
         let interval = std::time::Duration::from_secs(self.config.think_interval_secs);
+
+        // Initialize git workspace if coding is enabled
+        if self.config.coding_enabled {
+            if let Some(instance_id) = &self.config.instance_id {
+                let git = GitContext::new(
+                    self.config.workspace_root.clone(),
+                    instance_id.clone(),
+                    self.config.github_token.clone(),
+                )
+                .with_fork(
+                    self.config.fork_repo.clone(),
+                    self.config.upstream_repo.clone(),
+                );
+                match git.init_workspace().await {
+                    Ok(r) => tracing::info!(output = %r.output, "Git workspace initialized"),
+                    Err(e) => tracing::warn!(error = %e, "Failed to initialize git workspace"),
+                }
+                // Ensure VM branch exists
+                match git.ensure_branch().await {
+                    Ok(r) => tracing::info!(output = %r.output, "VM branch ready"),
+                    Err(e) => tracing::warn!(error = %e, "Failed to ensure VM branch"),
+                }
+            }
+        }
 
         tracing::info!(
             interval_secs = self.config.think_interval_secs,

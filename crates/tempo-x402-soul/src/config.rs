@@ -41,6 +41,12 @@ pub struct SoulConfig {
     pub instance_id: Option<String>,
     /// Enable dynamic tool registry (env: SOUL_DYNAMIC_TOOLS_ENABLED, default: false).
     pub dynamic_tools_enabled: bool,
+    /// Fork repo for push operations (env: SOUL_FORK_REPO, e.g. "compusophy-bot/tempo-x402").
+    /// When set, soul pushes to the fork instead of origin and creates cross-fork PRs.
+    pub fork_repo: Option<String>,
+    /// Upstream repo for issues/PRs (env: SOUL_UPSTREAM_REPO, e.g. "compusophy/tempo-x402").
+    /// Used as the target for PRs and issue creation.
+    pub upstream_repo: Option<String>,
 }
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain. \
@@ -135,6 +141,14 @@ impl SoulConfig {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
+        let fork_repo = std::env::var("SOUL_FORK_REPO")
+            .ok()
+            .filter(|s| !s.is_empty());
+
+        let upstream_repo = std::env::var("SOUL_UPSTREAM_REPO")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -154,6 +168,8 @@ impl SoulConfig {
             auto_propose_to_main,
             instance_id,
             dynamic_tools_enabled,
+            fork_repo,
+            upstream_repo,
         })
     }
 }
