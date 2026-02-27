@@ -189,13 +189,18 @@ impl LlmClient {
                             function_response: None,
                             thought_signature: None,
                         },
-                        ConversationPart::FunctionCall(fc) => Part {
-                            text: None,
-                            function_call: Some(fc.clone()),
-                            function_response: None,
-                            // Pass back the thought_signature from the function call
-                            thought_signature: fc.thought_signature.clone(),
-                        },
+                        ConversationPart::FunctionCall(fc) => {
+                            // thought_signature must be at the Part level, NOT inside
+                            // function_call — Gemini 3+ rejects unknown fields there.
+                            let mut fc_clean = fc.clone();
+                            let sig = fc_clean.thought_signature.take();
+                            Part {
+                                text: None,
+                                function_call: Some(fc_clean),
+                                function_response: None,
+                                thought_signature: sig,
+                            }
+                        }
                         ConversationPart::FunctionResponse(fr) => Part {
                             text: None,
                             function_call: None,
