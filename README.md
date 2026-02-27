@@ -133,7 +133,8 @@ crates/
 ├── tempo-x402-node/           # Self-deploying node: gateway + identity + clone orchestration
 ├── tempo-x402-identity/       # Wallet generation, persistence, faucet, parent registration
 ├── tempo-x402-agent/          # Railway API client + clone lifecycle management
-├── tempo-x402-soul/           # Agentic thinking loop powered by Gemini 3 Flash
+├── tempo-x402-soul/           # Agentic thinking loop powered by Gemini 3 Flash + dynamic tool registry
+├── tempo-x402-mind/           # Lateralized dual-soul: left (analytical) + right (holistic) + callosum
 ├── tempo-x402-app/            # Leptos WASM demo SPA (not published)
 └── tempo-x402-security-audit/ # 15 security invariant tests enforced on every build
 ```
@@ -149,7 +150,8 @@ crates/
 | [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node with clone orchestration | `cargo add tempo-x402-node` |
 | [`tempo-x402-identity`](https://docs.rs/tempo-x402-identity) | Wallet generation, persistence, faucet funding | `cargo add tempo-x402-identity` |
 | [`tempo-x402-agent`](https://docs.rs/tempo-x402-agent) | Railway API client + clone spawning | `cargo add tempo-x402-agent` |
-| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Agentic thinking loop powered by Gemini | `cargo add tempo-x402-soul` |
+| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Agentic thinking loop powered by Gemini + dynamic tool registry | `cargo add tempo-x402-soul` |
+| [`tempo-x402-mind`](https://docs.rs/tempo-x402-mind) | Lateralized dual-soul architecture (left/right hemispheres + callosum) | `cargo add tempo-x402-mind` |
 
 ## Gateway API
 
@@ -166,6 +168,9 @@ The gateway lets you monetize any HTTP API without modifying its source code.
 | `GET` | `/analytics/:slug` | Free | Stats for a single endpoint |
 | `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target API |
 | `GET` | `/soul/status` | Free | Soul thinking loop status (node only) |
+| `POST` | `/soul/chat` | Free | Interactive chat with the soul (node only) |
+| `GET` | `/mind/status` | Free | Dual-soul status — both hemispheres (node only, `MIND_ENABLED`) |
+| `POST` | `/mind/chat` | Free | Chat routed to left hemisphere (node only, `MIND_ENABLED`) |
 | `GET` | `/health` | Free | Health check |
 | `GET` | `/metrics` | Bearer token | Prometheus metrics |
 
@@ -217,6 +222,10 @@ tip20::approve(&provider, token, facilitator_address, amount).await?;
 | `WEBHOOK_URLS` | facilitator, gateway | Comma-separated settlement webhook URLs |
 | `GEMINI_API_KEY` | node | Gemini API key for soul thinking (dormant without it) |
 | `SOUL_DB_PATH` | node | Soul database path (default: `./soul.db`) |
+| `SOUL_CODING_ENABLED` | node | Enable soul file write/edit/commit tools (default: `false`) |
+| `SOUL_DYNAMIC_TOOLS_ENABLED` | node | Enable dynamic tool registry (default: `false`) |
+| `HEALTH_PROBE_INTERVAL_SECS` | node | Health probe loop interval in seconds (default: `300`) |
+| `MIND_ENABLED` | node | Enable dual-soul architecture (default: `false`) |
 
 ## Security
 

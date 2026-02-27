@@ -12,7 +12,7 @@ Crates: https://crates.io/crates/tempo-x402
 
 ```toml
 [dependencies]
-tempo-x402 = "0.6"
+tempo-x402 = "0.9"
 ```
 
 The crate is published as `tempo-x402` but the library name is `x402`:
@@ -250,6 +250,61 @@ Target APIs receive verification headers:
 - `X-X402-Amount: 50000`
 - `X-X402-TxHash: 0x...`
 
+## Soul (Agentic Thinking Loop)
+
+The soul is an autonomous agent that observes node state, reasons about it via
+Gemini, and can take actions (file read/write/edit, shell commands, git commits).
+
+Modes: Observe (autonomous cycles), Chat (interactive), Code (file mutation + git),
+Review (read-only analysis). Each mode has a curated tool set.
+
+### Dynamic Tool Registry
+
+The soul can register custom tools at runtime (`SOUL_DYNAMIC_TOOLS_ENABLED=true`):
+
+- `register_tool` — register a new shell-based tool (Code mode only)
+- `list_tools` — list all registered dynamic tools
+- `unregister_tool` — remove a dynamic tool
+
+Dynamic tools execute via shell with args passed as `TOOL_ARGS` (JSON) and
+`TOOL_PARAM_{NAME}` env vars. Max 20 tools. Two handler types:
+`shell_command` (inline) and `shell_script` (script in `/data/tools/`).
+
+### Soul Env Vars
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `GEMINI_API_KEY` | — | Gemini API key (dormant without it) |
+| `SOUL_DB_PATH` | `./soul.db` | Soul database path |
+| `SOUL_THINK_INTERVAL_SECS` | `900` | Think loop interval |
+| `SOUL_TOOLS_ENABLED` | `true` | Enable/disable tool execution |
+| `SOUL_CODING_ENABLED` | `false` | Enable write/edit/commit tools |
+| `SOUL_DYNAMIC_TOOLS_ENABLED` | `false` | Enable dynamic tool registry |
+| `SOUL_AUTONOMOUS_CODING` | `false` | Allow autonomous code changes |
+| `INSTANCE_ID` | — | VM instance ID for branch naming |
+
+## Node (Self-Deploying)
+
+The node composes a gateway with identity bootstrap, clone orchestration, and
+the soul thinking loop. Can spawn copies of itself on Railway.
+
+### Periodic Health Probe
+
+The node runs a periodic health probe (default every 5 minutes) that checks all
+children via `/health`. Unreachable children are marked as failed. Stuck
+"deploying" children are recovered. Outdated children are auto-redeployed.
+
+Configurable via `HEALTH_PROBE_INTERVAL_SECS` (default: 300).
+
+## Mind (Dual-Soul Architecture)
+
+When `MIND_ENABLED=true`, the node runs two souls in parallel:
+- **Left hemisphere** — fast/analytical, Code-oriented, 900s cycles
+- **Right hemisphere** — deep/holistic, Observe-oriented, 1800s cycles
+- **Callosum** — active integration bus: shares summaries, gates conflicts, escalates uncertainty
+
+Falls back to single soul when `MIND_ENABLED=false` (default).
+
 ## Prerequisites
 
 Before paying:
@@ -289,9 +344,11 @@ Health check: GET /health on any service
 | `tempo-x402-facilitator` | Payment verification and settlement |
 | `tempo-x402-gateway` | API gateway with endpoint registration, per-endpoint analytics, and Prometheus metrics |
 | `tempo-x402-wallet` | WASM-compatible wallet — key generation, EIP-712 signing |
-| `tempo-x402-node` | Self-deploying node — gateway + identity + clone orchestration |
+| `tempo-x402-node` | Self-deploying node — gateway + identity + clone orchestration + periodic health probe |
 | `tempo-x402-identity` | Wallet generation, persistence, faucet funding |
 | `tempo-x402-agent` | Railway API client + clone orchestration |
+| `tempo-x402-soul` | Agentic thinking loop — observe/think/act cycle powered by Gemini, with coding agent and dynamic tool registry |
+| `tempo-x402-mind` | Lateralized dual-soul architecture — left (analytical/code) + right (holistic/observe) + callosum integration |
 
 ## API Specs
 
