@@ -50,7 +50,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         .and_then(|s| s.parse().ok());
 
     let recent_thoughts: Vec<ThoughtEntry> = soul_db
-        .recent_thoughts(5)
+        .recent_thoughts(15)
         .unwrap_or_default()
         .into_iter()
         .map(|t| ThoughtEntry {
@@ -198,7 +198,7 @@ fn build_hemisphere_status(
         .and_then(|s| s.parse().ok());
 
     let recent_thoughts: Vec<ThoughtEntry> = db
-        .recent_thoughts(5)
+        .recent_thoughts(15)
         .unwrap_or_default()
         .into_iter()
         .map(|t| ThoughtEntry {

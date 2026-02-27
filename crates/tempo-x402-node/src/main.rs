@@ -433,12 +433,19 @@ async fn main() -> std::io::Result<()> {
                                     "Health probe: failed to parse response"
                                 );
 
-                                // If deploying for >10min and returning bad responses, mark failed
+                                // Mark children returning bad health responses as failed after timeout
                                 let age_secs = chrono::Utc::now().timestamp() - child.created_at;
-                                if child.status == "deploying" && age_secs > 600 {
+                                let stale = match child.status.as_str() {
+                                    "deploying" => age_secs > 600, // 10 min
+                                    "running" => age_secs > 300,   // 5 min
+                                    _ => false,
+                                };
+                                if stale {
                                     tracing::info!(
                                         instance_id = %child.instance_id,
-                                        "Marking stuck deploying child as failed (bad health response)"
+                                        status = %child.status,
+                                        age_secs = age_secs,
+                                        "Marking child with bad health response as failed"
                                     );
                                     let _ = db::mark_child_failed(
                                         &version_check_state.gateway.db,
@@ -602,11 +609,25 @@ async fn main() -> std::io::Result<()> {
                             );
                         }
                         Err(e) => {
-                            tracing::warn!(
-                                instance_id = %child.instance_id,
-                                error = %e,
-                                "Auto-redeploy failed (non-fatal)"
-                            );
+                            let err_str = format!("{e}");
+                            // If Railway says the service doesn't exist, mark child as failed
+                            if err_str.contains("not found") || err_str.contains("Not Found") {
+                                tracing::warn!(
+                                    instance_id = %child.instance_id,
+                                    error = %e,
+                                    "Service not found on Railway — marking child as failed"
+                                );
+                                let _ = db::mark_child_failed(
+                                    &version_check_state.gateway.db,
+                                    &child.instance_id,
+                                );
+                            } else {
+                                tracing::warn!(
+                                    instance_id = %child.instance_id,
+                                    error = %e,
+                                    "Auto-redeploy failed (non-fatal)"
+                                );
+                            }
                         }
                     }
                 }
