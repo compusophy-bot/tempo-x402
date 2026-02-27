@@ -6,12 +6,23 @@ ENV GIT_SHA=${GIT_SHA}
 
 # Install WASM toolchain for SPA build
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install trunk wasm-bindgen-cli
+RUN cargo install trunk
+
+# Pre-download wasm-bindgen binary (trunk needs the musl static build;
+# downloading it here with retries avoids transient failures during trunk build)
+ARG WASM_BINDGEN_VERSION=0.2.108
+RUN curl -sSL --retry 5 --retry-delay 5 \
+    "https://github.com/rustwasm/wasm-bindgen/releases/download/${WASM_BINDGEN_VERSION}/wasm-bindgen-${WASM_BINDGEN_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    -o /tmp/wb.tar.gz && \
+    mkdir -p /root/.trunk/tools/wasm-bindgen-${WASM_BINDGEN_VERSION} && \
+    tar xzf /tmp/wb.tar.gz --strip-components=1 \
+        -C /root/.trunk/tools/wasm-bindgen-${WASM_BINDGEN_VERSION}/ && \
+    rm /tmp/wb.tar.gz
 
 WORKDIR /app
 COPY . .
 
-# Build the SPA first (Trunk compiles Leptos to WASM)
+# Build the SPA (Trunk compiles Leptos to WASM)
 RUN cd crates/tempo-x402-app && trunk build --release
 
 # Build the gateway and node binaries
