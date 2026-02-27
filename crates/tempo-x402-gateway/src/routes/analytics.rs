@@ -60,6 +60,7 @@ pub async fn list_analytics(
     let total_rev_str = total_revenue.to_string();
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
+        "platform_address": format!("{:#x}", state.config.platform_address),
         "endpoints": endpoints,
         "total_revenue": total_rev_str,
         "total_revenue_usd": token_amount_to_usd(&total_rev_str),
