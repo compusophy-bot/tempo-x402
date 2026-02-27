@@ -24,6 +24,7 @@ pub async fn health(state: web::Data<AppState>) -> HttpResponse {
         "service": "x402-gateway",
         "version": env!("CARGO_PKG_VERSION"),
         "build": build_sha(),
+        "platform_address": format!("{:#x}", state.config.platform_address),
     });
 
     // If facilitator is embedded, include its health status

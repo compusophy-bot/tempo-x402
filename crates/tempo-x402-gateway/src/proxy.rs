@@ -41,6 +41,8 @@ const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
     "x-ratelimit-limit",
     "x-ratelimit-remaining",
     "x-ratelimit-reset",
+    "location",
+    "content-disposition",
     // Note: access-control-allow-origin is intentionally excluded.
     // The gateway's own CORS middleware is the sole authority for CORS headers.
     // Forwarding upstream ACAO headers could conflict and cause browsers to reject responses.
