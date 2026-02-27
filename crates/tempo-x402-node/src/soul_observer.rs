@@ -66,14 +66,15 @@ impl NodeObserver for NodeObserverImpl {
         };
 
         // Read children count from node DB
-        let children_count = {
-            match rusqlite::Connection::open(&self.db_path) {
-                Ok(conn) => crate::db::query_children_active(&conn)
+        let children_count = self
+            .gateway
+            .db
+            .with_connection(|conn| {
+                crate::db::query_children_active(conn)
                     .map(|c| c.len() as u32)
-                    .unwrap_or(0),
-                Err(_) => 0,
-            }
-        };
+                    .map_err(|e| x402_gateway::error::GatewayError::Internal(e.to_string()))
+            })
+            .unwrap_or(0);
 
         Ok(NodeSnapshot {
             uptime_secs,
@@ -89,5 +90,55 @@ impl NodeObserver for NodeObserverImpl {
             instance_id: self.identity.as_ref().map(|id| id.instance_id.clone()),
             generation: self.generation,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use x402_gateway::config::GatewayConfig;
+    use x402_gateway::db::Database;
+    use alloy::primitives::address;
+
+    #[test]
+    fn test_observe_fallback_wallet() {
+        let db_path = "test_observer.db";
+        let _ = std::fs::remove_file(db_path);
+        let db = Database::new(db_path).unwrap();
+        
+        let platform_addr = address!("cda66883e29901f9ed811b393f068ac7df369e25");
+        let config = GatewayConfig {
+            platform_address: platform_addr,
+            facilitator_url: "http://localhost".into(),
+            hmac_secret: Some(vec![0; 32]),
+            db_path: db_path.into(),
+            port: 4023,
+            platform_fee: "$0.01".into(),
+            platform_fee_amount: "10000".into(),
+            allowed_origins: vec![],
+            rate_limit_rpm: 60,
+            facilitator_private_key: None,
+            nonce_db_path: "test_nonces.db".into(),
+            webhook_urls: vec![],
+            rpc_url: "http://localhost".into(),
+            spa_dir: None,
+            metrics_token: None,
+        };
+
+        let gateway = GatewayState::new(config, db, None);
+        let observer = NodeObserverImpl::new(
+            gateway,
+            None, // no identity
+            0,
+            chrono::Utc::now(),
+            db_path.into(),
+        );
+
+        let snapshot = observer.observe().unwrap();
+        assert_eq!(snapshot.wallet_address, Some("0xcda66883e29901f9ed811b393f068ac7df369e25".to_string()));
+        assert_eq!(snapshot.instance_id, None);
+        
+        let _ = std::fs::remove_file(db_path);
+        let _ = std::fs::remove_file("test_nonces.db");
     }
 }

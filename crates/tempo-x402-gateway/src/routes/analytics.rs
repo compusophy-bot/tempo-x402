@@ -35,17 +35,11 @@ pub async fn list_analytics(
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
     let stats = state.db.list_endpoint_stats(query.limit, query.offset)?;
-
-    let mut total_revenue: u128 = 0;
-    let mut total_payments: i64 = 0;
+    let (total_payments, total_revenue) = state.db.get_global_stats()?;
 
     let endpoints: Vec<serde_json::Value> = stats
         .iter()
         .map(|s| {
-            let rev: u128 = s.revenue_total.parse().unwrap_or(0);
-            total_revenue += rev;
-            total_payments += s.payment_count;
-
             serde_json::json!({
                 "slug": s.slug,
                 "request_count": s.request_count,
@@ -57,13 +51,11 @@ pub async fn list_analytics(
         })
         .collect();
 
-    let total_rev_str = total_revenue.to_string();
-
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "platform_address": format!("{:#x}", state.config.platform_address),
         "endpoints": endpoints,
-        "total_revenue": total_rev_str,
-        "total_revenue_usd": token_amount_to_usd(&total_rev_str),
+        "total_revenue": total_revenue,
+        "total_revenue_usd": token_amount_to_usd(&total_revenue),
         "total_payments": total_payments,
     })))
 }

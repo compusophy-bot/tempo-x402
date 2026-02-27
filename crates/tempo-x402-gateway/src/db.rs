@@ -571,7 +571,27 @@ impl Database {
         Ok(stats)
     }
 
+    /// Get global totals for all endpoint stats.
+    pub fn get_global_stats(&self) -> Result<(i64, String), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let (total_payments, total_revenue): (Option<i64>, Option<i64>) = conn.query_row(
+            "SELECT SUM(payment_count), SUM(CAST(revenue_total AS INTEGER)) FROM endpoint_stats",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        Ok((
+            total_payments.unwrap_or(0),
+            total_revenue.map(|v| v.to_string()).unwrap_or_else(|| "0".to_string()),
+        ))
+    }
+
     /// List endpoint stats ordered by revenue descending with pagination.
+
     pub fn list_endpoint_stats(
         &self,
         limit: u32,
