@@ -11,6 +11,9 @@ struct SoulStatus {
     dormant: bool,
     total_cycles: u64,
     last_think_at: Option<i64>,
+    mode: String,
+    tools_enabled: bool,
+    coding_enabled: bool,
     recent_thoughts: Vec<ThoughtEntry>,
 }
 
@@ -26,11 +29,18 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,
         None => {
+            let (tools_enabled, coding_enabled) = match &state.soul_config {
+                Some(c) => (c.tools_enabled, c.coding_enabled),
+                None => (false, false),
+            };
             return HttpResponse::Ok().json(serde_json::json!({
                 "active": false,
                 "dormant": state.soul_dormant,
                 "total_cycles": 0,
                 "last_think_at": null,
+                "mode": "observe",
+                "tools_enabled": tools_enabled,
+                "coding_enabled": coding_enabled,
                 "recent_thoughts": []
             }));
         }
@@ -60,11 +70,19 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         })
         .collect();
 
+    let (mode, tools_enabled, coding_enabled) = match &state.soul_config {
+        Some(c) => ("observe".to_string(), c.tools_enabled, c.coding_enabled),
+        None => ("observe".to_string(), false, false),
+    };
+
     HttpResponse::Ok().json(SoulStatus {
         active: true,
         dormant: state.soul_dormant,
         total_cycles,
         last_think_at,
+        mode,
+        tools_enabled,
+        coding_enabled,
         recent_thoughts,
     })
 }

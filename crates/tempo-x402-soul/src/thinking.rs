@@ -1,4 +1,7 @@
 //! The thinking loop: periodic observe → think → record cycle with tool execution.
+//!
+//! Uses adaptive pacing: the interval between think cycles varies based on
+//! what's happening (novelty, tool use, decisions made) rather than being fixed.
 
 use std::sync::Arc;
 
@@ -18,6 +21,154 @@ use crate::observer::{NodeObserver, NodeSnapshot};
 use crate::prompts;
 use crate::tool_registry::ToolRegistry;
 use crate::tools::{self, ToolExecutor};
+
+/// Adaptive pacing: adjusts think interval based on novelty and activity.
+struct AdaptivePacer {
+    /// The configured base interval (seconds).
+    base_secs: u64,
+    /// Current interval (seconds). Adjusted after each cycle.
+    current_secs: u64,
+    /// Previous snapshot for change detection.
+    prev_snapshot: Option<NodeSnapshot>,
+    /// Number of consecutive "boring" cycles (no novelty, no tools, no decisions).
+    boring_streak: u32,
+    /// Number of consecutive "active" cycles (tools used or decisions made).
+    active_streak: u32,
+}
+
+/// Floor: never think faster than once per 60s.
+const MIN_INTERVAL_SECS: u64 = 60;
+/// Ceiling: never go longer than 1 hour between thoughts.
+const MAX_INTERVAL_SECS: u64 = 3600;
+/// After a cycle with tool use, think again sooner.
+const ACTIVE_COOLDOWN_SECS: u64 = 120;
+/// After a cycle with a decision, think again at moderate pace.
+const DECISION_COOLDOWN_SECS: u64 = 300;
+
+impl AdaptivePacer {
+    fn new(base_secs: u64) -> Self {
+        Self {
+            base_secs,
+            current_secs: base_secs,
+            prev_snapshot: None,
+            boring_streak: 0,
+            active_streak: 0,
+        }
+    }
+
+    /// Compute the next sleep interval based on what happened this cycle.
+    fn next_interval(&mut self, snapshot: &NodeSnapshot, cycle_result: &CycleResult) -> u64 {
+        let novelty = self.compute_novelty(snapshot);
+        let used_tools = cycle_result.tool_calls > 0;
+        let made_decisions = cycle_result.decisions > 0;
+        let requested_soon = cycle_result.think_soon;
+
+        // Update streaks
+        if used_tools || made_decisions || novelty > 0.3 {
+            self.active_streak += 1;
+            self.boring_streak = 0;
+        } else {
+            self.boring_streak += 1;
+            self.active_streak = 0;
+        }
+
+        // Calculate next interval
+        let next = if requested_soon {
+            // Soul explicitly asked to think again soon
+            MIN_INTERVAL_SECS
+        } else if used_tools && self.active_streak > 1 {
+            // Deep work: multiple active cycles in a row → stay engaged
+            ACTIVE_COOLDOWN_SECS
+        } else if used_tools {
+            // Single active cycle → moderate cooldown
+            DECISION_COOLDOWN_SECS
+        } else if made_decisions {
+            // Made a decision but no tools → check back at moderate pace
+            DECISION_COOLDOWN_SECS
+        } else if novelty > 0.5 {
+            // Significant change in node state → investigate sooner
+            self.base_secs / 3
+        } else if novelty > 0.1 {
+            // Minor change → slightly sooner
+            self.base_secs / 2
+        } else if self.boring_streak >= 5 {
+            // Very boring → exponential backoff (capped at MAX)
+            let backoff = self.base_secs * (1 + self.boring_streak as u64 / 5);
+            backoff.min(MAX_INTERVAL_SECS)
+        } else if self.boring_streak >= 2 {
+            // Mildly boring → slow down a bit
+            self.base_secs + (self.boring_streak as u64 * 60)
+        } else {
+            // Normal → use base interval
+            self.base_secs
+        };
+
+        // Clamp to bounds
+        self.current_secs = next.clamp(MIN_INTERVAL_SECS, MAX_INTERVAL_SECS);
+
+        // Store snapshot for next comparison
+        self.prev_snapshot = Some(snapshot.clone());
+
+        self.current_secs
+    }
+
+    /// Compute a novelty score [0.0, 1.0] by comparing current snapshot to previous.
+    fn compute_novelty(&self, current: &NodeSnapshot) -> f64 {
+        let prev = match &self.prev_snapshot {
+            Some(p) => p,
+            None => return 1.0, // First observation is always novel
+        };
+
+        let mut score = 0.0;
+        let mut factors = 0;
+
+        // New payments
+        if current.total_payments != prev.total_payments {
+            score += 0.4;
+        }
+        factors += 1;
+
+        // Revenue changed
+        if current.total_revenue != prev.total_revenue {
+            score += 0.3;
+        }
+        factors += 1;
+
+        // Endpoint count changed
+        if current.endpoint_count != prev.endpoint_count {
+            score += 0.3;
+        }
+        factors += 1;
+
+        // Children count changed
+        if current.children_count != prev.children_count {
+            score += 0.4;
+        }
+        factors += 1;
+
+        // Wallet appeared or changed
+        if current.wallet_address != prev.wallet_address {
+            score += 0.2;
+        }
+        factors += 1;
+
+        // Instance ID appeared
+        if current.instance_id != prev.instance_id {
+            score += 0.2;
+        }
+        factors += 1;
+
+        (score / factors as f64).min(1.0)
+    }
+}
+
+/// Result of a single think cycle, used by the adaptive pacer.
+struct CycleResult {
+    tool_calls: u32,
+    decisions: u32,
+    /// Whether the LLM output contained [THINK_SOON] to request faster re-thinking.
+    think_soon: bool,
+}
 
 /// The thinking loop that drives the soul.
 pub struct ThinkingLoop {
@@ -85,9 +236,9 @@ impl ThinkingLoop {
         }
     }
 
-    /// Run the thinking loop forever at a fixed interval.
+    /// Run the thinking loop with adaptive pacing.
     pub async fn run(&self) {
-        let interval = std::time::Duration::from_secs(self.config.think_interval_secs);
+        let mut pacer = AdaptivePacer::new(self.config.think_interval_secs);
 
         // Initialize git workspace if coding is enabled
         if self.config.coding_enabled {
@@ -114,10 +265,10 @@ impl ThinkingLoop {
         }
 
         tracing::info!(
-            interval_secs = self.config.think_interval_secs,
+            base_interval_secs = self.config.think_interval_secs,
             dormant = self.llm.is_none(),
             tools_enabled = self.config.tools_enabled,
-            "Soul thinking loop started"
+            "Soul thinking loop started (adaptive pacing)"
         );
 
         loop {
@@ -125,21 +276,44 @@ impl ThinkingLoop {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "Soul observe failed");
-                    tokio::time::sleep(interval).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(pacer.current_secs)).await;
                     continue;
                 }
             };
 
-            if let Err(e) = self.think_cycle_with_snapshot(&snapshot).await {
-                tracing::warn!(error = %e, "Soul think cycle failed");
-            }
+            let cycle_result = match self.think_cycle_with_snapshot(&snapshot).await {
+                Ok(result) => result,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Soul think cycle failed");
+                    CycleResult {
+                        tool_calls: 0,
+                        decisions: 0,
+                        think_soon: false,
+                    }
+                }
+            };
 
-            tokio::time::sleep(interval).await;
+            let next_secs = pacer.next_interval(&snapshot, &cycle_result);
+            tracing::info!(
+                next_interval_secs = next_secs,
+                boring_streak = pacer.boring_streak,
+                active_streak = pacer.active_streak,
+                tool_calls = cycle_result.tool_calls,
+                decisions = cycle_result.decisions,
+                "Soul cycle complete, next think in {}s",
+                next_secs
+            );
+
+            tokio::time::sleep(std::time::Duration::from_secs(next_secs)).await;
         }
     }
 
     /// Execute one think cycle with a pre-captured snapshot.
-    async fn think_cycle_with_snapshot(&self, snapshot: &NodeSnapshot) -> Result<(), SoulError> {
+    /// Returns cycle metadata for adaptive pacing.
+    async fn think_cycle_with_snapshot(
+        &self,
+        snapshot: &NodeSnapshot,
+    ) -> Result<CycleResult, SoulError> {
         let snapshot_json = serde_json::to_string(snapshot)?;
 
         // Record observation
@@ -165,7 +339,11 @@ impl ThinkingLoop {
             None => {
                 tracing::debug!("Soul dormant — observation recorded, skipping LLM");
                 self.increment_cycle_count()?;
-                return Ok(());
+                return Ok(CycleResult {
+                    tool_calls: 0,
+                    decisions: 0,
+                    think_soon: false,
+                });
             }
         };
 
@@ -193,7 +371,9 @@ impl ThinkingLoop {
              Analyze the node's current state briefly. Note any concerns or opportunities. \
              If you want to inspect something, use your available tools. \
              If you have a new recommendation (not already in recent thoughts), prefix it with [DECISION]. \
-             Do NOT repeat previous decisions. Keep your response under 200 words.{}",
+             Do NOT repeat previous decisions. Keep your response under 200 words.\n\n\
+             If you need to think again soon (e.g. you started investigating something), include [THINK_SOON] in your response.\n\
+             If nothing has changed and the node is stable, just say so briefly — no need to force novel insights.{}",
             snapshot_json,
             recent_summary.join("\n"),
             if self.config.autonomous_coding {
@@ -245,6 +425,8 @@ impl ThinkingLoop {
 
         let final_text = result.text;
         let tool_calls_made = result.tool_executions.len() as u32;
+        let mut decisions_made = 0u32;
+        let think_soon = final_text.contains("[THINK_SOON]");
 
         // Record reasoning (final text response)
         if !final_text.is_empty() {
@@ -270,6 +452,7 @@ impl ThinkingLoop {
                     };
                     self.db.insert_thought(&decision)?;
                     tracing::info!(decision = decision_text.trim(), "Soul decision recorded");
+                    decisions_made += 1;
                 }
             }
         }
@@ -277,14 +460,11 @@ impl ThinkingLoop {
         // Update state
         self.increment_cycle_count()?;
 
-        if tool_calls_made > 0 {
-            tracing::info!(
-                tool_calls = tool_calls_made,
-                "Soul cycle complete with tool use"
-            );
-        }
-
-        Ok(())
+        Ok(CycleResult {
+            tool_calls: tool_calls_made,
+            decisions: decisions_made,
+            think_soon,
+        })
     }
 
     /// Increment the total_think_cycles counter and update last_think_at.
