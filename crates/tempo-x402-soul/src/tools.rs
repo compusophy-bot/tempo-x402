@@ -10,6 +10,7 @@ use crate::db::{Mutation, SoulDatabase};
 use crate::git::GitContext;
 use crate::guard;
 use crate::llm::FunctionDeclaration;
+use crate::tool_registry::ToolRegistry;
 
 /// Result of a tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +28,7 @@ pub struct ToolExecutor {
     git: Option<Arc<GitContext>>,
     db: Option<Arc<SoulDatabase>>,
     coding_enabled: bool,
+    registry: Option<ToolRegistry>,
 }
 
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
@@ -53,6 +55,7 @@ impl ToolExecutor {
             git: None,
             db: None,
             coding_enabled: false,
+            registry: None,
         }
     }
 
@@ -61,6 +64,12 @@ impl ToolExecutor {
         self.git = Some(git);
         self.db = Some(db);
         self.coding_enabled = true;
+        self
+    }
+
+    /// Attach a dynamic tool registry.
+    pub fn with_registry(mut self, registry: ToolRegistry) -> Self {
+        self.registry = Some(registry);
         self
     }
 
@@ -162,7 +171,18 @@ impl ToolExecutor {
                     .unwrap_or("Automated PR from soul agent");
                 self.propose_to_main(title, body).await
             }
-            _ => Err(format!("unknown tool: {name}")),
+            _ => {
+                // Check meta-tools and dynamic tools via registry
+                if let Some(ref registry) = self.registry {
+                    if ToolRegistry::is_meta_tool(name) {
+                        return registry.execute_meta_tool(name, args).await;
+                    }
+                    if registry.is_dynamic_tool(name) {
+                        return registry.execute_dynamic_tool(name, args).await;
+                    }
+                }
+                Err(format!("unknown tool: {name}"))
+            }
         }
     }
 

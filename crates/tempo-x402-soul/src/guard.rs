@@ -11,6 +11,7 @@ const PROTECTED_PREFIXES: &[&str] = &[
     "crates/tempo-x402-soul/src/error.rs",
     "crates/tempo-x402-soul/src/guard.rs",
     "crates/tempo-x402-soul/src/config.rs",
+    "crates/tempo-x402-soul/src/tool_registry.rs",
     "crates/tempo-x402-identity/",
     ".github/",
 ];

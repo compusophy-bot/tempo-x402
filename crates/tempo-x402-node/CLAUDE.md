@@ -23,7 +23,7 @@ Binary: `x402-node` on port 4023.
 - Extends gateway DB via `execute_schema()` — doesn't create a separate database
 - Background tasks (faucet, parent registration) are best-effort, non-fatal
 - Version check compares `build` (git SHA) from `/health`, falls back to semver if child lacks build field
-- Background health probe recovers stuck "deploying" children by fetching `/instance/info` and promoting to "running"
+- Background health probe is **periodic** (default 300s via `HEALTH_PROBE_INTERVAL_SECS`), recovers stuck "deploying" children by fetching `/instance/info` and promoting to "running"
 - E2e test endpoints (`e2e-test-*` prefix) are purged on startup
 
 ## If You're Changing...

@@ -16,6 +16,7 @@ use crate::memory::{Thought, ThoughtType};
 use crate::mode::AgentMode;
 use crate::observer::{NodeObserver, NodeSnapshot};
 use crate::prompts;
+use crate::tool_registry::ToolRegistry;
 use crate::tools::{self, ToolExecutor};
 
 /// The thinking loop that drives the soul.
@@ -57,6 +58,17 @@ impl ThinkingLoop {
             } else {
                 tracing::warn!("SOUL_CODING_ENABLED=true but no INSTANCE_ID set — coding disabled");
             }
+        }
+
+        // Set up dynamic tool registry if enabled
+        if config.dynamic_tools_enabled {
+            let registry = ToolRegistry::new(
+                db.clone(),
+                config.workspace_root.clone(),
+                config.tool_timeout_secs,
+            );
+            tool_executor = tool_executor.with_registry(registry);
+            tracing::info!("Soul dynamic tool registry enabled");
         }
 
         Self {
@@ -166,8 +178,20 @@ impl ThinkingLoop {
 
         // Determine if we should use tools
         let use_tools = self.config.tools_enabled && self.config.llm_api_key.is_some();
+        let (dynamic_tools, meta_tools) = if use_tools && self.config.dynamic_tools_enabled {
+            let dynamic = ToolRegistry::new(
+                self.db.clone(),
+                self.config.workspace_root.clone(),
+                self.config.tool_timeout_secs,
+            )
+            .dynamic_tool_declarations(mode.mode_tag());
+            let meta = ToolRegistry::meta_tool_declarations();
+            (dynamic, meta)
+        } else {
+            (vec![], vec![])
+        };
         let tool_declarations = if use_tools {
-            mode.available_tools(self.config.coding_enabled)
+            mode.available_tools(self.config.coding_enabled, &dynamic_tools, &meta_tools)
         } else {
             vec![]
         };

@@ -20,6 +20,7 @@ pub mod mode;
 pub mod observer;
 pub mod prompts;
 pub mod thinking;
+pub mod tool_registry;
 pub mod tools;
 
 pub use chat::{handle_chat, ChatReply};

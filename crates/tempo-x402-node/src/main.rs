@@ -355,6 +355,13 @@ async fn main() -> std::io::Result<()> {
         tokio::spawn(async move {
             // Wait for children to finish booting
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+            let probe_interval_secs: u64 = std::env::var("HEALTH_PROBE_INTERVAL_SECS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(300);
+            let probe_interval = std::time::Duration::from_secs(probe_interval_secs);
+
             let parent_version = env!("CARGO_PKG_VERSION");
             let parent_build = {
                 let compile_time = env!("GIT_SHA");
@@ -364,28 +371,6 @@ async fn main() -> std::io::Result<()> {
                     std::env::var("RAILWAY_GIT_COMMIT_SHA").unwrap_or_else(|_| "dev".to_string())
                 }
             };
-            tracing::info!(
-                "Checking children against parent v{parent_version} build={parent_build}"
-            );
-
-            let children = match rusqlite::Connection::open(&version_check_state.db_path) {
-                Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
-                Err(e) => {
-                    tracing::warn!("Version check: failed to open db: {e}");
-                    return;
-                }
-            };
-
-            // Children with a URL that we can probe (running OR stuck deploying)
-            let probeworthy: Vec<_> = children
-                .into_iter()
-                .filter(|c| c.url.is_some() && (c.status == "running" || c.status == "deploying"))
-                .collect();
-
-            if probeworthy.is_empty() {
-                tracing::info!("Version check: no children to check");
-                return;
-            }
 
             let http = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -395,205 +380,240 @@ async fn main() -> std::io::Result<()> {
 
             let agent = match version_check_state.agent.as_ref() {
                 Some(a) => a,
-                None => return,
+                None => {
+                    tracing::warn!("Health probe: no agent available, exiting");
+                    return;
+                }
             };
 
-            for child in &probeworthy {
-                let url = match child.url.as_ref() {
-                    Some(u) => u,
-                    None => continue,
+            tracing::info!(
+                interval_secs = probe_interval_secs,
+                "Health probe loop started (parent v{parent_version} build={parent_build})"
+            );
+
+            loop {
+                let children = match rusqlite::Connection::open(&version_check_state.db_path) {
+                    Ok(conn) => db::query_children_active(&conn).unwrap_or_default(),
+                    Err(e) => {
+                        tracing::warn!("Version check: failed to open db: {e}");
+                        tokio::time::sleep(probe_interval).await;
+                        continue;
+                    }
                 };
 
-                // Probe /health to see if the child is actually alive
-                let health_url = format!("{url}/health");
-                let health_json = match http.get(&health_url).send().await {
-                    Ok(resp) => match resp.json::<serde_json::Value>().await {
-                        Ok(json) => json,
+                // Children with a URL that we can probe (running OR stuck deploying)
+                let probeworthy: Vec<_> = children
+                    .into_iter()
+                    .filter(|c| {
+                        c.url.is_some() && (c.status == "running" || c.status == "deploying")
+                    })
+                    .collect();
+
+                if probeworthy.is_empty() {
+                    tracing::debug!("Version check: no children to check");
+                    tokio::time::sleep(probe_interval).await;
+                    continue;
+                }
+
+                for child in &probeworthy {
+                    let url = match child.url.as_ref() {
+                        Some(u) => u,
+                        None => continue,
+                    };
+
+                    // Probe /health to see if the child is actually alive
+                    let health_url = format!("{url}/health");
+                    let health_json = match http.get(&health_url).send().await {
+                        Ok(resp) => match resp.json::<serde_json::Value>().await {
+                            Ok(json) => json,
+                            Err(e) => {
+                                tracing::warn!(
+                                    instance_id = %child.instance_id,
+                                    error = %e,
+                                    "Health probe: failed to parse response"
+                                );
+
+                                // If deploying for >10min and returning bad responses, mark failed
+                                let age_secs = chrono::Utc::now().timestamp() - child.created_at;
+                                if child.status == "deploying" && age_secs > 600 {
+                                    tracing::info!(
+                                        instance_id = %child.instance_id,
+                                        "Marking stuck deploying child as failed (bad health response)"
+                                    );
+                                    let _ = db::mark_child_failed(
+                                        &version_check_state.gateway.db,
+                                        &child.instance_id,
+                                    );
+                                }
+
+                                continue;
+                            }
+                        },
                         Err(e) => {
                             tracing::warn!(
                                 instance_id = %child.instance_id,
                                 error = %e,
-                                "Health probe: failed to parse response"
+                                "Health probe: failed to reach child"
                             );
 
-                            // If deploying for >10min and returning bad responses, mark failed
+                            // Mark unreachable children as failed if they've been around long enough
                             let age_secs = chrono::Utc::now().timestamp() - child.created_at;
-                            if child.status == "deploying" && age_secs > 600 {
+                            let stale = match child.status.as_str() {
+                                "deploying" => age_secs > 600, // 10 min for deploying
+                                "running" => age_secs > 300, // 5 min for running (was reachable before)
+                                _ => false,
+                            };
+
+                            if stale {
                                 tracing::info!(
                                     instance_id = %child.instance_id,
-                                    "Marking stuck deploying child as failed (bad health response)"
+                                    status = %child.status,
+                                    age_secs = age_secs,
+                                    "Marking unreachable child as failed"
                                 );
-                                let _ = db::mark_child_failed(
+                                if let Err(mark_err) = db::mark_child_failed(
                                     &version_check_state.gateway.db,
                                     &child.instance_id,
-                                );
+                                ) {
+                                    tracing::warn!(
+                                        instance_id = %child.instance_id,
+                                        error = %mark_err,
+                                        "Failed to mark unreachable child as failed"
+                                    );
+                                }
                             }
 
                             continue;
                         }
-                    },
-                    Err(e) => {
-                        tracing::warn!(
+                    };
+
+                    let child_version = health_json
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let child_build = health_json
+                        .get("build")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    // ── Fix stuck "deploying" children ──────────────────────
+                    // Child is alive but parent DB still says "deploying".
+                    // Fetch its identity and promote to "running".
+                    if child.status == "deploying" {
+                        tracing::info!(
                             instance_id = %child.instance_id,
-                            error = %e,
-                            "Health probe: failed to reach child"
+                            "Stuck deploying child is alive — recovering status"
                         );
 
-                        // Mark unreachable children as failed if they've been around long enough
-                        let age_secs = chrono::Utc::now().timestamp() - child.created_at;
-                        let stale = match child.status.as_str() {
-                            "deploying" => age_secs > 600, // 10 min for deploying
-                            "running" => age_secs > 300, // 5 min for running (was reachable before)
-                            _ => false,
-                        };
-
-                        if stale {
-                            tracing::info!(
-                                instance_id = %child.instance_id,
-                                status = %child.status,
-                                age_secs = age_secs,
-                                "Marking unreachable child as failed"
-                            );
-                            if let Err(mark_err) = db::mark_child_failed(
-                                &version_check_state.gateway.db,
-                                &child.instance_id,
-                            ) {
-                                tracing::warn!(
-                                    instance_id = %child.instance_id,
-                                    error = %mark_err,
-                                    "Failed to mark unreachable child as failed"
-                                );
+                        // Try to get the child's address from its /instance/info
+                        let mut child_address: Option<String> = None;
+                        let info_url = format!("{url}/instance/info");
+                        if let Ok(resp) = http.get(&info_url).send().await {
+                            if let Ok(info) = resp.json::<serde_json::Value>().await {
+                                child_address = info
+                                    .get("identity")
+                                    .and_then(|id| id.get("address"))
+                                    .and_then(|v| v.as_str())
+                                    .map(String::from);
                             }
                         }
 
-                        continue;
-                    }
-                };
-
-                let child_version = health_json
-                    .get("version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let child_build = health_json
-                    .get("build")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                // ── Fix stuck "deploying" children ──────────────────────
-                // Child is alive but parent DB still says "deploying".
-                // Fetch its identity and promote to "running".
-                if child.status == "deploying" {
-                    tracing::info!(
-                        instance_id = %child.instance_id,
-                        "Stuck deploying child is alive — recovering status"
-                    );
-
-                    // Try to get the child's address from its /instance/info
-                    let mut child_address: Option<String> = None;
-                    let info_url = format!("{url}/instance/info");
-                    if let Ok(resp) = http.get(&info_url).send().await {
-                        if let Ok(info) = resp.json::<serde_json::Value>().await {
-                            child_address = info
-                                .get("identity")
-                                .and_then(|id| id.get("address"))
-                                .and_then(|v| v.as_str())
-                                .map(String::from);
-                        }
-                    }
-
-                    if let Err(e) = db::update_child(
-                        &version_check_state.gateway.db,
-                        &child.instance_id,
-                        child_address.as_deref(),
-                        None, // keep existing URL
-                        Some("running"),
-                    ) {
-                        tracing::warn!(
-                            instance_id = %child.instance_id,
-                            error = %e,
-                            "Failed to recover stuck child status"
-                        );
-                    } else {
-                        tracing::info!(
-                            instance_id = %child.instance_id,
-                            address = ?child_address,
-                            "Child status recovered to running"
-                        );
-                    }
-                }
-
-                // ── Build hash check & auto-redeploy ────────────────────
-                // Compare build hashes (git SHA) for exact match. Fall back
-                // to semver if the child doesn't report a build hash yet
-                // (old image without the `build` field).
-                let up_to_date =
-                    if !child_build.is_empty() && child_build != "dev" && parent_build != "dev" {
-                        child_build == parent_build
-                    } else {
-                        child_version == parent_version
-                    };
-
-                if up_to_date {
-                    tracing::debug!(
-                        instance_id = %child.instance_id,
-                        version = %child_version,
-                        build = %child_build,
-                        "Child is up to date"
-                    );
-                    continue;
-                }
-
-                tracing::info!(
-                    instance_id = %child.instance_id,
-                    child_version = %child_version,
-                    child_build = %child_build,
-                    parent_version = %parent_version,
-                    parent_build = %parent_build,
-                    "Child build mismatch — triggering redeploy"
-                );
-
-                let service_id = match child.railway_service_id.as_ref() {
-                    Some(id) => id,
-                    None => {
-                        tracing::warn!(
-                            instance_id = %child.instance_id,
-                            "Cannot redeploy: no Railway service ID"
-                        );
-                        continue;
-                    }
-                };
-
-                match agent.redeploy_clone(service_id).await {
-                    Ok(_) => {
-                        if let Err(e) = db::update_child_status(
+                        if let Err(e) = db::update_child(
                             &version_check_state.gateway.db,
                             &child.instance_id,
-                            "deploying",
+                            child_address.as_deref(),
+                            None, // keep existing URL
+                            Some("running"),
                         ) {
                             tracing::warn!(
                                 instance_id = %child.instance_id,
                                 error = %e,
-                                "Failed to update status after auto-redeploy"
+                                "Failed to recover stuck child status"
+                            );
+                        } else {
+                            tracing::info!(
+                                instance_id = %child.instance_id,
+                                address = ?child_address,
+                                "Child status recovered to running"
                             );
                         }
-                        tracing::info!(
-                            instance_id = %child.instance_id,
-                            "Auto-redeploy triggered"
-                        );
                     }
-                    Err(e) => {
-                        tracing::warn!(
+
+                    // ── Build hash check & auto-redeploy ────────────────────
+                    // Compare build hashes (git SHA) for exact match. Fall back
+                    // to semver if the child doesn't report a build hash yet
+                    // (old image without the `build` field).
+                    let up_to_date =
+                        if !child_build.is_empty() && child_build != "dev" && parent_build != "dev"
+                        {
+                            child_build == parent_build
+                        } else {
+                            child_version == parent_version
+                        };
+
+                    if up_to_date {
+                        tracing::debug!(
                             instance_id = %child.instance_id,
-                            error = %e,
-                            "Auto-redeploy failed (non-fatal)"
+                            version = %child_version,
+                            build = %child_build,
+                            "Child is up to date"
                         );
+                        continue;
+                    }
+
+                    tracing::info!(
+                        instance_id = %child.instance_id,
+                        child_version = %child_version,
+                        child_build = %child_build,
+                        parent_version = %parent_version,
+                        parent_build = %parent_build,
+                        "Child build mismatch — triggering redeploy"
+                    );
+
+                    let service_id = match child.railway_service_id.as_ref() {
+                        Some(id) => id,
+                        None => {
+                            tracing::warn!(
+                                instance_id = %child.instance_id,
+                                "Cannot redeploy: no Railway service ID"
+                            );
+                            continue;
+                        }
+                    };
+
+                    match agent.redeploy_clone(service_id).await {
+                        Ok(_) => {
+                            if let Err(e) = db::update_child_status(
+                                &version_check_state.gateway.db,
+                                &child.instance_id,
+                                "deploying",
+                            ) {
+                                tracing::warn!(
+                                    instance_id = %child.instance_id,
+                                    error = %e,
+                                    "Failed to update status after auto-redeploy"
+                                );
+                            }
+                            tracing::info!(
+                                instance_id = %child.instance_id,
+                                "Auto-redeploy triggered"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                instance_id = %child.instance_id,
+                                error = %e,
+                                "Auto-redeploy failed (non-fatal)"
+                            );
+                        }
                     }
                 }
-            }
 
-            tracing::info!("Version/health check complete");
+                tracing::info!("Health probe cycle complete");
+                tokio::time::sleep(probe_interval).await;
+            } // end loop
         });
     }
 

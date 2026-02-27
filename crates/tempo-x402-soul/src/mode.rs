@@ -29,11 +29,20 @@ impl AgentMode {
     }
 
     /// Get the tool declarations available in this mode.
-    pub fn available_tools(&self, coding_enabled: bool) -> Vec<FunctionDeclaration> {
+    ///
+    /// `dynamic_tools` and `meta_tools` are appended based on mode:
+    /// - Meta-tools (register/list/unregister) only in Code mode
+    /// - Dynamic tools filtered by their mode_tags
+    pub fn available_tools(
+        &self,
+        coding_enabled: bool,
+        dynamic_tools: &[FunctionDeclaration],
+        meta_tools: &[FunctionDeclaration],
+    ) -> Vec<FunctionDeclaration> {
         let all = tools::available_tools();
         let all_with_git = tools::available_tools_with_git(coding_enabled);
 
-        match self {
+        let mut result = match self {
             Self::Observe => {
                 // Only execute_shell
                 all.into_iter()
@@ -66,6 +75,26 @@ impl AgentMode {
                     })
                     .collect()
             }
+        };
+
+        // Append dynamic tools (already filtered by mode_tag by caller)
+        result.extend(dynamic_tools.iter().cloned());
+
+        // Meta-tools only in Code mode
+        if *self == Self::Code {
+            result.extend(meta_tools.iter().cloned());
+        }
+
+        result
+    }
+
+    /// Mode tag string for filtering dynamic tools.
+    pub fn mode_tag(&self) -> &'static str {
+        match self {
+            Self::Observe => "observe",
+            Self::Chat => "chat",
+            Self::Code => "code",
+            Self::Review => "review",
         }
     }
 }

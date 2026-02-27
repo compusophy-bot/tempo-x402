@@ -15,7 +15,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | Module | Purpose |
 |--------|---------|
 | `guard.rs` | Hardcoded protected file list — prevents self-bricking |
-| `tools.rs` | Tool executor: shell, file read/write/edit, search, commit, PR |
+| `tools.rs` | Tool executor: shell, file read/write/edit, search, commit, PR + dynamic tool dispatch |
+| `tool_registry.rs` | Dynamic tool registry: register/list/unregister tools at runtime, shell execution |
 | `git.rs` | Branch-per-VM git workflow (ensure_branch, commit, push, PR) |
 | `coding.rs` | Pre-commit validation pipeline (cargo check → test → commit) |
 | `mode.rs` | Agent modes (Observe, Chat, Code, Review) with per-mode tool sets |
@@ -23,7 +24,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `llm.rs` | Gemini API client with thought_signature support |
 | `thinking.rs` | The main observe → think → tool loop |
 | `chat.rs` | Interactive chat handler with mode detection |
-| `db.rs` | SQLite: thoughts, soul_state, mutations tables |
+| `db.rs` | SQLite: thoughts, soul_state, mutations, tools tables |
 | `memory.rs` | Thought types (Observation, Reasoning, Decision, Mutation, etc.) |
 
 ## Safety Layers (7 deep)
@@ -47,6 +48,9 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Tools disabled via `SOUL_TOOLS_ENABLED=false`
 - Coding disabled by default — requires `SOUL_CODING_ENABLED=true` + `INSTANCE_ID`
 - Protected paths are hardcoded (not env-var) so the soul cannot bypass via shell
+- Dynamic tool registry: `SOUL_DYNAMIC_TOOLS_ENABLED=false` by default, max 20 tools, meta-tools only in Code mode
+- Dynamic tools execute via shell with `TOOL_ARGS` JSON + `TOOL_PARAM_{NAME}` env vars, respects existing timeouts
+- `tool_registry.rs` is in PROTECTED_PREFIXES — soul cannot modify its own tool registry code
 
 ## Env Vars
 
@@ -61,6 +65,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `SOUL_AUTO_PROPOSE_TO_MAIN` | `false` | Auto-create PRs from vm branch to main |
 | `GITHUB_TOKEN` | — | Token for git push/PR operations |
 | `INSTANCE_ID` | — | VM instance ID for branch naming |
+| `SOUL_DYNAMIC_TOOLS_ENABLED` | `false` | Enable dynamic tool registry (register/list/unregister at runtime) |
 
 ## If You're Changing...
 
@@ -72,6 +77,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - **Pre-commit validation**: `coding.rs` — cargo check/test pipeline
 - **Agent modes**: `mode.rs` — mode enum, tool sets per mode, max_tool_calls
 - **System prompts**: `prompts.rs` — per-mode prompt templates
-- **Database schema**: `db.rs` — `thoughts` + `soul_state` + `mutations` tables
+- **Dynamic tool registry**: `tool_registry.rs` — meta-tools, dynamic tool execution, shell handlers
+- **Database schema**: `db.rs` — `thoughts` + `soul_state` + `mutations` + `tools` tables
 - **Observer trait**: `observer.rs` — changing `NodeSnapshot` fields affects all implementors
 - **Used by**: `x402-node` stores `Arc<SoulDatabase>` in `NodeState`, exposes via `GET /soul/status`, implements `NodeObserver` in `soul_observer.rs`

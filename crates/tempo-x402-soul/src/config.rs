@@ -39,6 +39,8 @@ pub struct SoulConfig {
     pub auto_propose_to_main: bool,
     /// Instance ID for branch naming (env: INSTANCE_ID).
     pub instance_id: Option<String>,
+    /// Enable dynamic tool registry (env: SOUL_DYNAMIC_TOOLS_ENABLED, default: false).
+    pub dynamic_tools_enabled: bool,
 }
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain. \
@@ -129,6 +131,10 @@ impl SoulConfig {
 
         let instance_id = std::env::var("INSTANCE_ID").ok().filter(|s| !s.is_empty());
 
+        let dynamic_tools_enabled = std::env::var("SOUL_DYNAMIC_TOOLS_ENABLED")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -147,6 +153,7 @@ impl SoulConfig {
             autonomous_coding,
             auto_propose_to_main,
             instance_id,
+            dynamic_tools_enabled,
         })
     }
 }

@@ -17,6 +17,7 @@ use crate::mode;
 use crate::observer::NodeObserver;
 use crate::prompts;
 use crate::thinking::{run_tool_loop, ToolExecution};
+use crate::tool_registry::ToolRegistry;
 use crate::tools::ToolExecutor;
 
 /// The soul's reply to a chat message.
@@ -118,8 +119,20 @@ pub async fn handle_chat(
     );
 
     // 7. Run tool loop with mode-specific tools
+    let (dynamic_tools, meta_tools) = if config.tools_enabled && config.dynamic_tools_enabled {
+        let dynamic = ToolRegistry::new(
+            db.clone(),
+            config.workspace_root.clone(),
+            config.tool_timeout_secs,
+        )
+        .dynamic_tool_declarations(agent_mode.mode_tag());
+        let meta = ToolRegistry::meta_tool_declarations();
+        (dynamic, meta)
+    } else {
+        (vec![], vec![])
+    };
     let tool_declarations = if config.tools_enabled {
-        agent_mode.available_tools(config.coding_enabled)
+        agent_mode.available_tools(config.coding_enabled, &dynamic_tools, &meta_tools)
     } else {
         vec![]
     };
@@ -137,6 +150,16 @@ pub async fn handle_chat(
             ));
             tool_executor = tool_executor.with_coding(git, db.clone());
         }
+    }
+
+    // Attach dynamic tool registry if enabled
+    if config.dynamic_tools_enabled {
+        let registry = ToolRegistry::new(
+            db.clone(),
+            config.workspace_root.clone(),
+            config.tool_timeout_secs,
+        );
+        tool_executor = tool_executor.with_registry(registry);
     }
 
     let result = run_tool_loop(
