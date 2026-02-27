@@ -53,6 +53,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - `tool_registry.rs` is in PROTECTED_PREFIXES — soul cannot modify its own tool registry code
 - Fork workflow: `SOUL_FORK_REPO` + `SOUL_UPSTREAM_REPO` enable push-to-fork + cross-fork PRs + issue creation
 - Fork remote named "fork" is auto-configured on first push; origin stays as upstream reference
+- Direct push mode (`SOUL_DIRECT_PUSH=true`): pushes to fork's main branch directly, triggering auto-deploy. Used for self-editing instances.
+- Deep model: `SOUL_DIRECT_PUSH` + `SOUL_AUTONOMOUS_CODING` together use Gemini Pro (think model) instead of Flash for deeper reasoning
 
 ## Env Vars
 
@@ -70,6 +72,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `SOUL_DYNAMIC_TOOLS_ENABLED` | `false` | Enable dynamic tool registry (register/list/unregister at runtime) |
 | `SOUL_FORK_REPO` | — | Fork repo for push (e.g. `compusophy-bot/tempo-x402`). Pushes go to "fork" remote |
 | `SOUL_UPSTREAM_REPO` | — | Upstream repo for PRs/issues (e.g. `compusophy/tempo-x402`) |
+| `SOUL_DIRECT_PUSH` | `false` | Push directly to fork's main branch (self-editing mode). Safety: cargo check + test still gate every commit |
 
 ## If You're Changing...
 
