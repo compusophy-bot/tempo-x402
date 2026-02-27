@@ -10,11 +10,14 @@ use serde::Serialize;
 use crate::config::SoulConfig;
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
+use crate::git::GitContext;
 use crate::llm::{ConversationMessage, ConversationPart, LlmClient};
 use crate::memory::{Thought, ThoughtType};
+use crate::mode;
 use crate::observer::NodeObserver;
+use crate::prompts;
 use crate::thinking::{run_tool_loop, ToolExecution};
-use crate::tools::{self, ToolExecutor};
+use crate::tools::ToolExecutor;
 
 /// The soul's reply to a chat message.
 #[derive(Debug, Clone, Serialize)]
@@ -73,20 +76,9 @@ pub async fn handle_chat(
         })
         .collect();
 
-    // 4. Build system prompt
-    let system_prompt = format!(
-        "{}\n\nYou are generation {} in the node lineage.{}\n\n\
-         You are now in interactive chat mode. A user is asking you a question.\n\
-         Answer helpfully and concisely. You can use the execute_shell tool to \
-         investigate things on the node if needed.",
-        config.personality,
-        config.generation,
-        config
-            .parent_id
-            .as_ref()
-            .map(|p| format!(" Your parent is {p}."))
-            .unwrap_or_default()
-    );
+    // 4. Detect mode from message
+    let agent_mode = mode::detect_mode_from_message(message, config.coding_enabled);
+    let system_prompt = prompts::system_prompt_for_mode(agent_mode, config);
 
     // 5. Build conversation
     let context_message = format!(
@@ -125,13 +117,27 @@ pub async fn handle_chat(
         config.llm_model_think.clone(),
     );
 
-    // 7. Run tool loop
+    // 7. Run tool loop with mode-specific tools
     let tool_declarations = if config.tools_enabled {
-        tools::available_tools()
+        agent_mode.available_tools(config.coding_enabled)
     } else {
         vec![]
     };
-    let tool_executor = ToolExecutor::new(config.tool_timeout_secs);
+    let max_calls = agent_mode.max_tool_calls();
+    let mut tool_executor =
+        ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone());
+
+    // Enable coding on the executor if in Code mode
+    if agent_mode == mode::AgentMode::Code && config.coding_enabled {
+        if let Some(instance_id) = &config.instance_id {
+            let git = Arc::new(GitContext::new(
+                config.workspace_root.clone(),
+                instance_id.clone(),
+                config.github_token.clone(),
+            ));
+            tool_executor = tool_executor.with_coding(git, db.clone());
+        }
+    }
 
     let result = run_tool_loop(
         &llm,
@@ -140,7 +146,7 @@ pub async fn handle_chat(
         &tool_declarations,
         &tool_executor,
         db,
-        config.max_tool_calls,
+        max_calls,
     )
     .await?;
 

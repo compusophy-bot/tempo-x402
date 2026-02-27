@@ -20,6 +20,16 @@ pub enum ThoughtType {
     ChatMessage,
     /// The soul's response to a chat message.
     ChatResponse,
+    /// A code mutation attempt (commit SHA, pass/fail, files changed).
+    Mutation,
+    /// A failed validation (cargo check/test failure details).
+    ValidationFailure,
+    /// Injected by the callosum from the other hemisphere.
+    CrossHemisphere,
+    /// Triggered when one hemisphere requests the other's input.
+    Escalation,
+    /// Consolidated summary of multiple thoughts (long-term memory).
+    MemoryConsolidation,
 }
 
 impl ThoughtType {
@@ -32,6 +42,11 @@ impl ThoughtType {
             Self::ToolExecution => "tool_execution",
             Self::ChatMessage => "chat_message",
             Self::ChatResponse => "chat_response",
+            Self::Mutation => "mutation",
+            Self::ValidationFailure => "validation_failure",
+            Self::CrossHemisphere => "cross_hemisphere",
+            Self::Escalation => "escalation",
+            Self::MemoryConsolidation => "memory_consolidation",
         }
     }
 
@@ -44,6 +59,11 @@ impl ThoughtType {
             "tool_execution" => Some(Self::ToolExecution),
             "chat_message" => Some(Self::ChatMessage),
             "chat_response" => Some(Self::ChatResponse),
+            "mutation" => Some(Self::Mutation),
+            "validation_failure" => Some(Self::ValidationFailure),
+            "cross_hemisphere" => Some(Self::CrossHemisphere),
+            "escalation" => Some(Self::Escalation),
+            "memory_consolidation" => Some(Self::MemoryConsolidation),
             _ => None,
         }
     }

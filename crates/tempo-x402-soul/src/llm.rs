@@ -43,6 +43,10 @@ struct Part {
     function_call: Option<FunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     function_response: Option<FunctionResponse>,
+    /// Gemini 3+ thought signature — must be preserved and passed back
+    /// when sending function call history to avoid 400 errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thought_signature: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -73,6 +77,9 @@ struct CandidateContent {
 pub struct FunctionCall {
     pub name: String,
     pub args: serde_json::Value,
+    /// Gemini 3+ thought signature — opaque, must be passed back as-is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_signature: Option<String>,
 }
 
 /// A function response to send back to the LLM.
@@ -139,6 +146,7 @@ impl LlmClient {
                     text: Some(user_prompt.to_string()),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 }],
             }],
             system_instruction: Some(Content {
@@ -147,6 +155,7 @@ impl LlmClient {
                     text: Some(system_prompt.to_string()),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 }],
             }),
             tools: None,
@@ -178,16 +187,20 @@ impl LlmClient {
                             text: Some(t.clone()),
                             function_call: None,
                             function_response: None,
+                            thought_signature: None,
                         },
                         ConversationPart::FunctionCall(fc) => Part {
                             text: None,
                             function_call: Some(fc.clone()),
                             function_response: None,
+                            // Pass back the thought_signature from the function call
+                            thought_signature: fc.thought_signature.clone(),
                         },
                         ConversationPart::FunctionResponse(fr) => Part {
                             text: None,
                             function_call: None,
                             function_response: Some(fr.clone()),
+                            thought_signature: None,
                         },
                     })
                     .collect(),
@@ -210,6 +223,7 @@ impl LlmClient {
                     text: Some(system_prompt.to_string()),
                     function_call: None,
                     function_response: None,
+                    thought_signature: None,
                 }],
             }),
             tools,
@@ -261,7 +275,12 @@ impl LlmClient {
                     // Check for function call first
                     for part in &parts {
                         if let Some(fc) = &part.function_call {
-                            return Ok(LlmResult::FunctionCall(fc.clone()));
+                            // Attach thought_signature from the Part to the FunctionCall
+                            let mut fc = fc.clone();
+                            if fc.thought_signature.is_none() {
+                                fc.thought_signature = part.thought_signature.clone();
+                            }
+                            return Ok(LlmResult::FunctionCall(fc));
                         }
                     }
 

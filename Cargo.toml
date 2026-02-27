@@ -8,6 +8,7 @@ members = [
     "crates/tempo-x402-facilitator",
     "crates/tempo-x402-gateway",
     "crates/tempo-x402-identity",
+    "crates/tempo-x402-mind",
     "crates/tempo-x402-node",
     "crates/tempo-x402-security-audit",
     "crates/tempo-x402-server",
@@ -21,6 +22,7 @@ x402-agent = { path = "crates/tempo-x402-agent", version = "0.7.0", package = "t
 x402-facilitator = { path = "crates/tempo-x402-facilitator", version = "0.7.0", package = "tempo-x402-facilitator" }
 x402-gateway = { path = "crates/tempo-x402-gateway", version = "0.7.0", package = "tempo-x402-gateway" }
 x402-identity = { path = "crates/tempo-x402-identity", version = "0.7.0", package = "tempo-x402-identity" }
+x402-mind = { path = "crates/tempo-x402-mind", version = "0.7.0", package = "tempo-x402-mind" }
 x402-soul = { path = "crates/tempo-x402-soul", version = "0.7.0", package = "tempo-x402-soul" }
 x402-wallet = { path = "crates/tempo-x402-wallet", version = "0.7.0", package = "tempo-x402-wallet" }
 

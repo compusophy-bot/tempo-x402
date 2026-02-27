@@ -25,20 +25,39 @@ pub struct SoulConfig {
     pub tools_enabled: bool,
     /// Max tool calls per think cycle (default: 5).
     pub max_tool_calls: u32,
-    /// Per-command timeout in seconds (default: 30).
+    /// Per-command timeout in seconds (default: 120).
     pub tool_timeout_secs: u64,
+    /// Workspace root directory (default: /app).
+    pub workspace_root: String,
+    /// GitHub token for git push/PR operations (env: GITHUB_TOKEN).
+    pub github_token: Option<String>,
+    /// Master switch for coding capabilities (env: SOUL_CODING_ENABLED, default: false).
+    pub coding_enabled: bool,
+    /// Enable autonomous coding during think cycles (env: SOUL_AUTONOMOUS_CODING, default: false).
+    pub autonomous_coding: bool,
+    /// Auto-create PRs from vm branch to main (env: SOUL_AUTO_PROPOSE_TO_MAIN, default: false).
+    pub auto_propose_to_main: bool,
+    /// Instance ID for branch naming (env: INSTANCE_ID).
+    pub instance_id: Option<String>,
 }
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain. \
 You observe the node's state — uptime, registered endpoints, revenue, children — and reason about its health, \
 growth opportunities, and potential issues. You are thoughtful, concise, and focused on the node's wellbeing.\n\n\
-You have access to the `execute_shell` tool to run bash commands in your container. Use it responsibly:\n\
-- Use it to inspect your environment (env, ls, df, curl endpoints)\n\
-- Use it to check network connectivity or test APIs\n\
-- Do NOT use it for destructive operations (rm -rf, kill, etc.)\n\
-- Do NOT install packages or modify system files\n\
-- Keep commands short and purposeful\n\
-If you don't need to run a command this cycle, just provide your analysis as text.\n\n\
+You have access to file tools and a shell tool. Prefer file tools over shell for file operations:\n\
+- `read_file` — read a file with line numbers\n\
+- `write_file` — create or overwrite a file (protected files will be rejected)\n\
+- `edit_file` — search-and-replace in a file (protected files will be rejected)\n\
+- `list_directory` — list directory contents\n\
+- `search_files` — search for text across files\n\
+- `execute_shell` — run bash commands (use for non-file operations: curl, env, df, etc.)\n\n\
+Guidelines:\n\
+- Use file tools for reading and writing files, not shell commands like cat/sed/echo\n\
+- Some critical files are protected and cannot be modified (soul core, identity, Cargo files)\n\
+- Do NOT use shell to bypass file protections\n\
+- Do NOT use destructive operations (rm -rf, kill, etc.)\n\
+- Keep actions purposeful and minimal\n\
+If you don't need to act this cycle, just provide your analysis as text.\n\n\
 Your [DECISION] lines are recorded for the operator to review. \
 Never repeat the same recommendation if it already appears in your recent thoughts — instead, reflect on \
 why it hasn't been acted on yet, or reason about something new.";
@@ -84,12 +103,31 @@ impl SoulConfig {
         let max_tool_calls: u32 = std::env::var("SOUL_MAX_TOOL_CALLS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(5);
+            .unwrap_or(25);
 
         let tool_timeout_secs: u64 = std::env::var("SOUL_TOOL_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
+            .unwrap_or(120);
+
+        let workspace_root =
+            std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/app".to_string());
+
+        let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|s| !s.is_empty());
+
+        let coding_enabled = std::env::var("SOUL_CODING_ENABLED")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        let autonomous_coding = std::env::var("SOUL_AUTONOMOUS_CODING")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        let auto_propose_to_main = std::env::var("SOUL_AUTO_PROPOSE_TO_MAIN")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        let instance_id = std::env::var("INSTANCE_ID").ok().filter(|s| !s.is_empty());
 
         Ok(Self {
             llm_api_key,
@@ -103,6 +141,12 @@ impl SoulConfig {
             tools_enabled,
             max_tool_calls,
             tool_timeout_secs,
+            workspace_root,
+            github_token,
+            coding_enabled,
+            autonomous_coding,
+            auto_propose_to_main,
+            instance_id,
         })
     }
 }

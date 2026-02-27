@@ -7,12 +7,15 @@ use serde::Serialize;
 use crate::config::SoulConfig;
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
+use crate::git::GitContext;
 use crate::llm::{
     ConversationMessage, ConversationPart, FunctionDeclaration, FunctionResponse, LlmClient,
     LlmResult,
 };
 use crate::memory::{Thought, ThoughtType};
+use crate::mode::AgentMode;
 use crate::observer::{NodeObserver, NodeSnapshot};
+use crate::prompts;
 use crate::tools::{self, ToolExecutor};
 
 /// The thinking loop that drives the soul.
@@ -35,7 +38,26 @@ impl ThinkingLoop {
             )
         });
 
-        let tool_executor = ToolExecutor::new(config.tool_timeout_secs);
+        let mut tool_executor =
+            ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone());
+
+        // Set up coding if enabled and instance_id is available
+        if config.coding_enabled {
+            if let Some(instance_id) = &config.instance_id {
+                let git = Arc::new(GitContext::new(
+                    config.workspace_root.clone(),
+                    instance_id.clone(),
+                    config.github_token.clone(),
+                ));
+                tool_executor = tool_executor.with_coding(git, db.clone());
+                tracing::info!(
+                    instance_id = %instance_id,
+                    "Soul coding enabled"
+                );
+            } else {
+                tracing::warn!("SOUL_CODING_ENABLED=true but no INSTANCE_ID set — coding disabled");
+            }
+        }
 
         Self {
             config,
@@ -106,6 +128,9 @@ impl ThinkingLoop {
             }
         };
 
+        // Determine mode for this cycle
+        let mode = AgentMode::Observe;
+
         // Build prompt from snapshot + recent thoughts
         let recent = self.db.recent_thoughts(5)?;
         let recent_summary: Vec<String> = recent
@@ -125,28 +150,24 @@ impl ThinkingLoop {
         let user_prompt = format!(
             "Current node state:\n{}\n\nRecent thoughts:\n{}\n\n\
              Analyze the node's current state briefly. Note any concerns or opportunities. \
-             If you want to inspect something, use the execute_shell tool. \
+             If you want to inspect something, use your available tools. \
              If you have a new recommendation (not already in recent thoughts), prefix it with [DECISION]. \
-             Do NOT repeat previous decisions. Keep your response under 200 words.",
+             Do NOT repeat previous decisions. Keep your response under 200 words.{}",
             snapshot_json,
-            recent_summary.join("\n")
+            recent_summary.join("\n"),
+            if self.config.autonomous_coding {
+                "\n\nIf you see an opportunity to improve the codebase, prefix with [CODE] to enter coding mode."
+            } else {
+                ""
+            }
         );
 
-        let system_prompt = format!(
-            "{}\n\nYou are generation {} in the node lineage.{}",
-            self.config.personality,
-            self.config.generation,
-            self.config
-                .parent_id
-                .as_ref()
-                .map(|p| format!(" Your parent is {p}."))
-                .unwrap_or_default()
-        );
+        let system_prompt = prompts::system_prompt_for_mode(mode, &self.config);
 
         // Determine if we should use tools
         let use_tools = self.config.tools_enabled && self.config.llm_api_key.is_some();
         let tool_declarations = if use_tools {
-            tools::available_tools()
+            mode.available_tools(self.config.coding_enabled)
         } else {
             vec![]
         };
@@ -297,15 +318,11 @@ pub(crate) async fn run_tool_loop(
                 };
 
                 // Record tool execution as a thought
-                let command_str = fc
-                    .args
-                    .get("command")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
+                let tool_summary = summarize_tool_call(&fc.name, &fc.args);
                 let tool_thought = Thought {
                     id: uuid::Uuid::new_v4().to_string(),
                     thought_type: ThoughtType::ToolExecution,
-                    content: command_str.to_string(),
+                    content: tool_summary.clone(),
                     context: Some(serde_json::to_string(&tool_result).unwrap_or_default()),
                     created_at: chrono::Utc::now().timestamp(),
                 };
@@ -313,7 +330,7 @@ pub(crate) async fn run_tool_loop(
 
                 // Record for return value
                 tool_executions.push(ToolExecution {
-                    command: command_str.to_string(),
+                    command: tool_summary,
                     stdout: tool_result.stdout.clone(),
                     stderr: tool_result.stderr.clone(),
                     exit_code: tool_result.exit_code,
@@ -345,4 +362,36 @@ pub(crate) async fn run_tool_loop(
         text: final_text,
         tool_executions,
     })
+}
+
+/// Create a human-readable summary of a tool call for logging/thought recording.
+fn summarize_tool_call(name: &str, args: &serde_json::Value) -> String {
+    match name {
+        "execute_shell" => args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        "read_file" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("read_file: {path}")
+        }
+        "write_file" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("write_file: {path}")
+        }
+        "edit_file" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("edit_file: {path}")
+        }
+        "list_directory" => {
+            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+            format!("list_directory: {path}")
+        }
+        "search_files" => {
+            let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("search_files: {pattern}")
+        }
+        _ => format!("{name}: {args}"),
+    }
 }

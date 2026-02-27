@@ -1,7 +1,14 @@
 //! Tool definitions and executor for the soul's function calling capabilities.
 
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
+use crate::coding;
+use crate::db::{Mutation, SoulDatabase};
+use crate::git::GitContext;
+use crate::guard;
 use crate::llm::FunctionDeclaration;
 
 /// Result of a tool execution.
@@ -16,15 +23,45 @@ pub struct ToolResult {
 /// Executes tools requested by the LLM.
 pub struct ToolExecutor {
     timeout_secs: u64,
+    workspace_root: PathBuf,
+    git: Option<Arc<GitContext>>,
+    db: Option<Arc<SoulDatabase>>,
+    coding_enabled: bool,
 }
 
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
-const MAX_OUTPUT_BYTES: usize = 4096;
+const MAX_OUTPUT_BYTES: usize = 16384;
+
+/// Max file size for read_file (16KB).
+const MAX_READ_BYTES: usize = 16384;
+
+/// Max entries for list_directory.
+const MAX_DIR_ENTRIES: usize = 200;
+
+/// Max matches for search_files.
+const MAX_SEARCH_MATCHES: usize = 50;
+
+/// Hard cap for execute_shell timeout.
+const SHELL_TIMEOUT_CAP: u64 = 300;
 
 impl ToolExecutor {
-    /// Create a new tool executor with the given per-command timeout.
-    pub fn new(timeout_secs: u64) -> Self {
-        Self { timeout_secs }
+    /// Create a new tool executor with the given per-command timeout and workspace root.
+    pub fn new(timeout_secs: u64, workspace_root: String) -> Self {
+        Self {
+            timeout_secs,
+            workspace_root: PathBuf::from(workspace_root),
+            git: None,
+            db: None,
+            coding_enabled: false,
+        }
+    }
+
+    /// Enable coding capabilities with git context and database.
+    pub fn with_coding(mut self, git: Arc<GitContext>, db: Arc<SoulDatabase>) -> Self {
+        self.git = Some(git);
+        self.db = Some(db);
+        self.coding_enabled = true;
+        self
     }
 
     /// Execute a tool by name with the given arguments.
@@ -44,12 +81,133 @@ impl ToolExecutor {
                     .get("timeout_secs")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(self.timeout_secs)
-                    .min(120); // hard cap at 120s
+                    .min(SHELL_TIMEOUT_CAP);
 
                 self.execute_shell(command, timeout).await
             }
+            "read_file" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'path' argument".to_string())?;
+                let offset = args
+                    .get("offset")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                self.read_file(path, offset, limit).await
+            }
+            "write_file" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'path' argument".to_string())?;
+                let content = args
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'content' argument".to_string())?;
+                self.write_file(path, content).await
+            }
+            "edit_file" => {
+                let path = args
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'path' argument".to_string())?;
+                let old_string = args
+                    .get("old_string")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'old_string' argument".to_string())?;
+                let new_string = args
+                    .get("new_string")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'new_string' argument".to_string())?;
+                self.edit_file(path, old_string, new_string).await
+            }
+            "list_directory" => {
+                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                self.list_directory(path).await
+            }
+            "search_files" => {
+                let pattern = args
+                    .get("pattern")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'pattern' argument".to_string())?;
+                let path = args.get("path").and_then(|v| v.as_str());
+                let glob = args.get("glob").and_then(|v| v.as_str());
+                self.search_files(pattern, path, glob).await
+            }
+            "commit_changes" => {
+                let message = args
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'message' argument".to_string())?;
+                let files = args
+                    .get("files")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| "missing 'files' argument (must be array)".to_string())?;
+                let file_strs: Vec<&str> = files.iter().filter_map(|v| v.as_str()).collect();
+                self.commit_changes(message, &file_strs).await
+            }
+            "propose_to_main" => {
+                let title = args
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'title' argument".to_string())?;
+                let body = args
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Automated PR from soul agent");
+                self.propose_to_main(title, body).await
+            }
             _ => Err(format!("unknown tool: {name}")),
         }
+    }
+
+    /// Resolve a path relative to workspace root, preventing traversal outside it.
+    fn resolve_path(&self, path: &str) -> Result<PathBuf, String> {
+        let candidate = if Path::new(path).is_absolute() {
+            PathBuf::from(path)
+        } else {
+            self.workspace_root.join(path)
+        };
+
+        // Canonicalize what exists; for new files, canonicalize the parent
+        let resolved = if candidate.exists() {
+            candidate
+                .canonicalize()
+                .map_err(|e| format!("failed to resolve path: {e}"))?
+        } else {
+            let parent = candidate
+                .parent()
+                .ok_or_else(|| "invalid path: no parent directory".to_string())?;
+            if !parent.exists() {
+                return Err(format!(
+                    "parent directory does not exist: {}",
+                    parent.display()
+                ));
+            }
+            let canon_parent = parent
+                .canonicalize()
+                .map_err(|e| format!("failed to resolve parent: {e}"))?;
+            let filename = candidate
+                .file_name()
+                .ok_or_else(|| "invalid path: no filename".to_string())?;
+            canon_parent.join(filename)
+        };
+
+        Ok(resolved)
+    }
+
+    /// Get the relative path from workspace root for guard checking.
+    fn relative_path(&self, resolved: &Path) -> String {
+        resolved
+            .strip_prefix(&self.workspace_root)
+            .unwrap_or(resolved)
+            .to_string_lossy()
+            .to_string()
     }
 
     /// Execute a shell command with timeout and output truncation.
@@ -61,6 +219,7 @@ impl ToolExecutor {
             tokio::process::Command::new("bash")
                 .arg("-c")
                 .arg(command)
+                .current_dir(&self.workspace_root)
                 .output(),
         )
         .await;
@@ -89,28 +248,526 @@ impl ToolExecutor {
             }),
         }
     }
+
+    /// Read a file with optional offset and limit (line-based).
+    async fn read_file(
+        &self,
+        path: &str,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+        let resolved = self.resolve_path(path)?;
+
+        // Check file size first
+        let metadata = tokio::fs::metadata(&resolved)
+            .await
+            .map_err(|e| format!("cannot read file: {e}"))?;
+
+        if !metadata.is_file() {
+            return Err(format!("not a file: {path}"));
+        }
+
+        if metadata.len() > MAX_READ_BYTES as u64 && offset.is_none() && limit.is_none() {
+            return Err(format!(
+                "file too large ({} bytes, max {}). Use offset/limit to read portions.",
+                metadata.len(),
+                MAX_READ_BYTES
+            ));
+        }
+
+        let content = tokio::fs::read_to_string(&resolved)
+            .await
+            .map_err(|e| format!("failed to read file: {e}"))?;
+
+        let lines: Vec<&str> = content.lines().collect();
+        let start_line = offset.unwrap_or(0);
+        let end_line = limit
+            .map(|l| (start_line + l).min(lines.len()))
+            .unwrap_or(lines.len());
+
+        let mut output = String::new();
+        for (i, line) in lines
+            .iter()
+            .enumerate()
+            .skip(start_line)
+            .take(end_line - start_line)
+        {
+            output.push_str(&format!("{:>6}\t{}\n", i + 1, line));
+        }
+
+        // Truncate if still too large
+        if output.len() > MAX_OUTPUT_BYTES {
+            output.truncate(MAX_OUTPUT_BYTES);
+            output.push_str("\n... (truncated)");
+        }
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: output,
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Write (create or overwrite) a file. Guard-checked.
+    async fn write_file(&self, path: &str, content: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        // Guard check on the raw path (before resolving, to catch traversal)
+        guard::validate_write_target(path).map_err(|e| e.to_string())?;
+
+        let resolved = self.resolve_path(path)?;
+        let rel = self.relative_path(&resolved);
+        guard::validate_write_target(&rel).map_err(|e| e.to_string())?;
+
+        // Ensure parent directory exists
+        if let Some(parent) = resolved.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("failed to create parent directory: {e}"))?;
+        }
+
+        tokio::fs::write(&resolved, content)
+            .await
+            .map_err(|e| format!("failed to write file: {e}"))?;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: format!("wrote {} bytes to {path}", content.len()),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Edit a file via search-and-replace. The old_string must appear exactly once. Guard-checked.
+    async fn edit_file(
+        &self,
+        path: &str,
+        old_string: &str,
+        new_string: &str,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        // Guard check
+        guard::validate_write_target(path).map_err(|e| e.to_string())?;
+
+        let resolved = self.resolve_path(path)?;
+        let rel = self.relative_path(&resolved);
+        guard::validate_write_target(&rel).map_err(|e| e.to_string())?;
+
+        let content = tokio::fs::read_to_string(&resolved)
+            .await
+            .map_err(|e| format!("failed to read file: {e}"))?;
+
+        let count = content.matches(old_string).count();
+        if count == 0 {
+            return Err("old_string not found in file".to_string());
+        }
+        if count > 1 {
+            return Err(format!(
+                "old_string found {count} times — must be unique. Provide more context."
+            ));
+        }
+
+        let new_content = content.replacen(old_string, new_string, 1);
+        tokio::fs::write(&resolved, &new_content)
+            .await
+            .map_err(|e| format!("failed to write file: {e}"))?;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: format!("edited {path}: replaced 1 occurrence"),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// List directory entries with type indicators.
+    async fn list_directory(&self, path: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+        let resolved = self.resolve_path(path)?;
+
+        let metadata = tokio::fs::metadata(&resolved)
+            .await
+            .map_err(|e| format!("cannot access path: {e}"))?;
+
+        if !metadata.is_dir() {
+            return Err(format!("not a directory: {path}"));
+        }
+
+        let mut entries = Vec::new();
+        let mut read_dir = tokio::fs::read_dir(&resolved)
+            .await
+            .map_err(|e| format!("failed to read directory: {e}"))?;
+
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| format!("failed to read entry: {e}"))?
+        {
+            if entries.len() >= MAX_DIR_ENTRIES {
+                entries.push("... (truncated, too many entries)".to_string());
+                break;
+            }
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            let ft = entry.file_type().await;
+            let indicator = match ft {
+                Ok(ft) if ft.is_dir() => "/",
+                Ok(ft) if ft.is_symlink() => "@",
+                _ => "",
+            };
+            entries.push(format!("{name}{indicator}"));
+        }
+
+        entries.sort();
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: entries.join("\n"),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Search for a literal string pattern across files. Uses grep via shell internally for
+    /// performance (avoids reimplementing recursive file walking + binary detection).
+    async fn search_files(
+        &self,
+        pattern: &str,
+        path: Option<&str>,
+        glob: Option<&str>,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+        let search_path = path.unwrap_or(".");
+
+        // Build grep command with safe quoting
+        let mut cmd = format!("grep -rn --max-count={} -l", MAX_SEARCH_MATCHES);
+
+        if let Some(g) = glob {
+            cmd.push_str(&format!(" --include='{}'", g.replace('\'', "'\\''")));
+        }
+
+        // Use fixed-string mode for literal search (no regex interpretation)
+        cmd.push_str(&format!(
+            " -F -- '{}' '{}'",
+            pattern.replace('\'', "'\\''"),
+            search_path.replace('\'', "'\\''")
+        ));
+
+        // Run via shell (in workspace root)
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            tokio::process::Command::new("bash")
+                .arg("-c")
+                .arg(&cmd)
+                .current_dir(&self.workspace_root)
+                .output(),
+        )
+        .await;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(Ok(output)) => {
+                let files = truncate_output(&output.stdout);
+                if files.is_empty() {
+                    Ok(ToolResult {
+                        stdout: "no matches found".to_string(),
+                        stderr: String::new(),
+                        exit_code: 0,
+                        duration_ms,
+                    })
+                } else {
+                    // Now get context lines for matched files (limited)
+                    let file_list: Vec<&str> = files.lines().take(MAX_SEARCH_MATCHES).collect();
+                    let file_args: String = file_list
+                        .iter()
+                        .map(|f| format!("'{}'", f.replace('\'', "'\\''").trim()))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    let context_cmd = format!(
+                        "grep -n -F -- '{}' {} | head -{}",
+                        pattern.replace('\'', "'\\''"),
+                        file_args,
+                        MAX_SEARCH_MATCHES * 3
+                    );
+
+                    let ctx_result = tokio::time::timeout(
+                        std::time::Duration::from_secs(15),
+                        tokio::process::Command::new("bash")
+                            .arg("-c")
+                            .arg(&context_cmd)
+                            .current_dir(&self.workspace_root)
+                            .output(),
+                    )
+                    .await;
+
+                    let output_text = match ctx_result {
+                        Ok(Ok(out)) => truncate_output(&out.stdout),
+                        _ => files,
+                    };
+
+                    Ok(ToolResult {
+                        stdout: output_text,
+                        stderr: String::new(),
+                        exit_code: 0,
+                        duration_ms,
+                    })
+                }
+            }
+            Ok(Err(e)) => Err(format!("search failed: {e}")),
+            Err(_) => Ok(ToolResult {
+                stdout: String::new(),
+                stderr: "search timed out after 30s".to_string(),
+                exit_code: -1,
+                duration_ms,
+            }),
+        }
+    }
+
+    /// Commit changes through the validated pipeline (stage → cargo check → cargo test → commit → push).
+    async fn commit_changes(&self, message: &str, files: &[&str]) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        if !self.coding_enabled {
+            return Err("coding is not enabled (set SOUL_CODING_ENABLED=true)".to_string());
+        }
+
+        let git = self
+            .git
+            .as_ref()
+            .ok_or_else(|| "git context not available".to_string())?;
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| "database not available".to_string())?;
+
+        let workspace = self.workspace_root.to_string_lossy().to_string();
+        let result = coding::validated_commit(git, &workspace, files, message).await?;
+
+        // Record mutation in database
+        let mutation = Mutation {
+            id: uuid::Uuid::new_v4().to_string(),
+            commit_sha: result.commit_sha.clone(),
+            branch: git.branch_name().to_string(),
+            description: message.to_string(),
+            files_changed: serde_json::to_string(files).unwrap_or_default(),
+            cargo_check_passed: result.cargo_check_passed,
+            cargo_test_passed: result.cargo_test_passed,
+            created_at: chrono::Utc::now().timestamp(),
+        };
+        let _ = db.insert_mutation(&mutation);
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: result.message,
+            stderr: String::new(),
+            exit_code: if result.success { 0 } else { 1 },
+            duration_ms,
+        })
+    }
+
+    /// Create a PR from the VM branch to main.
+    async fn propose_to_main(&self, title: &str, body: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        if !self.coding_enabled {
+            return Err("coding is not enabled".to_string());
+        }
+
+        let git = self
+            .git
+            .as_ref()
+            .ok_or_else(|| "git context not available".to_string())?;
+
+        let result = git.create_pr(title, body).await?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        Ok(ToolResult {
+            stdout: result.output,
+            stderr: String::new(),
+            exit_code: if result.success { 0 } else { 1 },
+            duration_ms,
+        })
+    }
 }
 
 /// Return the list of function declarations for the LLM's tools parameter.
 pub fn available_tools() -> Vec<FunctionDeclaration> {
-    vec![FunctionDeclaration {
-        name: "execute_shell".to_string(),
-        description: "Execute a shell command in the node's container. Use for inspection (env, ls, curl, df) not destruction.".to_string(),
-        parameters: serde_json::json!({
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The bash command to execute"
+    vec![
+        FunctionDeclaration {
+            name: "execute_shell".to_string(),
+            description: "Execute a shell command in the node's container. Use for non-file operations (curl, env, df, cargo). Prefer file tools for reading/writing files.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "The bash command to execute"
+                    },
+                    "timeout_secs": {
+                        "type": "integer",
+                        "description": "Max seconds to wait (default 120, max 300)"
+                    }
                 },
-                "timeout_secs": {
-                    "type": "integer",
-                    "description": "Max seconds to wait (default 30, max 120)"
-                }
-            },
-            "required": ["command"]
-        }),
-    }]
+                "required": ["command"]
+            }),
+        },
+        FunctionDeclaration {
+            name: "read_file".to_string(),
+            description: "Read a file with line numbers. Returns numbered lines. Use offset/limit for large files.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path (relative to workspace root or absolute)"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Start reading from this line (0-indexed, optional)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of lines to read (optional)"
+                    }
+                },
+                "required": ["path"]
+            }),
+        },
+        FunctionDeclaration {
+            name: "write_file".to_string(),
+            description: "Create or overwrite a file. Protected files (soul core, identity, Cargo files) cannot be written.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path to write (relative to workspace root or absolute)"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The full content to write to the file"
+                    }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        FunctionDeclaration {
+            name: "edit_file".to_string(),
+            description: "Edit a file via search-and-replace. The old_string must appear exactly once in the file. Protected files cannot be edited.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path to edit (relative to workspace root or absolute)"
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "The exact string to find (must be unique in the file)"
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "The replacement string"
+                    }
+                },
+                "required": ["path", "old_string", "new_string"]
+            }),
+        },
+        FunctionDeclaration {
+            name: "list_directory".to_string(),
+            description: "List entries in a directory with type indicators (/ for dirs, @ for symlinks).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path (relative to workspace root or absolute, defaults to '.')"
+                    }
+                },
+                "required": []
+            }),
+        },
+        FunctionDeclaration {
+            name: "search_files".to_string(),
+            description: "Search for a literal string across files. Returns matching file paths and lines with line numbers.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The literal string to search for"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (defaults to workspace root)"
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "File glob pattern to filter (e.g. '*.rs', '*.toml')"
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        },
+    ]
+}
+
+/// Return tool declarations including git/coding tools (when coding is enabled).
+pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration> {
+    let mut tools = available_tools();
+
+    if coding_enabled {
+        tools.push(FunctionDeclaration {
+            name: "commit_changes".to_string(),
+            description: "Validate and commit file changes. Runs cargo check + cargo test before committing. Changes go to the vm/<instance-id> branch.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Commit message describing the changes"
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Array of file paths to stage and commit"
+                    }
+                },
+                "required": ["message", "files"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "propose_to_main".to_string(),
+            description: "Create a pull request from the VM branch to main for human review."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "PR title (short, descriptive)"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "PR body/description with details of changes"
+                    }
+                },
+                "required": ["title"]
+            }),
+        });
+    }
+
+    tools
 }
 
 /// Truncate raw output bytes to a UTF-8 string, capping at MAX_OUTPUT_BYTES.

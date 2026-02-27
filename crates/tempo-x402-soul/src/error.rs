@@ -20,4 +20,10 @@ pub enum SoulError {
 
     #[error("config error: {0}")]
     Config(String),
+
+    #[error("guard error: {0}")]
+    Guard(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }

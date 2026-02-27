@@ -8,12 +8,17 @@
 //! observes and records snapshots, but skips LLM calls.
 
 pub mod chat;
+pub mod coding;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod git;
+pub mod guard;
 pub mod llm;
 pub mod memory;
+pub mod mode;
 pub mod observer;
+pub mod prompts;
 pub mod thinking;
 pub mod tools;
 
