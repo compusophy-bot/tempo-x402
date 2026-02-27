@@ -84,7 +84,8 @@ impl NodeObserver for NodeObserverImpl {
             wallet_address: self
                 .identity
                 .as_ref()
-                .map(|id| format!("{:#x}", id.address)),
+                .map(|id| format!("{:#x}", id.address))
+                .or_else(|| Some(format!("{:#x}", self.gateway.config.platform_address))),
             instance_id: self.identity.as_ref().map(|id| id.instance_id.clone()),
             generation: self.generation,
         })

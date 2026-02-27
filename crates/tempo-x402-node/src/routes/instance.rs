@@ -41,10 +41,11 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
         })
     });
 
-    // Open a read connection to query active (non-failed) children
-    let children = rusqlite::Connection::open(&state.db_path)
-        .ok()
-        .and_then(|conn| db::query_children_active(&conn).ok())
+    // Use existing DB connection pool to query active (non-failed) children
+    let children = state
+        .gateway
+        .db
+        .with_connection(|conn| db::query_children_active(conn))
         .unwrap_or_default();
 
     let uptime_secs = (chrono::Utc::now() - state.started_at).num_seconds();
@@ -55,6 +56,7 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
 
     HttpResponse::Ok().json(serde_json::json!({
         "identity": identity_info,
+        "platform_address": format!("{:#x}", state.gateway.config.platform_address),
         "children": children,
         "children_count": children.len(),
         "clone_available": clone_available,

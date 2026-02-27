@@ -72,7 +72,7 @@ pub async fn get_analytics(
     path: web::Path<String>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
-    let slug = path.into_inner();
+    let slug = path.into_inner().to_lowercase();
 
     let stats = state
         .db

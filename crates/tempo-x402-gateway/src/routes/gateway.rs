@@ -82,10 +82,11 @@ async fn do_gateway_proxy(
     rest_path: Option<&str>,
     body: web::Bytes,
 ) -> Result<HttpResponse, GatewayError> {
+    let slug = slug.to_lowercase();
     // Look up the endpoint
     let endpoint = state
         .db
-        .get_endpoint(slug)?
+        .get_endpoint(&slug)?
         .ok_or_else(|| GatewayError::EndpointNotFound(slug.to_string()))?;
 
     // Parse owner address

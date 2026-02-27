@@ -61,7 +61,7 @@ pub async fn get_endpoint(
     path: web::Path<String>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
-    let slug = path.into_inner();
+    let slug = path.into_inner().to_lowercase();
 
     let endpoint = state
         .db
@@ -84,7 +84,7 @@ pub async fn update_endpoint(
     body: web::Json<UpdateEndpoint>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
-    let slug = path.into_inner();
+    let slug = path.into_inner().to_lowercase();
 
     // Check endpoint exists
     let endpoint = state
@@ -205,7 +205,7 @@ pub async fn delete_endpoint(
     path: web::Path<String>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
-    let slug = path.into_inner();
+    let slug = path.into_inner().to_lowercase();
 
     // Check endpoint exists
     let endpoint = state

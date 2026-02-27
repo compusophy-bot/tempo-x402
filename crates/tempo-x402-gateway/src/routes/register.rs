@@ -38,8 +38,11 @@ pub async fn register(
     body: web::Json<CreateEndpoint>,
     state: web::Data<AppState>,
 ) -> Result<HttpResponse, GatewayError> {
+    // Normalize slug to lowercase for case-insensitive matching
+    let slug = body.slug.to_lowercase();
+
     // Validate inputs first (before requiring payment)
-    validate_slug(&body.slug)?;
+    validate_slug(&slug)?;
     validate_target_url(&body.target_url)?;
     if let Some(ref desc) = body.description {
         if desc.len() > 4096 {
@@ -72,7 +75,7 @@ pub async fn register(
     // Reserve the slug atomically BEFORE settlement.
     // This prevents a race where two concurrent registrations both pass the
     // slug_exists check, both pay, but only one can actually create the endpoint.
-    state.db.reserve_slug(&body.slug)?;
+    state.db.reserve_slug(&slug)?;
 
     // Require payment (will re-extract header and verify+settle)
     let settle = match require_payment(
@@ -88,7 +91,7 @@ pub async fn register(
         Ok(s) => s,
         Err(http_response) => {
             // Payment verification/settlement failed — release the slug reservation
-            let _ = state.db.delete_reserved_slug(&body.slug);
+            let _ = state.db.delete_reserved_slug(&slug);
             return Ok(http_response);
         }
     };
@@ -97,7 +100,7 @@ pub async fn register(
     let owner_address = match settle.payer {
         Some(addr) => addr,
         None => {
-            let _ = state.db.delete_reserved_slug(&body.slug);
+            let _ = state.db.delete_reserved_slug(&slug);
             return Err(GatewayError::Internal(
                 "settlement missing payer address".to_string(),
             ));
@@ -106,7 +109,7 @@ pub async fn register(
 
     // Activate the reserved slug with full endpoint data
     let endpoint = match state.db.activate_endpoint(
-        &body.slug,
+        &slug,
         &format!("{:#x}", owner_address),
         &body.target_url,
         &body.price,
@@ -115,7 +118,7 @@ pub async fn register(
     ) {
         Ok(ep) => ep,
         Err(e) => {
-            let _ = state.db.delete_reserved_slug(&body.slug);
+            let _ = state.db.delete_reserved_slug(&slug);
             return Err(e);
         }
     };
