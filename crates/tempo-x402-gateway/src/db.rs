@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::error::GatewayError;
 
@@ -54,15 +54,16 @@ pub struct UpdateEndpoint {
 }
 
 /// SQLite database wrapper
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
     pub fn new(path: &str) -> Result<Self, GatewayError> {
         let conn = Connection::open(path)?;
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
         db.init_schema()?;
         Ok(db)

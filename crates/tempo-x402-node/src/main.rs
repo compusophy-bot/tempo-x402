@@ -194,6 +194,13 @@ async fn main() -> std::io::Result<()> {
                 "100".to_string(),
                 "Returns node identity, version, uptime, and orchestration capabilities.".to_string(),
             ),
+            (
+                "soul".to_string(),
+                format!("{}/soul/status", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns the current state and recent thoughts of the node's soul.".to_string(),
+            ),
         ];
 
         let owner = format!("{:#x}", config.platform_address);
@@ -201,12 +208,17 @@ async fn main() -> std::io::Result<()> {
         for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
             match gateway_db.get_endpoint(&slug) {
                 Ok(None) => {
-                    match gateway_db.create_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc.as_str())) {
+                    // Try to reserve first (handles soft-deleted slugs)
+                    if let Err(e) = gateway_db.reserve_slug(&slug) {
+                        tracing::warn!("Failed to reserve soul endpoint {}: {}", slug, e);
+                        continue;
+                    }
+                    match gateway_db.activate_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc.as_str())) {
                         Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
-                        Err(e) => tracing::warn!("Failed to register soul endpoint {}: {}", slug, e),
+                        Err(e) => tracing::warn!("Failed to activate soul endpoint {}: {}", slug, e),
                     }
                 }
-                Ok(Some(_)) => {} // Already exists
+                Ok(Some(_)) => {} // Already exists and active
                 Err(e) => tracing::warn!("Failed to check soul endpoint {}: {}", slug, e),
             }
         }
