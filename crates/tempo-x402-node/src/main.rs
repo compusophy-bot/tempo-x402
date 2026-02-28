@@ -144,6 +144,13 @@ async fn main() -> std::io::Result<()> {
                 "100",
                 "Returns the HTTP headers of the request as seen by the gateway.",
             ),
+            (
+                "clone",
+                &format!("{}/clone", self_url),
+                clone_price.as_deref().unwrap_or("$0.10"),
+                clone_price_amount.as_deref().unwrap_or("100000"),
+                "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.",
+            ),
         ];
 
         let owner = config.evm_address.map(|a| format!("{a:#x}")).unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string());
