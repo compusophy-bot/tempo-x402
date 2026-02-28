@@ -587,7 +587,7 @@ impl Database {
             r#"
             SELECT slug, request_count, payment_count, revenue_total, last_accessed_at
             FROM endpoint_stats
-            ORDER BY CAST(revenue_total AS INTEGER) DESC
+            ORDER BY length(revenue_total) DESC, revenue_total DESC
             LIMIT ?1 OFFSET ?2
             "#,
         )?;
@@ -771,5 +771,22 @@ mod tests {
         assert_eq!(stats[0].slug, "high");
         assert_eq!(stats[1].slug, "mid");
         assert_eq!(stats[2].slug, "low");
+    }
+
+    #[test]
+    fn test_list_endpoint_stats_large_numbers() {
+        let db = Database::new(":memory:").unwrap();
+
+        // 10^19 (overflows i64)
+        db.record_payment("huge", "10000000000000000000").unwrap();
+        // 5 * 10^18 (fits in i64)
+        db.record_payment("large", "5000000000000000000").unwrap();
+        db.record_payment("small", "100").unwrap();
+
+        let stats = db.list_endpoint_stats(100, 0).unwrap();
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].slug, "huge");
+        assert_eq!(stats[1].slug, "large");
+        assert_eq!(stats[2].slug, "small");
     }
 }

@@ -126,6 +126,42 @@ async fn main() -> std::io::Result<()> {
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
 
+    // ── Soul-provided endpoints ──────────────────────────────────────────
+    // Register utility endpoints that the soul provides for other agents.
+    {
+        let soul_endpoints = vec![
+            (
+                "echo-ip",
+                "https://httpbin.org/ip",
+                "$0.0001",
+                "100",
+                "Returns the public IP address of the caller. Useful for agent connectivity checks.",
+            ),
+            (
+                "headers",
+                "https://httpbin.org/headers",
+                "$0.0001",
+                "100",
+                "Returns the HTTP headers of the request as seen by the gateway.",
+            ),
+        ];
+
+        let owner = config.evm_address.map(|a| format!("{a:#x}")).unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string());
+
+        for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
+            match gateway_db.get_endpoint(slug) {
+                Ok(None) => {
+                    match gateway_db.create_endpoint(slug, &owner, target, price_usd, price_amount, Some(desc)) {
+                        Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
+                        Err(e) => tracing::warn!("Failed to register soul endpoint {}: {}", slug, e),
+                    }
+                }
+                Ok(Some(_)) => {} // Already exists
+                Err(e) => tracing::warn!("Failed to check soul endpoint {}: {}", slug, e),
+            }
+        }
+    }
+
     // Register Prometheus metrics
     register_metrics();
 
