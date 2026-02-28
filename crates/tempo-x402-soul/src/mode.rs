@@ -44,25 +44,34 @@ impl AgentMode {
 
         let mut result = match self {
             Self::Observe => {
-                // Only execute_shell
-                all.into_iter()
+                // execute_shell + update_memory
+                let mut v: Vec<_> = all
+                    .into_iter()
                     .filter(|t| t.name == "execute_shell")
-                    .collect()
+                    .collect();
+                v.push(tools::update_memory_tool());
+                v
             }
             Self::Chat => {
-                // Shell + read-only file tools
-                all.into_iter()
+                // Shell + read-only file tools + update_memory
+                let mut v: Vec<_> = all
+                    .into_iter()
                     .filter(|t| {
                         matches!(
                             t.name.as_str(),
                             "execute_shell" | "read_file" | "list_directory" | "search_files"
                         )
                     })
-                    .collect()
+                    .collect();
+                v.push(tools::update_memory_tool());
+                v
             }
             Self::Code => {
-                // All tools including write/edit/commit
-                all_with_git
+                // All tools including write/edit/commit + update_memory + register_endpoint
+                let mut v = all_with_git;
+                v.push(tools::update_memory_tool());
+                v.push(tools::register_endpoint_tool());
+                v
             }
             Self::Review => {
                 // Shell + read-only file tools

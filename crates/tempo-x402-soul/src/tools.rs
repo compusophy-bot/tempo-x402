@@ -10,6 +10,7 @@ use crate::db::{Mutation, SoulDatabase};
 use crate::git::GitContext;
 use crate::guard;
 use crate::llm::FunctionDeclaration;
+use crate::persistent_memory;
 use crate::tool_registry::ToolRegistry;
 
 /// Result of a tool execution.
@@ -29,6 +30,8 @@ pub struct ToolExecutor {
     db: Option<Arc<SoulDatabase>>,
     coding_enabled: bool,
     registry: Option<ToolRegistry>,
+    memory_file_path: String,
+    gateway_url: Option<String>,
 }
 
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
@@ -56,7 +59,21 @@ impl ToolExecutor {
             db: None,
             coding_enabled: false,
             registry: None,
+            memory_file_path: "/data/soul_memory.md".to_string(),
+            gateway_url: None,
         }
+    }
+
+    /// Set the persistent memory file path.
+    pub fn with_memory_file(mut self, path: String) -> Self {
+        self.memory_file_path = path;
+        self
+    }
+
+    /// Set the gateway URL for endpoint registration.
+    pub fn with_gateway_url(mut self, url: Option<String>) -> Self {
+        self.gateway_url = url;
+        self
     }
 
     /// Enable coding capabilities with git context and database.
@@ -183,6 +200,30 @@ impl ToolExecutor {
                     .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
                 self.create_issue(title, body, &labels).await
+            }
+            "update_memory" => {
+                let content = args
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'content' argument".to_string())?;
+                self.update_memory(content).await
+            }
+            "register_endpoint" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                let target_url = args
+                    .get("target_url")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'target_url' argument".to_string())?;
+                let price = args
+                    .get("price")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("$0.01");
+                let description = args.get("description").and_then(|v| v.as_str());
+                self.register_endpoint(slug, target_url, price, description)
+                    .await
             }
             _ => {
                 // Check meta-tools and dynamic tools via registry
@@ -631,6 +672,142 @@ impl ToolExecutor {
         })
     }
 
+    /// Update the persistent memory file.
+    async fn update_memory(&self, content: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+        let bytes = persistent_memory::update(&self.memory_file_path, content)?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+        Ok(ToolResult {
+            stdout: format!(
+                "memory updated ({bytes} bytes written to {})",
+                self.memory_file_path
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Register an endpoint on the gateway via x402 payment.
+    async fn register_endpoint(
+        &self,
+        slug: &str,
+        target_url: &str,
+        price: &str,
+        description: Option<&str>,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        if !self.coding_enabled {
+            return Err("coding is not enabled (register_endpoint requires Code mode)".to_string());
+        }
+
+        let gateway_url = self
+            .gateway_url
+            .as_deref()
+            .unwrap_or("http://localhost:4023");
+
+        let private_key = std::env::var("EVM_PRIVATE_KEY")
+            .map_err(|_| "EVM_PRIVATE_KEY not set — cannot sign payment".to_string())?;
+
+        let client = reqwest::Client::new();
+
+        // Build registration body
+        let mut body = serde_json::json!({
+            "slug": slug,
+            "target_url": target_url,
+            "price": price,
+        });
+        if let Some(desc) = description {
+            body["description"] = serde_json::Value::String(desc.to_string());
+        }
+
+        // Step 1: POST /register → expect 402
+        let register_url = format!("{gateway_url}/register");
+        let resp = client
+            .post(&register_url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("failed to POST /register: {e}"))?;
+
+        if resp.status() != reqwest::StatusCode::PAYMENT_REQUIRED {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            if status.is_success() {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                return Ok(ToolResult {
+                    stdout: format!("endpoint registered (no payment needed): {text}"),
+                    stderr: String::new(),
+                    exit_code: 0,
+                    duration_ms,
+                });
+            }
+            return Err(format!("expected 402, got {status}: {text}"));
+        }
+
+        // Step 2: Parse PaymentRequirements from response
+        let resp_json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse 402 response: {e}"))?;
+
+        let accepts = resp_json
+            .get("accepts")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "402 response missing 'accepts' array".to_string())?;
+
+        let req_value = accepts
+            .first()
+            .ok_or_else(|| "402 response 'accepts' array is empty".to_string())?;
+
+        let requirements: x402_wallet::PaymentRequirements =
+            serde_json::from_value(req_value.clone())
+                .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
+
+        // Step 3: Sign payment
+        let signer = x402_wallet::WalletSigner::new(&private_key)
+            .map_err(|e| format!("failed to create signer: {e}"))?;
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("system time error: {e}"))?
+            .as_secs();
+
+        let payment_b64 = signer
+            .sign_payment(&requirements, now_secs)
+            .map_err(|e| format!("failed to sign payment: {e}"))?;
+
+        // Step 4: Retry with payment header
+        let resp2 = client
+            .post(&register_url)
+            .header("PAYMENT-SIGNATURE", &payment_b64)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("failed to retry POST with payment: {e}"))?;
+
+        let status = resp2.status();
+        let text = resp2.text().await.unwrap_or_default();
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if status.is_success() {
+            Ok(ToolResult {
+                stdout: format!("endpoint /{slug} registered successfully: {text}"),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms,
+            })
+        } else {
+            Ok(ToolResult {
+                stdout: String::new(),
+                stderr: format!("registration failed ({status}): {text}"),
+                exit_code: 1,
+                duration_ms,
+            })
+        }
+    }
+
     /// Create an issue on the upstream repo.
     async fn create_issue(
         &self,
@@ -658,6 +835,54 @@ impl ToolExecutor {
             exit_code: if result.success { 0 } else { 1 },
             duration_ms,
         })
+    }
+}
+
+/// Return the update_memory tool declaration (available in Observe, Chat, Code).
+pub fn update_memory_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "update_memory".to_string(),
+        description: "Update your persistent memory file. This is your long-term memory — it persists across restarts. Write markdown content (max 4KB). The entire content is replaced, so include everything you want to remember.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string",
+                    "description": "Full replacement markdown content for your memory file (max 4096 bytes)"
+                }
+            },
+            "required": ["content"]
+        }),
+    }
+}
+
+/// Return the register_endpoint tool declaration (Code mode only).
+pub fn register_endpoint_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "register_endpoint".to_string(),
+        description: "Register a new paid endpoint on the gateway. Handles the full x402 payment flow: sends registration request, signs payment authorization, and completes registration.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "URL slug for the endpoint (e.g. 'weather', 'translate')"
+                },
+                "target_url": {
+                    "type": "string",
+                    "description": "The backend URL this endpoint proxies to"
+                },
+                "price": {
+                    "type": "string",
+                    "description": "Price per request (default '$0.01')"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional description of what this endpoint does"
+                }
+            },
+            "required": ["slug", "target_url"]
+        }),
     }
 }
 

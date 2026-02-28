@@ -5383,12 +5383,15 @@ dependencies = [
 name = "tempo-x402-soul"
 version = "0.9.0"
 dependencies = [
+ "base64",
  "chrono",
  "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "tempo-x402",
+ "tempo-x402-wallet",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
