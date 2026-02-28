@@ -23,6 +23,7 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "x-x402-verified",
     "x-x402-payer",
     "x-x402-txhash",
+    "x-x402-amount",
     "x-x402-network",
 ];
 
@@ -58,6 +59,7 @@ pub async fn proxy_request(
     settle: &SettleResponse,
     include_payment_response: bool,
     hmac_secret: Option<&[u8]>,
+    amount: Option<&str>,
 ) -> Result<HttpResponse, GatewayError> {
     // SSRF protection: resolve DNS and validate that all resolved IPs are public.
     // We validate before the request but let reqwest use the original hostname for
@@ -116,6 +118,10 @@ pub async fn proxy_request(
 
     if let Some(ref tx) = settle.transaction {
         request_builder = request_builder.header("X-X402-TxHash", tx);
+    }
+
+    if let Some(amt) = amount {
+        request_builder = request_builder.header("X-X402-Amount", amt);
     }
     request_builder = request_builder.header("X-X402-Network", &settle.network);
 

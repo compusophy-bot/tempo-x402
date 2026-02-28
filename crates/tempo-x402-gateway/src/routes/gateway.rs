@@ -158,6 +158,7 @@ async fn do_gateway_proxy(
         &settle,
         true,
         state.config.hmac_secret.as_deref(),
+        Some(&endpoint.price_amount),
     )
     .await?;
 
@@ -209,4 +210,35 @@ fn record_endpoint_stats(state: &AppState, slug: &str, price_amount: &str) {
         .try_into()
         .unwrap_or(u64::MAX);
     ENDPOINT_REVENUE.with_label_values(&[slug]).inc_by(amount);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_query() {
+        assert_eq!(sanitize_query("foo=bar").unwrap(), "foo=bar");
+        assert_eq!(sanitize_query("foo=bar&baz=qux").unwrap(), "foo=bar&baz=qux");
+        assert!(sanitize_query("foo=bar\r\n").is_err());
+        assert!(sanitize_query("foo=bar\0").is_err());
+        assert!(sanitize_query("foo=..").is_err());
+        assert!(sanitize_query("foo=%2e%2e").is_err());
+        
+        // Fragment stripping
+        assert_eq!(sanitize_query("foo=bar#baz").unwrap(), "foo=bar");
+    }
+
+    #[test]
+    fn test_sanitize_path() {
+        assert_eq!(sanitize_path("valid/path").unwrap(), "valid/path");
+        assert_eq!(sanitize_path("valid%2Fpath").unwrap(), "valid%2Fpath");
+        
+        assert!(sanitize_path("../invalid").is_err());
+        assert!(sanitize_path("%2e%2e/invalid").is_err());
+        assert!(sanitize_path("/leading/slash").is_err());
+        assert!(sanitize_path("user@host").is_err());
+        assert!(sanitize_path("new\nline").is_err());
+        assert!(sanitize_path("null\0byte").is_err());
+    }
 }
