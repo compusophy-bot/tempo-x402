@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>x402 Demo - Pay-per-Request APIs</title>
+    <link rel="stylesheet" href="/style-2fd566cf4fe352cb.css" integrity="sha384-NvLs+nJSYpAe+s1uqv4EhXN61C7Psf45QgfCCAncpeUIdD6P0ptMWfdF1BEIMu7u"/>
+<link rel="modulepreload" href="/tempo-x402-app-14bf5d1aa5f16b65.js" crossorigin="anonymous" integrity="sha384-UWVBj3HGwDxmCrdgXE4XmbY3eC+NX9OclYtEJabtEsmbhiYkPwVLPXtfWH3jnRqd"><link rel="preload" href="/tempo-x402-app-14bf5d1aa5f16b65_bg.wasm" crossorigin="anonymous" integrity="sha384-sMqyi+ngCAobutUY+KgP/y+2uKcgTFWnA2e/TpSFP2UP3pMWtqRixPv7889S8xc/" as="fetch" type="application/wasm"></head>
+<body>
+    
+<script type="module">
+import init, * as bindings from '/tempo-x402-app-14bf5d1aa5f16b65.js';
+const wasm = await init({ module_or_path: '/tempo-x402-app-14bf5d1aa5f16b65_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+</body>
+</html>

@@ -196,12 +196,12 @@ async fn main() -> std::io::Result<()> {
             ),
         ];
 
-        let owner = config.evm_address.map(|a| format!("{a:#x}")).unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string());
+        let owner = format!("{:#x}", config.platform_address);
 
         for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
             match gateway_db.get_endpoint(&slug) {
                 Ok(None) => {
-                    match gateway_db.create_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc)) {
+                    match gateway_db.create_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc.as_str())) {
                         Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
                         Err(e) => tracing::warn!("Failed to register soul endpoint {}: {}", slug, e),
                     }

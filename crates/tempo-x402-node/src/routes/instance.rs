@@ -31,6 +31,7 @@ fn is_valid_https_url(s: &str) -> bool {
 
 /// GET /instance/info — returns identity, children, version, uptime, clone availability
 pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
+    // test change
     let identity_info = state.identity.as_ref().map(|id| {
         serde_json::json!({
             "address": format!("{:#x}", id.address),
@@ -39,6 +40,14 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
             "parent_address": id.parent_address.map(|a| format!("{:#x}", a)),
             "created_at": id.created_at.to_rfc3339(),
         })
+    }).or_else(|| {
+        Some(serde_json::json!({
+            "address": format!("{:#x}", state.gateway.config.platform_address),
+            "instance_id": null,
+            "parent_url": null,
+            "parent_address": null,
+            "created_at": state.started_at.to_rfc3339(),
+        }))
     });
 
     // Open a read connection to query active (non-failed) children
