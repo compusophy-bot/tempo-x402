@@ -84,8 +84,13 @@ impl NodeObserver for NodeObserverImpl {
             wallet_address: self
                 .identity
                 .as_ref()
-                .map(|id| format!("{:#x}", id.address)),
-            instance_id: self.identity.as_ref().map(|id| id.instance_id.clone()),
+                .map(|id| format!("{:#x}", id.address))
+                .or_else(|| Some(format!("{:#x}", self.gateway.config.platform_address))),
+            instance_id: self
+                .identity
+                .as_ref()
+                .map(|id| id.instance_id.clone())
+                .or_else(|| std::env::var("INSTANCE_ID").ok()),
             generation: self.generation,
         })
     }
