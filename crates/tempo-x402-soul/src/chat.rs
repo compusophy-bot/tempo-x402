@@ -15,6 +15,7 @@ use crate::llm::{ConversationMessage, ConversationPart, LlmClient};
 use crate::memory::{Thought, ThoughtType};
 use crate::mode;
 use crate::observer::NodeObserver;
+use crate::persistent_memory;
 use crate::prompts;
 use crate::thinking::{run_tool_loop_with_model, ToolExecution};
 use crate::tool_registry::ToolRegistry;
@@ -81,9 +82,15 @@ pub async fn handle_chat(
     let agent_mode = mode::detect_mode_from_message(message, config.coding_enabled);
     let system_prompt = prompts::system_prompt_for_mode(agent_mode, config);
 
-    // 5. Build conversation
+    // 5. Build conversation (with persistent memory)
+    let memory_section = match persistent_memory::read_or_seed(&config.memory_file_path) {
+        Ok(content) if !content.is_empty() => format!("Your persistent memory:\n{}\n\n", content),
+        _ => String::new(),
+    };
+
     let context_message = format!(
-        "Current node state:\n{}\n\nRecent thoughts:\n{}",
+        "{}Current node state:\n{}\n\nRecent thoughts:\n{}",
+        memory_section,
         snapshot_json,
         recent_summary.join("\n")
     );
@@ -138,7 +145,9 @@ pub async fn handle_chat(
     };
     let max_calls = agent_mode.max_tool_calls();
     let mut tool_executor =
-        ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone());
+        ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone())
+            .with_memory_file(config.memory_file_path.clone())
+            .with_gateway_url(config.gateway_url.clone());
 
     // Enable coding on the executor if in Code mode
     if agent_mode == mode::AgentMode::Code && config.coding_enabled {

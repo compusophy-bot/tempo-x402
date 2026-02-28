@@ -18,6 +18,7 @@ use crate::llm::{
 use crate::memory::{Thought, ThoughtType};
 use crate::mode::AgentMode;
 use crate::observer::{NodeObserver, NodeSnapshot};
+use crate::persistent_memory;
 use crate::prompts;
 use crate::tool_registry::ToolRegistry;
 use crate::tools::{self, ToolExecutor};
@@ -191,7 +192,9 @@ impl ThinkingLoop {
         });
 
         let mut tool_executor =
-            ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone());
+            ToolExecutor::new(config.tool_timeout_secs, config.workspace_root.clone())
+                .with_memory_file(config.memory_file_path.clone())
+                .with_gateway_url(config.gateway_url.clone());
 
         // Set up coding if enabled and instance_id is available
         if config.coding_enabled {
@@ -260,7 +263,11 @@ impl ThinkingLoop {
                     Err(e) => tracing::warn!(error = %e, "Failed to initialize git workspace"),
                 }
                 // Ensure correct branch
-                let branch_label = if self.config.direct_push { "main (direct push)" } else { "VM branch" };
+                let branch_label = if self.config.direct_push {
+                    "main (direct push)"
+                } else {
+                    "VM branch"
+                };
                 match git.ensure_branch().await {
                     Ok(r) => tracing::info!(output = %r.output, "{} ready", branch_label),
                     Err(e) => tracing::warn!(error = %e, "Failed to ensure {}", branch_label),
@@ -355,8 +362,37 @@ impl ThinkingLoop {
         // Determine mode for this cycle
         let mode = AgentMode::Observe;
 
-        // Build prompt from snapshot + recent thoughts
-        let recent = self.db.recent_thoughts(5)?;
+        // Read persistent memory
+        let memory_content = match persistent_memory::read_or_seed(&self.config.memory_file_path) {
+            Ok(content) => content,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to read persistent memory");
+                String::new()
+            }
+        };
+
+        // Structured thought retrieval: mix of types for richer context
+        let decisions = self
+            .db
+            .recent_thoughts_by_type(&[ThoughtType::Decision], 3)?;
+        let reasoning = self
+            .db
+            .recent_thoughts_by_type(&[ThoughtType::Reasoning], 3)?;
+        let observations = self
+            .db
+            .recent_thoughts_by_type(&[ThoughtType::Observation], 2)?;
+        let consolidations = self
+            .db
+            .recent_thoughts_by_type(&[ThoughtType::MemoryConsolidation], 1)?;
+
+        // Merge and sort by created_at DESC
+        let mut recent: Vec<Thought> = Vec::new();
+        recent.extend(decisions);
+        recent.extend(reasoning);
+        recent.extend(observations);
+        recent.extend(consolidations);
+        recent.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
         let recent_summary: Vec<String> = recent
             .iter()
             .map(|t| {
@@ -366,19 +402,27 @@ impl ThinkingLoop {
                     chrono::DateTime::from_timestamp(t.created_at, 0)
                         .map(|dt| dt.format("%H:%M:%S").to_string())
                         .unwrap_or_else(|| "?".to_string()),
-                    t.content.chars().take(200).collect::<String>()
+                    t.content.chars().take(400).collect::<String>()
                 )
             })
             .collect();
 
+        let memory_section = if memory_content.is_empty() {
+            String::new()
+        } else {
+            format!("Your persistent memory:\n{}\n\n", memory_content)
+        };
+
         let user_prompt = format!(
-            "Current node state:\n{}\n\nRecent thoughts:\n{}\n\n\
+            "{}Current node state:\n{}\n\nRecent thoughts:\n{}\n\n\
              Analyze the node's current state briefly. Note any concerns or opportunities. \
              If you want to inspect something, use your available tools. \
              If you have a new recommendation (not already in recent thoughts), prefix it with [DECISION]. \
              Do NOT repeat previous decisions. Keep your response under 200 words.\n\n\
              If you need to think again soon (e.g. you started investigating something), include [THINK_SOON] in your response.\n\
-             If nothing has changed and the node is stable, just say so briefly — no need to force novel insights.{}",
+             If nothing has changed and the node is stable, just say so briefly — no need to force novel insights.\n\
+             You can use `update_memory` to save important learnings to your persistent memory.{}",
+            memory_section,
             snapshot_json,
             recent_summary.join("\n"),
             if self.config.autonomous_coding {
@@ -486,6 +530,11 @@ impl ThinkingLoop {
         // Update state
         self.increment_cycle_count()?;
 
+        // Maybe consolidate memory every 10 cycles
+        if let Some(llm_ref) = &self.llm {
+            self.maybe_consolidate(llm_ref).await;
+        }
+
         Ok(CycleResult {
             tool_calls: tool_calls_made,
             decisions: decisions_made,
@@ -505,6 +554,93 @@ impl ThinkingLoop {
         self.db
             .set_state("last_think_at", &chrono::Utc::now().timestamp().to_string())?;
         Ok(())
+    }
+
+    /// Every 10 cycles, consolidate recent thoughts into a MemoryConsolidation summary.
+    async fn maybe_consolidate(&self, llm: &LlmClient) {
+        let total_cycles: u64 = self
+            .db
+            .get_state("total_think_cycles")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        if total_cycles % 10 != 0 || total_cycles == 0 {
+            return;
+        }
+
+        // Fetch last 20 substantive thoughts
+        let thoughts = match self.db.recent_thoughts_by_type(
+            &[
+                ThoughtType::Reasoning,
+                ThoughtType::Decision,
+                ThoughtType::Observation,
+            ],
+            20,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to fetch thoughts for consolidation");
+                return;
+            }
+        };
+
+        if thoughts.len() < 5 {
+            return;
+        }
+
+        // Build summary prompt
+        let thought_text: String = thoughts
+            .iter()
+            .map(|t| {
+                format!(
+                    "[{}] {}",
+                    t.thought_type.as_str(),
+                    t.content.chars().take(400).collect::<String>()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let prompt = format!(
+            "Summarize these recent thoughts into a concise 2-3 sentence consolidation. \
+             Focus on key patterns, decisions made, and current state of understanding. \
+             Be specific and factual.\n\n{thought_text}"
+        );
+
+        let mut conversation = vec![ConversationMessage {
+            role: "user".to_string(),
+            parts: vec![ConversationPart::Text(prompt)],
+        }];
+
+        match llm
+            .think_with_tools(
+                "You are a memory consolidation system. Produce brief, factual summaries.",
+                &mut conversation,
+                &[],
+            )
+            .await
+        {
+            Ok(LlmResult::Text(summary)) => {
+                let consolidation = Thought {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    thought_type: ThoughtType::MemoryConsolidation,
+                    content: summary,
+                    context: None,
+                    created_at: chrono::Utc::now().timestamp(),
+                };
+                if let Err(e) = self.db.insert_thought(&consolidation) {
+                    tracing::warn!(error = %e, "Failed to insert consolidation thought");
+                } else {
+                    tracing::info!(cycle = total_cycles, "Memory consolidation recorded");
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "Memory consolidation LLM call failed");
+            }
+        }
     }
 }
 
@@ -658,6 +794,11 @@ fn summarize_tool_call(name: &str, args: &serde_json::Value) -> String {
         "search_files" => {
             let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("?");
             format!("search_files: {pattern}")
+        }
+        "update_memory" => "update_memory".to_string(),
+        "register_endpoint" => {
+            let slug = args.get("slug").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("register_endpoint: /{slug}")
         }
         _ => format!("{name}: {args}"),
     }

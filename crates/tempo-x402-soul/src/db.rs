@@ -147,6 +147,61 @@ impl SoulDatabase {
         Ok(thoughts)
     }
 
+    /// Get the most recent N thoughts of specific types, newest first.
+    pub fn recent_thoughts_by_type(
+        &self,
+        types: &[ThoughtType],
+        limit: u32,
+    ) -> Result<Vec<Thought>, SoulError> {
+        let conn = self.conn.lock().map_err(|_| {
+            SoulError::Database(rusqlite::Error::InvalidParameterName(
+                "lock poisoned".into(),
+            ))
+        })?;
+
+        if types.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let placeholders: Vec<String> = types
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let query = format!(
+            "SELECT id, thought_type, content, context, created_at FROM thoughts \
+             WHERE thought_type IN ({}) ORDER BY created_at DESC LIMIT ?{}",
+            placeholders.join(", "),
+            types.len() + 1
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = types
+            .iter()
+            .map(|t| Box::new(t.as_str().to_string()) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        params_vec.push(Box::new(limit));
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let thoughts = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                let type_str: String = row.get(1)?;
+                Ok(Thought {
+                    id: row.get(0)?,
+                    thought_type: ThoughtType::parse(&type_str).unwrap_or(ThoughtType::Observation),
+                    content: row.get(2)?,
+                    context: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(thoughts)
+    }
+
     /// Get a soul state value by key.
     pub fn get_state(&self, key: &str) -> Result<Option<String>, SoulError> {
         let conn = self.conn.lock().map_err(|_| {

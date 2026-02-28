@@ -18,6 +18,7 @@ pub mod llm;
 pub mod memory;
 pub mod mode;
 pub mod observer;
+pub mod persistent_memory;
 pub mod prompts;
 pub mod thinking;
 pub mod tool_registry;

@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402-soul"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2021"
 description = "Agentic soul for x402 nodes: observe-think-record loop powered by Gemini"
 license = "MIT"
@@ -11,6 +11,7 @@ categories = ["web-programming", "cryptography::cryptocurrencies"]
 
 [dependencies]
 x402 = { workspace = true }
+x402-wallet = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -20,3 +21,7 @@ reqwest = { workspace = true }
 rusqlite = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

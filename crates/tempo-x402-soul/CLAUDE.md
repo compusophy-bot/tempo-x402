@@ -7,6 +7,7 @@ Observes node state via `NodeObserver` trait, reasons via Gemini API, can read/w
 ## Depends On
 
 - `x402` (core types only)
+- `x402-wallet` (EIP-712 signing for `register_endpoint` tool)
 
 No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` trait — the node crate implements it.
 
@@ -26,6 +27,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `chat.rs` | Interactive chat handler with mode detection |
 | `db.rs` | SQLite: thoughts, soul_state, mutations, tools tables |
 | `memory.rs` | Thought types (Observation, Reasoning, Decision, Mutation, etc.) |
+| `persistent_memory.rs` | Persistent markdown memory file — read/seed/update, 4KB cap |
 
 ## Safety Layers (7 deep)
 
@@ -55,6 +57,10 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Fork remote named "fork" is auto-configured on first push; origin stays as upstream reference
 - Direct push mode (`SOUL_DIRECT_PUSH=true`): pushes to fork's main branch directly, triggering auto-deploy. Used for self-editing instances.
 - Deep model: `SOUL_DIRECT_PUSH` + `SOUL_AUTONOMOUS_CODING` together use Gemini Pro (think model) instead of Flash for deeper reasoning
+- Persistent memory: soul reads `/data/soul_memory.md` every cycle, can update via `update_memory` tool, seeded on first boot, 4KB cap
+- Structured thought retrieval: 3 Decisions + 3 Reasoning + 2 Observations + 1 MemoryConsolidation (400 char truncation)
+- Memory consolidation: every 10 cycles, summarize last 20 substantive thoughts into a MemoryConsolidation thought
+- `register_endpoint` tool: full x402 payment flow (402 → sign → retry), Code mode only, requires `EVM_PRIVATE_KEY`
 
 ## Env Vars
 
@@ -73,6 +79,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `SOUL_FORK_REPO` | — | Fork repo for push (e.g. `compusophy-bot/tempo-x402`). Pushes go to "fork" remote |
 | `SOUL_UPSTREAM_REPO` | — | Upstream repo for PRs/issues (e.g. `compusophy/tempo-x402`) |
 | `SOUL_DIRECT_PUSH` | `false` | Push directly to fork's main branch (self-editing mode). Safety: cargo check + test still gate every commit |
+| `SOUL_MEMORY_FILE` | `/data/soul_memory.md` | Path to persistent memory file (markdown, max 4KB) |
+| `GATEWAY_URL` | — | Gateway URL for `register_endpoint` tool (falls back to `http://localhost:4023`) |
 
 ## If You're Changing...
 
@@ -85,6 +93,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - **Agent modes**: `mode.rs` — mode enum, tool sets per mode, max_tool_calls
 - **System prompts**: `prompts.rs` — per-mode prompt templates
 - **Dynamic tool registry**: `tool_registry.rs` — meta-tools, dynamic tool execution, shell handlers
+- **Persistent memory**: `persistent_memory.rs` — read/seed/update memory file, 4KB cap
 - **Database schema**: `db.rs` — `thoughts` + `soul_state` + `mutations` + `tools` tables
 - **Observer trait**: `observer.rs` — changing `NodeSnapshot` fields affects all implementors
 - **Used by**: `x402-node` stores `Arc<SoulDatabase>` in `NodeState`, exposes via `GET /soul/status`, implements `NodeObserver` in `soul_observer.rs`

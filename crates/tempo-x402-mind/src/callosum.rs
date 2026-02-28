@@ -86,9 +86,21 @@ impl Callosum {
     /// Share (excitatory): read recent thoughts from each hemisphere
     /// and inject CrossHemisphere summaries into the other.
     ///
-    /// Filters out CrossHemisphere and Escalation thoughts to prevent
-    /// infinite echo loops (where injected thoughts get re-injected back).
+    /// When both hemispheres share the same DB (`shared_db=true`), sharing
+    /// is skipped entirely — injecting from a DB into itself is nonsensical
+    /// and creates an echo loop where the same thoughts get re-summarized
+    /// every cycle.
+    ///
+    /// When DBs are separate, filters out CrossHemisphere and Escalation
+    /// thoughts to prevent re-injection loops.
     fn share_thoughts(&self) -> Result<(), x402_soul::SoulError> {
+        // If both hemispheres share the same DB, sharing is meaningless —
+        // both would read the same thoughts and inject duplicates back.
+        if Arc::ptr_eq(&self.left_db, &self.right_db) {
+            tracing::trace!("Callosum: shared DB mode — skipping cross-hemisphere sharing");
+            return Ok(());
+        }
+
         // Get left's recent thoughts, excluding cross-hemisphere and escalation
         // to prevent infinite echo loops
         let left_recent: Vec<Thought> = self
@@ -167,33 +179,46 @@ impl Callosum {
     }
 
     /// Check for escalation signals in recent thoughts.
+    ///
+    /// Escalation still works in shared DB mode — it's about cross-waking
+    /// hemispheres via Notify, not about injecting into a different DB.
+    /// But we skip recording duplicate escalation thoughts when DBs are shared,
+    /// since they'd just pollute the single DB.
     fn check_escalation_signals(&self) -> Result<(), x402_soul::SoulError> {
+        let shared = Arc::ptr_eq(&self.left_db, &self.right_db);
+
         // Check left's recent thoughts for [UNCERTAIN]
+        // Filter out Escalation thoughts so we don't re-escalate old escalations
         let left_recent = self.left_db.recent_thoughts(3)?;
         for thought in &left_recent {
+            if thought.thought_type == ThoughtType::Escalation {
+                continue;
+            }
             if thought.content.contains("[UNCERTAIN]") {
                 tracing::info!("Callosum: left signaled [UNCERTAIN] — waking right hemisphere");
                 self.right_wake.notify_one();
 
-                // Record the escalation
-                let escalation = Thought {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    thought_type: ThoughtType::Escalation,
-                    content: format!(
-                        "Left hemisphere uncertainty detected — escalating to right for deeper analysis: {}",
-                        thought.content.chars().take(200).collect::<String>()
-                    ),
-                    context: Some(
-                        serde_json::json!({
-                            "direction": "left_to_right",
-                            "trigger": "uncertain",
-                            "source_thought_id": thought.id,
-                        })
-                        .to_string(),
-                    ),
-                    created_at: chrono::Utc::now().timestamp(),
-                };
-                self.right_db.insert_thought(&escalation)?;
+                // Record the escalation (skip if shared DB to avoid noise)
+                if !shared {
+                    let escalation = Thought {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        thought_type: ThoughtType::Escalation,
+                        content: format!(
+                            "Left hemisphere uncertainty detected — escalating to right for deeper analysis: {}",
+                            thought.content.chars().take(200).collect::<String>()
+                        ),
+                        context: Some(
+                            serde_json::json!({
+                                "direction": "left_to_right",
+                                "trigger": "uncertain",
+                                "source_thought_id": thought.id,
+                            })
+                            .to_string(),
+                        ),
+                        created_at: chrono::Utc::now().timestamp(),
+                    };
+                    self.right_db.insert_thought(&escalation)?;
+                }
                 break; // One escalation per cycle
             }
         }
@@ -201,29 +226,33 @@ impl Callosum {
         // Check right's recent thoughts for [URGENT]
         let right_recent = self.right_db.recent_thoughts(3)?;
         for thought in &right_recent {
+            if thought.thought_type == ThoughtType::Escalation {
+                continue;
+            }
             if thought.content.contains("[URGENT]") {
                 tracing::info!("Callosum: right signaled [URGENT] — waking left hemisphere");
                 self.left_wake.notify_one();
 
-                // Record the escalation
-                let escalation = Thought {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    thought_type: ThoughtType::Escalation,
-                    content: format!(
-                        "Right hemisphere urgency detected — escalating to left for immediate action: {}",
-                        thought.content.chars().take(200).collect::<String>()
-                    ),
-                    context: Some(
-                        serde_json::json!({
-                            "direction": "right_to_left",
-                            "trigger": "urgent",
-                            "source_thought_id": thought.id,
-                        })
-                        .to_string(),
-                    ),
-                    created_at: chrono::Utc::now().timestamp(),
-                };
-                self.left_db.insert_thought(&escalation)?;
+                if !shared {
+                    let escalation = Thought {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        thought_type: ThoughtType::Escalation,
+                        content: format!(
+                            "Right hemisphere urgency detected — escalating to left for immediate action: {}",
+                            thought.content.chars().take(200).collect::<String>()
+                        ),
+                        context: Some(
+                            serde_json::json!({
+                                "direction": "right_to_left",
+                                "trigger": "urgent",
+                                "source_thought_id": thought.id,
+                            })
+                            .to_string(),
+                        ),
+                        created_at: chrono::Utc::now().timestamp(),
+                    };
+                    self.left_db.insert_thought(&escalation)?;
+                }
                 break;
             }
         }

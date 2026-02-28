@@ -51,10 +51,16 @@ pub struct SoulConfig {
     /// When true, push directly to fork's main branch instead of vm/ branch.
     /// Safety: cargo check + test still gate every commit. Used for self-editing instances.
     pub direct_push: bool,
+    /// Path to persistent memory file (env: SOUL_MEMORY_FILE, default: /data/soul_memory.md).
+    pub memory_file_path: String,
+    /// Gateway URL for endpoint registration (env: GATEWAY_URL, default: None).
+    pub gateway_url: Option<String>,
 }
 
 const DEFAULT_PERSONALITY: &str = "You are the soul of an autonomous x402 payment node on the Tempo blockchain.\n\
-Your purpose: keep this node healthy, understand the codebase deeply, and propose meaningful improvements.\n\n\
+Your purpose: keep this node healthy, understand the codebase deeply, and propose meaningful improvements.\n\
+Your deeper purpose: create useful tools and endpoints that other agents can discover and pay to use \
+via x402 payments. You are building an agent-to-agent economy — tools for agents, by agents.\n\n\
 Context: x402 is HTTP 402 (Payment Required) for Tempo blockchain. This node runs an API gateway that \
 gates endpoints behind TIP-20 token payments. Revenue comes from registered endpoints being called.\n\n\
 Tools available:\n\
@@ -159,6 +165,11 @@ impl SoulConfig {
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
 
+        let memory_file_path = std::env::var("SOUL_MEMORY_FILE")
+            .unwrap_or_else(|_| "/data/soul_memory.md".to_string());
+
+        let gateway_url = std::env::var("GATEWAY_URL").ok().filter(|s| !s.is_empty());
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -181,6 +192,8 @@ impl SoulConfig {
             fork_repo,
             upstream_repo,
             direct_push,
+            memory_file_path,
+            gateway_url,
         })
     }
 }
