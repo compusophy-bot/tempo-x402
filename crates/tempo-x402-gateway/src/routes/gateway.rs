@@ -69,6 +69,20 @@ fn sanitize_path(path: &str) -> Result<String, GatewayError> {
         ));
     }
 
+    // Reject CRLF injection
+    if decoded.contains('\r') || decoded.contains('\n') {
+        return Err(GatewayError::ProxyError(
+            "path must not contain newlines".to_string(),
+        ));
+    }
+
+    // Reject null bytes
+    if decoded.contains('\0') {
+        return Err(GatewayError::ProxyError(
+            "path must not contain null bytes".to_string(),
+        ));
+    }
+
     // Return the original (still-encoded) path to prevent query/fragment injection.
     // E.g. %3F stays as %3F, not decoded to ? which would alter the target URL.
     Ok(path.to_string())
