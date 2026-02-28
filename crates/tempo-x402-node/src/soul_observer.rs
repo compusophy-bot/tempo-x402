@@ -42,25 +42,18 @@ impl NodeObserver for NodeObserverImpl {
 
         // Read endpoint count + revenue from gateway DB
         let (endpoint_count, total_revenue, total_payments) = {
-            let endpoints = self
+            let endpoint_count = self
                 .gateway
                 .db
-                .list_endpoints(500, 0)
-                .map_err(|e| SoulError::Observer(format!("failed to list endpoints: {e}")))?;
-            let endpoint_count = endpoints.len() as u32;
+                .get_total_endpoint_count()
+                .unwrap_or(0);
 
-            let stats = self
+            let (total_revenue, total_payments) = self
                 .gateway
                 .db
-                .list_endpoint_stats(500, 0)
-                .map_err(|e| SoulError::Observer(format!("failed to list stats: {e}")))?;
+                .get_total_stats()
+                .unwrap_or((0, 0));
 
-            let mut total_revenue: u128 = 0;
-            let mut total_payments: u64 = 0;
-            for s in &stats {
-                total_revenue += s.revenue_total.parse::<u128>().unwrap_or(0);
-                total_payments += s.payment_count as u64;
-            }
 
             (endpoint_count, total_revenue.to_string(), total_payments)
         };

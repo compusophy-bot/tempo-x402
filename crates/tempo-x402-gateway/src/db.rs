@@ -573,6 +573,53 @@ impl Database {
     }
 
     /// List endpoint stats ordered by revenue descending with pagination.
+    /// Get the total count of active endpoints
+    pub fn get_total_endpoint_count(&self) -> Result<u32, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM endpoints WHERE active = 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok(count as u32)
+    }
+
+    /// Get total revenue and payment count across all endpoints
+    pub fn get_total_stats(&self) -> Result<(u128, u64), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT revenue_total, payment_count FROM endpoint_stats"
+        )?;
+
+        let mut total_revenue: u128 = 0;
+        let mut total_payments: u64 = 0;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)? as u64,
+            ))
+        })?;
+
+        for row in rows {
+            if let Ok((rev_str, payments)) = row {
+                total_revenue += rev_str.parse::<u128>().unwrap_or(0);
+                total_payments += payments;
+            }
+        }
+
+        Ok((total_revenue, total_payments))
+    }
+
     pub fn list_endpoint_stats(
         &self,
         limit: u32,
