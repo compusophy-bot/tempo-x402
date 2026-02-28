@@ -1,5 +1,7 @@
 use actix_web::{web, HttpResponse};
 
+use x402::constants::TOKEN_DECIMALS;
+
 use crate::error::GatewayError;
 use crate::state::AppState;
 
@@ -16,14 +18,15 @@ fn default_limit() -> u32 {
     100
 }
 
-/// Convert token units (6-decimal integer string) to a human-readable USD string.
-/// e.g. "142000" -> "$0.142"
+/// Convert token units to a human-readable USD string.
+/// e.g. "142000" -> "$0.142" (assuming 6 decimals)
 fn token_amount_to_usd(amount: &str) -> String {
     let units: u128 = amount.parse().unwrap_or(0);
-    let dollars = units / 1_000_000;
-    let cents = units % 1_000_000;
-    // Show up to 3 decimal places, trimming trailing zeros
-    let raw = format!("{}.{:06}", dollars, cents);
+    let multiplier = 10u128.pow(TOKEN_DECIMALS);
+    let dollars = units / multiplier;
+    let fraction = units % multiplier;
+    // Show up to TOKEN_DECIMALS places, trimming trailing zeros
+    let raw = format!("{}.{:0width$}", dollars, fraction, width = TOKEN_DECIMALS as usize);
     let trimmed = raw.trim_end_matches('0');
     let trimmed = trimmed.trim_end_matches('.');
     format!("${}", trimmed)
