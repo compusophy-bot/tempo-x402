@@ -85,7 +85,7 @@ impl NonceStore for InMemoryNonceStore {
         let before = self.nonces.len();
         self.nonces
             .retain(|_, inserted| inserted.elapsed().as_secs() < max_age_secs);
-        before - self.nonces.len()
+        before.saturating_sub(self.nonces.len())
     }
 }
 
