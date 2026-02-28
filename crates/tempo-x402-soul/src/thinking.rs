@@ -566,7 +566,7 @@ impl ThinkingLoop {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        if total_cycles % 10 != 0 || total_cycles == 0 {
+        if !total_cycles.is_multiple_of(10) || total_cycles == 0 {
             return;
         }
 
@@ -609,7 +609,7 @@ impl ThinkingLoop {
              Be specific and factual.\n\n{thought_text}"
         );
 
-        let mut conversation = vec![ConversationMessage {
+        let conversation = vec![ConversationMessage {
             role: "user".to_string(),
             parts: vec![ConversationPart::Text(prompt)],
         }];
@@ -617,7 +617,7 @@ impl ThinkingLoop {
         match llm
             .think_with_tools(
                 "You are a memory consolidation system. Produce brief, factual summaries.",
-                &mut conversation,
+                &conversation,
                 &[],
             )
             .await
@@ -666,6 +666,7 @@ pub struct ToolLoopResult {
 /// Run the agentic tool loop: repeatedly call the LLM, execute any tool calls,
 /// and return the final text response plus a log of all tool executions.
 /// When `use_deep` is true, uses the deeper/think model (e.g. Gemini Pro).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_tool_loop_with_model(
     llm: &LlmClient,
     system_prompt: &str,
