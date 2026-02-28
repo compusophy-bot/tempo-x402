@@ -109,6 +109,12 @@ async fn main() -> std::io::Result<()> {
     let gateway_db = Database::new(&config.db_path).expect("Failed to initialize database");
     tracing::info!("Database initialized at: {}", config.db_path);
 
+    let gateway_state = GatewayState::new(
+        config.clone(),
+        gateway_db.clone(),
+        facilitator_state.clone().map(Arc::new),
+    );
+
     match gateway_db.purge_stale_reservations(300) {
         Ok(0) => {}
         Ok(n) => tracing::info!("Purged {n} stale slug reservations from previous runs"),
@@ -125,55 +131,6 @@ async fn main() -> std::io::Result<()> {
     // Initialize children table (node extension on top of gateway DB)
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
-
-    // ── Soul-provided endpoints ──────────────────────────────────────────
-    // Register utility endpoints that the soul provides for other agents.
-    {
-        let soul_endpoints = vec![
-            (
-                "echo-ip",
-                "https://httpbin.org/ip",
-                "$0.0001",
-                "100",
-                "Returns the public IP address of the caller. Useful for agent connectivity checks.",
-            ),
-            (
-                "headers",
-                "https://httpbin.org/headers",
-                "$0.0001",
-                "100",
-                "Returns the HTTP headers of the request as seen by the gateway.",
-            ),
-            (
-                "clone",
-                &format!("{}/clone", self_url),
-                clone_price.as_deref().unwrap_or("$0.10"),
-                clone_price_amount.as_deref().unwrap_or("100000"),
-                "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.",
-            ),
-        ];
-
-        let owner = config.evm_address.map(|a| format!("{a:#x}")).unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string());
-
-        for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
-            match gateway_db.get_endpoint(slug) {
-                Ok(None) => {
-                    match gateway_db.create_endpoint(slug, &owner, target, price_usd, price_amount, Some(desc)) {
-                        Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
-                        Err(e) => tracing::warn!("Failed to register soul endpoint {}: {}", slug, e),
-                    }
-                }
-                Ok(Some(_)) => {} // Already exists
-                Err(e) => tracing::warn!("Failed to check soul endpoint {}: {}", slug, e),
-            }
-        }
-    }
-
-    // Register Prometheus metrics
-    register_metrics();
-
-    // ── Gateway state ───────────────────────────────────────────────────
-    let gateway_state = GatewayState::new(config, gateway_db, facilitator_state.clone());
 
     // ── Clone orchestrator ──────────────────────────────────────────────
     let railway_token = std::env::var("RAILWAY_TOKEN")
@@ -197,6 +154,63 @@ async fn main() -> std::io::Result<()> {
         .map(|d| format!("https://{d}"))
         .or_else(|| std::env::var("SELF_URL").ok())
         .unwrap_or_else(|| format!("http://localhost:{port}"));
+
+    // ── Soul-provided endpoints ──────────────────────────────────────────
+    // Register utility endpoints that the soul provides for other agents.
+    {
+        let soul_endpoints = vec![
+            (
+                "echo-ip".to_string(),
+                "https://httpbin.org/ip".to_string(),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns the public IP address of the caller. Useful for agent connectivity checks.".to_string(),
+            ),
+            (
+                "headers".to_string(),
+                "https://httpbin.org/headers".to_string(),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns the HTTP headers of the request as seen by the gateway.".to_string(),
+            ),
+            (
+                "clone".to_string(),
+                format!("{}/clone", self_url),
+                clone_price.as_deref().unwrap_or("$0.10").to_string(),
+                clone_price_amount.map(|a| a.to_string()).unwrap_or_else(|| "100000".to_string()),
+                "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.".to_string(),
+            ),
+            (
+                "chat".to_string(),
+                format!("{}/soul/chat", self_url),
+                "$0.01".to_string(),
+                "10000".to_string(),
+                "Interactive chat with the node's soul. Send a JSON body with a 'message' field.".to_string(),
+            ),
+            (
+                "info".to_string(),
+                format!("{}/instance/info", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns node identity, version, uptime, and orchestration capabilities.".to_string(),
+            ),
+        ];
+
+        let owner = config.evm_address.map(|a| format!("{a:#x}")).unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string());
+
+        for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
+            match gateway_db.get_endpoint(&slug) {
+                Ok(None) => {
+                    match gateway_db.create_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc)) {
+                        Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
+                        Err(e) => tracing::warn!("Failed to register soul endpoint {}: {}", slug, e),
+                    }
+                }
+                Ok(Some(_)) => {} // Already exists
+                Err(e) => tracing::warn!("Failed to check soul endpoint {}: {}", slug, e),
+            }
+        }
+    }
 
     let agent: Option<Arc<CloneOrchestrator>> = match (
         railway_token,
