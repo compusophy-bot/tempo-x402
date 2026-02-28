@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::error::GatewayError;
 
@@ -54,15 +54,16 @@ pub struct UpdateEndpoint {
 }
 
 /// SQLite database wrapper
+#[derive(Clone)]
 pub struct Database {
-    conn: Mutex<Connection>,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
     pub fn new(path: &str) -> Result<Self, GatewayError> {
         let conn = Connection::open(path)?;
         let db = Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
         };
         db.init_schema()?;
         Ok(db)
@@ -587,7 +588,7 @@ impl Database {
             r#"
             SELECT slug, request_count, payment_count, revenue_total, last_accessed_at
             FROM endpoint_stats
-            ORDER BY CAST(revenue_total AS INTEGER) DESC
+            ORDER BY length(revenue_total) DESC, revenue_total DESC
             LIMIT ?1 OFFSET ?2
             "#,
         )?;
@@ -657,6 +658,49 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    /// Count active endpoints.
+    pub fn get_total_endpoint_count(&self) -> Result<u32, GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let count: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM endpoints WHERE active = 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok(count)
+    }
+
+    /// Total (revenue, payment_count) across all endpoints.
+    pub fn get_total_stats(&self) -> Result<(u128, u64), GatewayError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+
+        let mut stmt = conn.prepare("SELECT revenue_total, payment_count FROM endpoint_stats")?;
+
+        let mut total_revenue: u128 = 0;
+        let mut total_payments: u64 = 0;
+
+        let rows = stmt.query_map([], |row| {
+            let rev: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok((rev, count))
+        })?;
+
+        for row in rows {
+            let (rev, count) = row?;
+            total_revenue += rev.parse::<u128>().unwrap_or(0);
+            total_payments += count as u64;
+        }
+
+        Ok((total_revenue, total_payments))
     }
 }
 
@@ -771,5 +815,83 @@ mod tests {
         assert_eq!(stats[0].slug, "high");
         assert_eq!(stats[1].slug, "mid");
         assert_eq!(stats[2].slug, "low");
+    }
+
+    #[test]
+    fn test_list_endpoint_stats_large_revenue_no_overflow() {
+        let db = Database::new(":memory:").unwrap();
+
+        // Values that would overflow i64 (max ~9.2e18)
+        db.record_payment("small", "1000").unwrap();
+        db.record_payment("huge", "99999999999999999999").unwrap(); // > i64::MAX
+        db.record_payment("big", "10000000000000000000").unwrap(); // > i64::MAX
+
+        let stats = db.list_endpoint_stats(100, 0).unwrap();
+        assert_eq!(stats.len(), 3);
+        assert_eq!(stats[0].slug, "huge");
+        assert_eq!(stats[1].slug, "big");
+        assert_eq!(stats[2].slug, "small");
+    }
+
+    #[test]
+    fn test_get_total_endpoint_count() {
+        let db = Database::new(":memory:").unwrap();
+        assert_eq!(db.get_total_endpoint_count().unwrap(), 0);
+
+        db.create_endpoint(
+            "a",
+            "0x1111111111111111111111111111111111111111",
+            "https://a.com",
+            "$0.01",
+            "10000",
+            None,
+        )
+        .unwrap();
+        db.create_endpoint(
+            "b",
+            "0x2222222222222222222222222222222222222222",
+            "https://b.com",
+            "$0.01",
+            "10000",
+            None,
+        )
+        .unwrap();
+        assert_eq!(db.get_total_endpoint_count().unwrap(), 2);
+
+        db.delete_endpoint("a").unwrap();
+        assert_eq!(db.get_total_endpoint_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_get_total_stats() {
+        let db = Database::new(":memory:").unwrap();
+
+        let (rev, count) = db.get_total_stats().unwrap();
+        assert_eq!(rev, 0);
+        assert_eq!(count, 0);
+
+        db.record_payment("a", "5000").unwrap();
+        db.record_payment("b", "3000").unwrap();
+        db.record_payment("a", "2000").unwrap();
+
+        let (rev, count) = db.get_total_stats().unwrap();
+        assert_eq!(rev, 10000);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_database_is_clone() {
+        let db = Database::new(":memory:").unwrap();
+        let db2 = db.clone();
+        db.create_endpoint(
+            "x",
+            "0x1111111111111111111111111111111111111111",
+            "https://x.com",
+            "$0.01",
+            "10000",
+            None,
+        )
+        .unwrap();
+        assert!(db2.get_endpoint("x").unwrap().is_some());
     }
 }

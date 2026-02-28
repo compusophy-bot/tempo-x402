@@ -129,10 +129,7 @@ async fn main() -> std::io::Result<()> {
     // Register Prometheus metrics
     register_metrics();
 
-    // ── Gateway state ───────────────────────────────────────────────────
-    let gateway_state = GatewayState::new(config, gateway_db, facilitator_state.clone());
-
-    // ── Clone orchestrator ──────────────────────────────────────────────
+    // ── Clone orchestrator config ───────────────────────────────────────
     let railway_token = std::env::var("RAILWAY_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());
@@ -155,6 +152,63 @@ async fn main() -> std::io::Result<()> {
         .or_else(|| std::env::var("SELF_URL").ok())
         .unwrap_or_else(|| format!("http://localhost:{port}"));
 
+    if clone_price.is_some() {
+        tracing::info!(
+            "Clone price: {} (max children: {})",
+            clone_price.as_deref().unwrap_or("?"),
+            clone_max_children
+        );
+    }
+
+    // ── Auto-register node endpoints ────────────────────────────────────
+    let owner = std::env::var("EVM_ADDRESS").unwrap_or_default();
+    if !owner.is_empty() {
+        let default_clone_price = "$1.00".to_string();
+        let default_clone_amount = "1000000".to_string();
+        let endpoints: Vec<(&str, String, &str, &str, &str)> = vec![
+            (
+                "chat",
+                format!("{}/soul/chat", self_url),
+                "$0.01",
+                "10000",
+                "Interactive chat with the node's soul",
+            ),
+            (
+                "soul",
+                format!("{}/soul/status", self_url),
+                "$0.0001",
+                "100",
+                "Soul status and recent thoughts",
+            ),
+            (
+                "info",
+                format!("{}/instance/info", self_url),
+                "$0.0001",
+                "100",
+                "Node identity, version, uptime",
+            ),
+            (
+                "clone",
+                format!("{}/clone", self_url),
+                clone_price.as_deref().unwrap_or(&default_clone_price),
+                clone_price_amount
+                    .as_deref()
+                    .unwrap_or(&default_clone_amount),
+                "Spawn a new x402-node instance",
+            ),
+        ];
+        for (slug, target, price, amount, desc) in &endpoints {
+            match gateway_db.create_endpoint(slug, &owner, target, price, amount, Some(desc)) {
+                Ok(_) => tracing::info!(slug, "Auto-registered endpoint"),
+                Err(_) => tracing::debug!(slug, "Endpoint already exists, skipping"),
+            }
+        }
+    }
+
+    // ── Gateway state ───────────────────────────────────────────────────
+    let gateway_state = GatewayState::new(config, gateway_db, facilitator_state.clone());
+
+    // ── Clone orchestrator ──────────────────────────────────────────────
     let agent: Option<Arc<CloneOrchestrator>> = match (
         railway_token,
         railway_project_id,
@@ -176,14 +230,6 @@ async fn main() -> std::io::Result<()> {
             None
         }
     };
-
-    if clone_price.is_some() {
-        tracing::info!(
-            "Clone price: {} (max children: {})",
-            clone_price.as_deref().unwrap_or("?"),
-            clone_max_children
-        );
-    }
 
     // ── Mind / Soul init (before NodeState so we can store the DB ref) ─
     let mind_enabled = x402_mind::MindConfig::is_enabled();

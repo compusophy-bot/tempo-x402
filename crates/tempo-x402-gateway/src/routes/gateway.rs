@@ -48,6 +48,20 @@ fn sanitize_path(path: &str) -> Result<String, GatewayError> {
     let decoded = urlencoding::decode(path)
         .map_err(|_| GatewayError::ProxyError("invalid URL encoding in path".to_string()))?;
 
+    // Reject CRLF injection
+    if decoded.contains('\r') || decoded.contains('\n') {
+        return Err(GatewayError::ProxyError(
+            "path must not contain newlines".to_string(),
+        ));
+    }
+
+    // Reject null bytes
+    if decoded.contains('\0') {
+        return Err(GatewayError::ProxyError(
+            "path must not contain null bytes".to_string(),
+        ));
+    }
+
     // Reject path traversal
     if decoded.contains("..") {
         return Err(GatewayError::ProxyError(
@@ -144,6 +158,7 @@ async fn do_gateway_proxy(
         &settle,
         true,
         state.config.hmac_secret.as_deref(),
+        Some(&endpoint.price_amount),
     )
     .await?;
 
@@ -191,4 +206,78 @@ fn record_endpoint_stats(state: &AppState, slug: &str, price_amount: &str) {
     ENDPOINT_PAYMENTS.with_label_values(&[slug]).inc();
     let amount: u64 = price_amount.parse().unwrap_or(0);
     ENDPOINT_REVENUE.with_label_values(&[slug]).inc_by(amount);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── sanitize_path tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_sanitize_path_valid() {
+        assert_eq!(sanitize_path("foo/bar").unwrap(), "foo/bar");
+        assert_eq!(sanitize_path("a").unwrap(), "a");
+        assert_eq!(sanitize_path("foo%20bar").unwrap(), "foo%20bar");
+    }
+
+    #[test]
+    fn test_sanitize_path_rejects_traversal() {
+        assert!(sanitize_path("../etc/passwd").is_err());
+        assert!(sanitize_path("foo/../../etc").is_err());
+        assert!(sanitize_path("%2e%2e/secret").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_path_rejects_leading_slash() {
+        assert!(sanitize_path("/etc/passwd").is_err());
+        assert!(sanitize_path("//host").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_path_rejects_at_sign() {
+        assert!(sanitize_path("user@host").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_path_rejects_crlf() {
+        assert!(sanitize_path("foo\r\nbar").is_err());
+        assert!(sanitize_path("foo\nbar").is_err());
+        assert!(sanitize_path("foo\rbar").is_err());
+        // Percent-encoded CRLF
+        assert!(sanitize_path("foo%0d%0abar").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_path_rejects_null_bytes() {
+        assert!(sanitize_path("foo%00bar").is_err());
+    }
+
+    // ── sanitize_query tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_sanitize_query_valid() {
+        assert_eq!(sanitize_query("key=value&a=b").unwrap(), "key=value&a=b");
+    }
+
+    #[test]
+    fn test_sanitize_query_rejects_crlf() {
+        assert!(sanitize_query("foo\r\nbar").is_err());
+        assert!(sanitize_query("foo\nbar").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_query_strips_fragment() {
+        assert_eq!(sanitize_query("key=value#frag").unwrap(), "key=value");
+    }
+
+    #[test]
+    fn test_sanitize_query_rejects_null_bytes() {
+        assert!(sanitize_query("key=val\0ue").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_query_rejects_traversal() {
+        assert!(sanitize_query("path=..%2F..%2Fetc").is_err());
+    }
 }
