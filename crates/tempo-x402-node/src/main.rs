@@ -196,6 +196,34 @@ async fn main() -> std::io::Result<()> {
                     .unwrap_or(&default_clone_amount),
                 "Spawn a new x402-node instance",
             ),
+            (
+                "echo-ip",
+                format!("{}/utils/echo-ip", self_url),
+                "$0.0001",
+                "100",
+                "Echo your public IP address",
+            ),
+            (
+                "headers",
+                format!("{}/utils/headers", self_url),
+                "$0.0001",
+                "100",
+                "Echo the headers of your request",
+            ),
+            (
+                "json-validator",
+                format!("{}/utils/json-validator", self_url),
+                "$0.0001",
+                "100",
+                "Validate a JSON payload",
+            ),
+            (
+                "hex-converter",
+                format!("{}/utils/hex-converter", self_url),
+                "$0.0001",
+                "100",
+                "Convert a string to hex",
+            ),
         ];
         for (slug, target, price, amount, desc) in &endpoints {
             match gateway_db.create_endpoint(slug, &owner, target, price, amount, Some(desc)) {
@@ -714,7 +742,8 @@ async fn main() -> std::io::Result<()> {
             // Node routes (identity, clone, soul)
             .configure(crate::routes::instance::configure)
             .configure(crate::routes::clone::configure)
-            .configure(crate::routes::soul::configure);
+            .configure(crate::routes::soul::configure)
+            .configure(crate::routes::utils::configure);
 
         // Mount facilitator HTTP routes if embedded
         if let Some(ref fac_data) = facilitator_data {
