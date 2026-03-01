@@ -37,6 +37,7 @@ const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
     "etag",
     "last-modified",
     "date",
+    "location",
     "vary",
     "x-request-id",
     "x-ratelimit-limit",
@@ -216,6 +217,7 @@ mod tests {
     fn test_allowed_response_headers() {
         assert!(ALLOWED_RESPONSE_HEADERS.contains(&"content-type"));
         assert!(ALLOWED_RESPONSE_HEADERS.contains(&"cache-control"));
+        assert!(ALLOWED_RESPONSE_HEADERS.contains(&"location"));
         assert!(!ALLOWED_RESPONSE_HEADERS.contains(&"server"));
         assert!(!ALLOWED_RESPONSE_HEADERS.contains(&"x-powered-by"));
     }
