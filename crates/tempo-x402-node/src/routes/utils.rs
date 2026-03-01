@@ -149,3 +149,85 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_nonce),
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{test, App};
+
+    #[actix_web::test]
+    async fn test_json_validator_basic() {
+        let app = test::init_service(App::new().service(json_validator)).await;
+        let req = test::TestRequest::post()
+            .uri("/json-validator")
+            .set_payload("{\"test\": 123}")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+    }
+
+    #[actix_web::test]
+    async fn test_json_validator_error() {
+        let app = test::init_service(App::new().service(json_validator)).await;
+        let req = test::TestRequest::post()
+            .uri("/json-validator")
+            .set_payload("invalid-json")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_client_error());
+    }
+
+    #[actix_web::test]
+    async fn test_hex_converter_encode() {
+        let app = test::init_service(App::new().service(hex_converter)).await;
+        let req = test::TestRequest::post()
+            .uri("/hex-converter")
+            .set_payload("hello")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["action"], "encode");
+        assert_eq!(body["result"], "68656c6c6f");
+    }
+
+    #[actix_web::test]
+    async fn test_hex_converter_decode() {
+        let app = test::init_service(App::new().service(hex_converter)).await;
+        let req = test::TestRequest::post()
+            .uri("/hex-converter")
+            .set_payload("68656c6c6f")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["action"], "decode");
+        assert_eq!(body["result"], "hello");
+    }
+
+    #[actix_web::test]
+    async fn test_echo_ip() {
+        let app = test::init_service(App::new().service(echo_ip)).await;
+        let req = test::TestRequest::get()
+            .uri("/echo-ip")
+            .peer_addr("127.0.0.1:1234".parse().unwrap())
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let body: Value = test::read_body_json(resp).await;
+        assert!(body["ip"].as_str().is_some());
+    }
+
+    #[actix_web::test]
+    async fn test_headers() {
+        let app = test::init_service(App::new().service(headers)).await;
+        let req = test::TestRequest::get()
+            .uri("/headers")
+            .insert_header(("X-Test-Header", "test-value"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["x-test-header"], "test-value");
+    }
+}
