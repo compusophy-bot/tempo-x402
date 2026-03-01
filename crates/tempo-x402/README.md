@@ -6,7 +6,7 @@ Core library for the x402 payment protocol on the Tempo blockchain.
 
 ```toml
 [dependencies]
-tempo-x402 = "0.6"
+tempo-x402 = "1"
 ```
 
 The crate is published as `tempo-x402` but the library name is `x402`:
