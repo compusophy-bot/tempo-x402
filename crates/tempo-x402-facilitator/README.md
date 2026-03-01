@@ -6,7 +6,7 @@ Payment verification and settlement service for the x402 protocol.
 
 ```toml
 [dependencies]
-tempo-x402-facilitator = "0.4"
+tempo-x402-facilitator = "1"
 ```
 
 ## Features

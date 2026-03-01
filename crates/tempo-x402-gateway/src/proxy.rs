@@ -25,6 +25,7 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "x-x402-txhash",
     "x-x402-amount",
     "x-x402-network",
+    "x-x402-amount",
 ];
 
 /// Allowlist of response headers to forward from the upstream.
@@ -52,6 +53,7 @@ const ALLOWED_RESPONSE_HEADERS: &[&str] = &[
 const MAX_RESPONSE_BODY_SIZE: usize = 10 * 1024 * 1024;
 
 /// Proxy an HTTP request to the target URL
+#[allow(clippy::too_many_arguments)]
 pub async fn proxy_request(
     client: &reqwest::Client,
     original_req: &HttpRequest,
@@ -125,6 +127,10 @@ pub async fn proxy_request(
         request_builder = request_builder.header("X-X402-Amount", amt);
     }
     request_builder = request_builder.header("X-X402-Network", &settle.network);
+
+    if let Some(amt) = amount {
+        request_builder = request_builder.header("X-X402-Amount", amt);
+    }
 
     // Add body if present
     if !body.is_empty() {

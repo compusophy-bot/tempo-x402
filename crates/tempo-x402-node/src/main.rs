@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
     // are visible to the gateway config loader.
     let auto_bootstrap = std::env::var("AUTO_BOOTSTRAP")
         .map(|v| v == "true" || v == "1")
-        .unwrap_or(true);
+        .unwrap_or(false);
 
     let identity = if auto_bootstrap {
         let identity_path =
@@ -132,7 +132,10 @@ async fn main() -> std::io::Result<()> {
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
 
-    // ── Clone orchestrator ──────────────────────────────────────────────
+    // Register Prometheus metrics
+    register_metrics();
+
+    // ── Clone orchestrator config ───────────────────────────────────────
     let railway_token = std::env::var("RAILWAY_TOKEN")
         .ok()
         .filter(|s| !s.is_empty());
@@ -155,89 +158,60 @@ async fn main() -> std::io::Result<()> {
         .or_else(|| std::env::var("SELF_URL").ok())
         .unwrap_or_else(|| format!("http://localhost:{port}"));
 
-    // ── Soul-provided endpoints ──────────────────────────────────────────
-    // Register utility endpoints that the soul provides for other agents.
-    {
-        let soul_endpoints = vec![
+    if clone_price.is_some() {
+        tracing::info!(
+            "Clone price: {} (max children: {})",
+            clone_price.as_deref().unwrap_or("?"),
+            clone_max_children
+        );
+    }
+
+    // ── Auto-register node endpoints ────────────────────────────────────
+    let owner = std::env::var("EVM_ADDRESS").unwrap_or_default();
+    if !owner.is_empty() {
+        let default_clone_price = "$1.00".to_string();
+        let default_clone_amount = "1000000".to_string();
+        let endpoints: Vec<(&str, String, &str, &str, &str)> = vec![
             (
-                "echo-ip".to_string(),
-                format!("{}/utils/echo-ip", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Returns the public IP address of the caller. Useful for agent connectivity checks.".to_string(),
-            ),
-            (
-                "headers".to_string(),
-                format!("{}/utils/headers", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Returns the HTTP headers of the request as seen by the gateway.".to_string(),
-            ),
-            (
-                "json-validator".to_string(),
-                format!("{}/utils/json-validator", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Validates a JSON string. Returns 'valid: true' or an error message.".to_string(),
-            ),
-            (
-                "hex-converter".to_string(),
-                format!("{}/utils/hex-converter", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Encodes text to hex or decodes hex to text. Simple utility for agent data handling.".to_string(),
-            ),
-            (
-                "clone".to_string(),
-                format!("{}/clone", self_url),
-                clone_price.as_deref().unwrap_or("$0.10").to_string(),
-                clone_price_amount.map(|a| a.to_string()).unwrap_or_else(|| "100000".to_string()),
-                "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.".to_string(),
-            ),
-            (
-                "chat".to_string(),
+                "chat",
                 format!("{}/soul/chat", self_url),
-                "$0.01".to_string(),
-                "10000".to_string(),
-                "Interactive chat with the node's soul. Send a JSON body with a 'message' field.".to_string(),
+                "$0.01",
+                "10000",
+                "Interactive chat with the node's soul",
             ),
             (
-                "info".to_string(),
-                format!("{}/instance/info", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Returns node identity, version, uptime, and orchestration capabilities.".to_string(),
-            ),
-            (
-                "soul".to_string(),
+                "soul",
                 format!("{}/soul/status", self_url),
-                "$0.0001".to_string(),
-                "100".to_string(),
-                "Returns the current state and recent thoughts of the node's soul.".to_string(),
+                "$0.0001",
+                "100",
+                "Soul status and recent thoughts",
+            ),
+            (
+                "info",
+                format!("{}/instance/info", self_url),
+                "$0.0001",
+                "100",
+                "Node identity, version, uptime",
+            ),
+            (
+                "clone",
+                format!("{}/clone", self_url),
+                clone_price.as_deref().unwrap_or(&default_clone_price),
+                clone_price_amount
+                    .as_deref()
+                    .unwrap_or(&default_clone_amount),
+                "Spawn a new x402-node instance",
             ),
         ];
-
-        let owner = format!("{:#x}", config.platform_address);
-
-        for (slug, target, price_usd, price_amount, desc) in soul_endpoints {
-            match gateway_db.get_endpoint(&slug) {
-                Ok(None) => {
-                    // Try to reserve first (handles soft-deleted slugs)
-                    if let Err(e) = gateway_db.reserve_slug(&slug) {
-                        tracing::warn!("Failed to reserve soul endpoint {}: {}", slug, e);
-                        continue;
-                    }
-                    match gateway_db.activate_endpoint(&slug, &owner, &target, &price_usd, &price_amount, Some(desc.as_str())) {
-                        Ok(_) => tracing::info!("Registered soul endpoint: /g/{}", slug),
-                        Err(e) => tracing::warn!("Failed to activate soul endpoint {}: {}", slug, e),
-                    }
-                }
-                Ok(Some(_)) => {} // Already exists and active
-                Err(e) => tracing::warn!("Failed to check soul endpoint {}: {}", slug, e),
+        for (slug, target, price, amount, desc) in &endpoints {
+            match gateway_db.create_endpoint(slug, &owner, target, price, amount, Some(desc)) {
+                Ok(_) => tracing::info!(slug, "Auto-registered endpoint"),
+                Err(_) => tracing::debug!(slug, "Endpoint already exists, skipping"),
             }
         }
     }
 
+    // ── Clone orchestrator ──────────────────────────────────────────────
     let agent: Option<Arc<CloneOrchestrator>> = match (
         railway_token,
         railway_project_id,
@@ -259,14 +233,6 @@ async fn main() -> std::io::Result<()> {
             None
         }
     };
-
-    if clone_price.is_some() {
-        tracing::info!(
-            "Clone price: {} (max children: {})",
-            clone_price.as_deref().unwrap_or("?"),
-            clone_max_children
-        );
-    }
 
     // ── Mind / Soul init (before NodeState so we can store the DB ref) ─
     let mind_enabled = x402_mind::MindConfig::is_enabled();

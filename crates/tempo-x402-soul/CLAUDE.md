@@ -69,7 +69,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 | `SOUL_TOOLS_ENABLED` | `true` | Enable/disable tool execution |
 | `SOUL_MAX_TOOL_CALLS` | `25` | Max tool calls per cycle |
 | `SOUL_TOOL_TIMEOUT_SECS` | `120` | Per-command timeout |
-| `SOUL_WORKSPACE_ROOT` | `/app` | Workspace root for file tools |
+| `SOUL_WORKSPACE_ROOT` | `/data/workspace` | Workspace root for file tools (must NOT overlap SPA dir) |
 | `SOUL_CODING_ENABLED` | `false` | Master switch for write/edit/commit tools |
 | `SOUL_AUTONOMOUS_CODING` | `false` | Allow autonomous code changes in think cycles |
 | `SOUL_AUTO_PROPOSE_TO_MAIN` | `false` | Auto-create PRs from vm branch to main |
