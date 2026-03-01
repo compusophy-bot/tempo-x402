@@ -25,7 +25,6 @@ const HEADERS_TO_STRIP: &[&str] = &[
     "x-x402-txhash",
     "x-x402-amount",
     "x-x402-network",
-    "x-x402-amount",
 ];
 
 /// Allowlist of response headers to forward from the upstream.
