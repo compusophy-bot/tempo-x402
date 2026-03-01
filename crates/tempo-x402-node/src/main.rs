@@ -250,8 +250,8 @@ async fn main() -> std::io::Result<()> {
             (
                 "clone".to_string(),
                 format!("{}/clone", self_url),
-                clone_price.as_deref().unwrap_or("$0.10").to_string(),
-                clone_price_amount.map(|a| a.to_string()).unwrap_or_else(|| "100000".to_string()),
+                clone_price.as_deref().unwrap_or(&default_clone_price).to_string(),
+                clone_price_amount.map(|a| a.to_string()).unwrap_or_else(|| default_clone_amount.clone()),
                 "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.".to_string(),
             ),
         ];
