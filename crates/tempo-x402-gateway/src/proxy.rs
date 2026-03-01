@@ -128,7 +128,7 @@ pub async fn proxy_request(
 
     // Add body if present
     if !body.is_empty() {
-        request_builder = request_builder.body(body.to_vec());
+        request_builder = request_builder.body(body);
     }
 
     // Send the request
