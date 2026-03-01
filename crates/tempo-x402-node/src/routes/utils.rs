@@ -1,5 +1,33 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use alloy::providers::Provider;
 use serde_json::Value;
+
+use crate::state::NodeState;
+
+#[get("/network-stats")]
+pub async fn network_stats(state: web::Data<NodeState>) -> impl Responder {
+    let facilitator = match state.gateway.facilitator.as_ref() {
+        Some(f) => f,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({ "error": "Facilitator not enabled" }))
+        }
+    };
+
+    let provider = facilitator.facilitator.provider();
+
+    let (block_number, chain_id, gas_price) = tokio::join!(
+        provider.get_block_number(),
+        provider.get_chain_id(),
+        provider.get_gas_price(),
+    );
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "block_number": block_number.ok(),
+        "chain_id": chain_id.ok(),
+        "gas_price": gas_price.ok(),
+    }))
+}
 
 #[get("/echo-ip")]
 pub async fn echo_ip(req: HttpRequest) -> impl Responder {
@@ -45,6 +73,7 @@ pub async fn hex_converter(body: String) -> impl Responder {
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/utils")
+            .service(network_stats)
             .service(echo_ip)
             .service(headers)
             .service(json_validator)

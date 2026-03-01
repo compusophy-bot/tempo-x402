@@ -97,6 +97,11 @@ impl<P> TempoSchemeFacilitator<P> {
         self
     }
 
+    /// Access the underlying provider for chain queries.
+    pub fn provider(&self) -> &P {
+        &self.provider
+    }
+
     /// Start a background task that purges expired nonces and stale payer locks every 60 seconds.
     pub fn start_nonce_cleanup(&self)
     where
