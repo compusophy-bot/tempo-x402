@@ -171,36 +171,69 @@ async fn main() -> std::io::Result<()> {
     if !owner.is_empty() {
         let default_clone_price = "$1.00".to_string();
         let default_clone_amount = "1000000".to_string();
-        let endpoints: Vec<(&str, String, &str, &str, &str)> = vec![
+        let endpoints: Vec<(String, String, String, String, String)> = vec![
             (
-                "chat",
+                "network-stats".to_string(),
+                format!("{}/utils/network-stats", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns real-time blockchain status (block height, chain ID, gas prices).".to_string(),
+            ),
+            (
+                "echo-ip".to_string(),
+                format!("{}/utils/echo-ip", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns the public IP address of the caller. Useful for agent connectivity checks.".to_string(),
+            ),
+            (
+                "headers".to_string(),
+                format!("{}/utils/headers", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Returns the HTTP headers of the request as seen by the gateway.".to_string(),
+            ),
+            (
+                "json-validator".to_string(),
+                format!("{}/utils/json-validator", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Validates a JSON string. Returns 'valid: true' or an error message.".to_string(),
+            ),
+            (
+                "hex-converter".to_string(),
+                format!("{}/utils/hex-converter", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Encodes text to hex or decodes hex to text. Simple utility for agent data handling.".to_string(),
+            ),
+            (
+                "chat".to_string(),
                 format!("{}/soul/chat", self_url),
-                "$0.01",
-                "10000",
-                "Interactive chat with the node's soul",
+                "$0.01".to_string(),
+                "10000".to_string(),
+                "Interactive chat with the node's soul".to_string(),
             ),
             (
-                "soul",
+                "soul".to_string(),
                 format!("{}/soul/status", self_url),
-                "$0.0001",
-                "100",
-                "Soul status and recent thoughts",
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Soul status and recent thoughts".to_string(),
             ),
             (
-                "info",
+                "info".to_string(),
                 format!("{}/instance/info", self_url),
-                "$0.0001",
-                "100",
-                "Node identity, version, uptime",
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Node identity, version, uptime".to_string(),
             ),
             (
-                "clone",
+                "clone".to_string(),
                 format!("{}/clone", self_url),
-                clone_price.as_deref().unwrap_or(&default_clone_price),
-                clone_price_amount
-                    .as_deref()
-                    .unwrap_or(&default_clone_amount),
-                "Spawn a new x402-node instance",
+                clone_price.as_deref().unwrap_or("$0.10").to_string(),
+                clone_price_amount.map(|a| a.to_string()).unwrap_or_else(|| "100000".to_string()),
+                "Orchestration service: spawns a new x402-node instance on Railway. Returns the URL of the new node.".to_string(),
             ),
         ];
         for (slug, target, price, amount, desc) in &endpoints {
