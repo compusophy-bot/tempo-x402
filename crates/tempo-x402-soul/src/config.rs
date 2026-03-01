@@ -131,7 +131,7 @@ impl SoulConfig {
             .unwrap_or(120);
 
         let workspace_root =
-            std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/app".to_string());
+            std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/data/workspace".to_string());
 
         let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|s| !s.is_empty());
 
