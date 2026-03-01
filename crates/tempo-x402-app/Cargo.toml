@@ -1,10 +1,6 @@
 [package]
 name = "tempo-x402-app"
-<<<<<<< HEAD
 version = "1.0.0"
-=======
-version = "0.10.1"
->>>>>>> 59e9f4a (Expose provider and add /utils/network-stats endpoint)
 edition = "2021"
 description = "x402 kitchen sink web app - demo all payment features"
 license = "MIT"

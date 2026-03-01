@@ -1,10 +1,6 @@
 [package]
 name = "tempo-x402-node"
-<<<<<<< HEAD
 version = "1.0.0"
-=======
-version = "0.10.1"
->>>>>>> 59e9f4a (Expose provider and add /utils/network-stats endpoint)
 edition = "2021"
 description = "Self-deploying x402 node: gateway + identity bootstrap + clone orchestration"
 license = "MIT"

@@ -1,10 +1,6 @@
 [package]
 name = "tempo-x402"
-<<<<<<< HEAD
 version = "1.0.0"
-=======
-version = "0.10.1"
->>>>>>> 59e9f4a (Expose provider and add /utils/network-stats endpoint)
 edition = "2021"
 license = "MIT"
 description = "x402 payment protocol library for Tempo blockchain (EIP-712, TIP-20, client)"
