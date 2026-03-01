@@ -229,6 +229,13 @@ async fn main() -> std::io::Result<()> {
                 "Soul status and recent thoughts".to_string(),
             ),
             (
+                "get-nonce".to_string(),
+                format!("{}/utils/get-nonce", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Retrieves the transaction count (nonce) for an address. Essential for transaction planning.".to_string(),
+            ),
+            (
                 "info".to_string(),
                 format!("{}/instance/info", self_url),
                 "$0.0001".to_string(),

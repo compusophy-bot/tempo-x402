@@ -1,8 +1,16 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use alloy::primitives::Address;
 use alloy::providers::Provider;
+use serde::Deserialize;
 use serde_json::Value;
+use std::str::FromStr;
 
 use crate::state::NodeState;
+
+#[derive(Deserialize)]
+pub struct NonceRequest {
+    pub address: String,
+}
 
 #[get("/network-stats")]
 pub async fn network_stats(state: web::Data<NodeState>) -> impl Responder {
@@ -93,6 +101,35 @@ pub async fn estimate_gas(
     }
 }
 
+#[post("/get-nonce")]
+pub async fn get_nonce(
+    state: web::Data<NodeState>,
+    body: web::Json<NonceRequest>,
+) -> impl Responder {
+    let facilitator = match state.gateway.facilitator.as_ref() {
+        Some(f) => f,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({ "error": "Facilitator not enabled" }))
+        }
+    };
+
+    let provider = facilitator.facilitator.provider();
+
+    let address = match Address::from_str(&body.address) {
+        Ok(a) => a,
+        Err(e) => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({ "error": format!("Invalid address: {}", e) }))
+        }
+    };
+
+    match provider.get_transaction_count(address).await {
+        Ok(nonce) => HttpResponse::Ok().json(serde_json::json!({ "nonce": nonce })),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({ "error": e.to_string() })),
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/utils")
@@ -101,6 +138,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(headers)
             .service(json_validator)
             .service(hex_converter)
-            .service(estimate_gas),
+            .service(estimate_gas)
+            .service(get_nonce),
     );
 }
