@@ -117,28 +117,9 @@ pub async fn update_endpoint(
 
     // Extract payer address from the payment header BEFORE settling,
     // so we can verify ownership without risking irreversible payment loss.
-    let payment_header = req
-        .headers()
-        .get("PAYMENT-SIGNATURE")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
+    let claimed_payer = crate::middleware::extract_payer_from_header(&req)
+        .ok_or_else(|| GatewayError::Internal("invalid or missing payment signature".to_string()))?;
 
-    // Decode the payment to extract the payer address for ownership check
-    let decoded: x402::payment::PaymentPayload = {
-        use base64::Engine;
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(payment_header)
-            .or_else(|_| {
-                serde_json::from_str::<serde_json::Value>(payment_header)
-                    .map(|_| payment_header.as_bytes().to_vec())
-            })
-            .map_err(|_| GatewayError::Internal("invalid payment header encoding".to_string()))?;
-        serde_json::from_slice(&bytes)
-            .map_err(|_| GatewayError::Internal("invalid payment payload".to_string()))?
-    };
-
-    // Verify ownership BEFORE settling payment (prevents money loss on NotOwner)
-    let claimed_payer = decoded.payload.from;
     let owner: Address = endpoint
         .owner_address
         .parse()
@@ -215,28 +196,9 @@ pub async fn delete_endpoint(
 
     // Extract payer address from the payment header BEFORE settling,
     // so we can verify ownership without risking irreversible payment loss.
-    let payment_header = req
-        .headers()
-        .get("PAYMENT-SIGNATURE")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| GatewayError::Internal("missing payment signature".to_string()))?;
+    let claimed_payer = crate::middleware::extract_payer_from_header(&req)
+        .ok_or_else(|| GatewayError::Internal("invalid or missing payment signature".to_string()))?;
 
-    // Decode the payment to extract the payer address for ownership check
-    let decoded: x402::payment::PaymentPayload = {
-        use base64::Engine;
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(payment_header)
-            .or_else(|_| {
-                serde_json::from_str::<serde_json::Value>(payment_header)
-                    .map(|_| payment_header.as_bytes().to_vec())
-            })
-            .map_err(|_| GatewayError::Internal("invalid payment header encoding".to_string()))?;
-        serde_json::from_slice(&bytes)
-            .map_err(|_| GatewayError::Internal("invalid payment payload".to_string()))?
-    };
-
-    // Verify ownership BEFORE settling payment (prevents money loss on NotOwner)
-    let claimed_payer = decoded.payload.from;
     let owner: Address = endpoint
         .owner_address
         .parse()
