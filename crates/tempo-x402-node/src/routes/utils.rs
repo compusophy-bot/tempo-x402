@@ -29,7 +29,7 @@ pub async fn json_validator(body: String) -> impl Responder {
 
 #[post("/hex-converter")]
 pub async fn hex_converter(body: String) -> impl Responder {
-    if let Ok(decoded) = hex::decode(body.trim()) {
+    if let Ok(decoded) = alloy::hex::decode(body.trim()) {
         HttpResponse::Ok().json(serde_json::json!({
             "action": "decode",
             "result": String::from_utf8_lossy(&decoded).to_string()
@@ -37,7 +37,7 @@ pub async fn hex_converter(body: String) -> impl Responder {
     } else {
         HttpResponse::Ok().json(serde_json::json!({
             "action": "encode",
-            "result": hex::encode(body.trim())
+            "result": alloy::hex::encode(body.trim())
         }))
     }
 }
