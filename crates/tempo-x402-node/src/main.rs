@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
     // are visible to the gateway config loader.
     let auto_bootstrap = std::env::var("AUTO_BOOTSTRAP")
         .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     let identity = if auto_bootstrap {
         let identity_path =
@@ -161,17 +161,31 @@ async fn main() -> std::io::Result<()> {
         let soul_endpoints = vec![
             (
                 "echo-ip".to_string(),
-                "https://httpbin.org/ip".to_string(),
+                format!("{}/utils/echo-ip", self_url),
                 "$0.0001".to_string(),
                 "100".to_string(),
                 "Returns the public IP address of the caller. Useful for agent connectivity checks.".to_string(),
             ),
             (
                 "headers".to_string(),
-                "https://httpbin.org/headers".to_string(),
+                format!("{}/utils/headers", self_url),
                 "$0.0001".to_string(),
                 "100".to_string(),
                 "Returns the HTTP headers of the request as seen by the gateway.".to_string(),
+            ),
+            (
+                "json-validator".to_string(),
+                format!("{}/utils/json-validator", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Validates a JSON string. Returns 'valid: true' or an error message.".to_string(),
+            ),
+            (
+                "hex-converter".to_string(),
+                format!("{}/utils/hex-converter", self_url),
+                "$0.0001".to_string(),
+                "100".to_string(),
+                "Encodes text to hex or decodes hex to text. Simple utility for agent data handling.".to_string(),
             ),
             (
                 "clone".to_string(),
@@ -737,7 +751,8 @@ async fn main() -> std::io::Result<()> {
             // Node routes (identity, clone, soul)
             .configure(crate::routes::instance::configure)
             .configure(crate::routes::clone::configure)
-            .configure(crate::routes::soul::configure);
+            .configure(crate::routes::soul::configure)
+            .configure(crate::routes::utils::configure);
 
         // Mount facilitator HTTP routes if embedded
         if let Some(ref fac_data) = facilitator_data {
