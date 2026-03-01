@@ -94,8 +94,15 @@ pub async fn estimate_gas(
     let provider = facilitator.facilitator.provider();
 
     // Body should be a JSON object representing a TransactionRequest
-    // For now, we use a generic value as alloy can often deserialize from it
-    match provider.estimate_gas(serde_json::from_value(body.into_inner()).unwrap_or_default()).await {
+    let tx_req: alloy::rpc::types::TransactionRequest = match serde_json::from_value(body.into_inner()) {
+        Ok(req) => req,
+        Err(e) => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({ "error": format!("Invalid transaction request: {}", e) }))
+        }
+    };
+
+    match provider.estimate_gas(tx_req).await {
         Ok(gas) => HttpResponse::Ok().json(serde_json::json!({ "gas_limit": gas })),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({ "error": e.to_string() })),
     }
