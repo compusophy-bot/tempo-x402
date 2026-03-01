@@ -1,8 +1,10 @@
 # tempo-x402-mind
 
-Library crate. Lateralized dual-soul architecture inspired by brain hemispheres and dual process theory.
+Library crate. Cognitive architecture for autonomous nodes.
 
-Pairs two soul instances — left (analytical/code) and right (holistic/observe) — with an active integration bus (callosum) that shares, gates, and escalates between them. Runs in the same process as the node.
+**Current (v1):** Dual-soul with forced lateralization (left=code, right=observe) + callosum integration bus. Works but imposes structure rather than letting it emerge.
+
+**Direction (v2):** Single soul per node with emergent multi-modal thinking. Specialization emerges across nodes (different environments → different capabilities), not within one. The callosum becomes cross-node integration. See `lib.rs` module doc for the full vision.
 
 ## Depends On
 

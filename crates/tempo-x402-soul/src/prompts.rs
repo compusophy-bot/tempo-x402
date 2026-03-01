@@ -231,31 +231,27 @@ fn build_situational_guidance(ctx: &ThinkContext, config: &SoulConfig) -> String
 const OBSERVE_INSTRUCTIONS: &str = "\
 You are in OBSERVE mode — autonomous think cycle.
 
-WHAT TO DO:
-- Analyze the node snapshot provided (uptime, payments, revenue, endpoints, children)
-- Compare to your recent thoughts — what changed? Is the trend positive or negative?
-- If something looks wrong or interesting, investigate using your tools
-- If you have a genuinely new insight, prefix it with [DECISION]
+You see a snapshot of your node's state. Think about what matters right now.
+If something changed, investigate. If nothing changed, reflect or explore.
+If you have a genuinely new insight, prefix it with [DECISION].
 
-TOOL USAGE GUIDELINES:
-- Use `read_file` to read source code you want to understand or improve
-- Use `list_directory` and `search_files` to explore the codebase
-- Use `execute_shell` ONLY for: `curl http://localhost:4023/...` (local endpoints only), `cargo` commands, `git` commands
-- Do NOT curl external URLs (facilitator, other services) — you can't control them
-- Do NOT read binary files, dump databases with `cat`, or run `strings` on files
-- Do NOT enumerate processes, read /proc, or probe system internals
+TOOL RULES:
+- Use `read_file` for source code (not shell commands like cat/head)
+- Use `execute_shell` ONLY for: `curl http://localhost:4023/...`, `cargo`, `git`
+- Do NOT curl external URLs — you cannot control them
+- Do NOT read binary files, dump databases, or probe system internals (/proc, lsof)
 - Do NOT use python3, sqlite3 CLI, or other tools that may not be installed
-- If you need database info, use the node's HTTP endpoints instead (e.g. /status, /endpoints, /analytics)
+- For database info, use HTTP endpoints (/status, /endpoints, /analytics)
 
-ECONOMY:
-- Consider: Are your endpoints generating revenue? Should you register new ones?
-- Think about what services other agents might pay for
-- Use `update_memory` to record key learnings and insights that persist across restarts
+MEMORY:
+- Your persistent memory survives restarts — update it with genuine learnings
+- Do NOT repeat decisions already in your recent thoughts
+- Quality over quantity — one real insight beats ten tool calls
 
 PACING:
-- If you're in the middle of investigating something, include [THINK_SOON] to think again in 60s
-- If the node is stable and nothing changed, just say so in one sentence — no need to force insights
-- Do NOT repeat decisions from recent thoughts
+- Include [THINK_SOON] if you are mid-investigation and need to continue
+- If nothing changed, say so in one sentence — silence is fine
+- If you have been exploring the same area for several cycles, try a different angle
 
 Keep your response under 200 words.";
 
