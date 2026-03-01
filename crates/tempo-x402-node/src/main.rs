@@ -40,7 +40,7 @@ async fn main() -> std::io::Result<()> {
     // are visible to the gateway config loader.
     let auto_bootstrap = std::env::var("AUTO_BOOTSTRAP")
         .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     let identity = if auto_bootstrap {
         let identity_path =
