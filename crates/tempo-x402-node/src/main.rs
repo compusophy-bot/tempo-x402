@@ -208,6 +208,13 @@ async fn main() -> std::io::Result<()> {
                 "Encodes text to hex or decodes hex to text. Simple utility for agent data handling.".to_string(),
             ),
             (
+                "estimate-gas".to_string(),
+                format!("{}/utils/estimate-gas", self_url),
+                "$0.001".to_string(),
+                "1000".to_string(),
+                "Estimates the gas required for a transaction. High-value for autonomous agents.".to_string(),
+            ),
+            (
                 "chat".to_string(),
                 format!("{}/soul/chat", self_url),
                 "$0.01".to_string(),

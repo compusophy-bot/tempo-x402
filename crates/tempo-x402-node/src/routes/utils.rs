@@ -70,6 +70,29 @@ pub async fn hex_converter(body: String) -> impl Responder {
     }
 }
 
+#[post("/estimate-gas")]
+pub async fn estimate_gas(
+    state: web::Data<NodeState>,
+    body: web::Json<serde_json::Value>,
+) -> impl Responder {
+    let facilitator = match state.gateway.facilitator.as_ref() {
+        Some(f) => f,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({ "error": "Facilitator not enabled" }))
+        }
+    };
+
+    let provider = facilitator.facilitator.provider();
+
+    // Body should be a JSON object representing a TransactionRequest
+    // For now, we use a generic value as alloy can often deserialize from it
+    match provider.estimate_gas(serde_json::from_value(body.into_inner()).unwrap_or_default()).await {
+        Ok(gas) => HttpResponse::Ok().json(serde_json::json!({ "gas_limit": gas })),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({ "error": e.to_string() })),
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/utils")
@@ -77,6 +100,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(echo_ip)
             .service(headers)
             .service(json_validator)
-            .service(hex_converter),
+            .service(hex_converter)
+            .service(estimate_gas),
     );
 }

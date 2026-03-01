@@ -128,10 +128,6 @@ pub async fn proxy_request(
     }
     request_builder = request_builder.header("X-X402-Network", &settle.network);
 
-    if let Some(amt) = amount {
-        request_builder = request_builder.header("X-X402-Amount", amt);
-    }
-
     // Add body if present
     if !body.is_empty() {
         request_builder = request_builder.body(body);
