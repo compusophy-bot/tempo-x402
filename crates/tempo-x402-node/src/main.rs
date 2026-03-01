@@ -128,6 +128,11 @@ async fn main() -> std::io::Result<()> {
         Err(e) => tracing::warn!("Failed to purge e2e-test endpoints: {e}"),
     }
 
+    // Clean up legacy demo endpoint
+    if let Ok(_) = gateway_db.delete_endpoint("demo") {
+        tracing::info!("Purged legacy demo endpoint");
+    }
+
     // Initialize children table (node extension on top of gateway DB)
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
