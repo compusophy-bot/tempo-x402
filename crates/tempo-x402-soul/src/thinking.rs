@@ -1055,41 +1055,8 @@ impl ThinkingLoop {
         // Update state
         self.increment_cycle_count()?;
 
-        // ── Step 12-13: Decay cycle + auto-promote ──
-        if neuroplastic {
-            match self.db.run_decay_cycle(self.config.prune_threshold) {
-                Ok((_, pruned)) => {
-                    if pruned > 0 {
-                        tracing::debug!(pruned, "Neuroplastic decay: pruned low-strength thoughts");
-                    }
-                }
-                Err(e) => tracing::warn!(error = %e, "Decay cycle failed"),
-            }
-
-            match self.db.promote_salient_sensory(0.6) {
-                Ok(promoted) => {
-                    if promoted > 0 {
-                        tracing::debug!(promoted, "Auto-promoted sensory→working");
-                    }
-                }
-                Err(e) => tracing::warn!(error = %e, "Sensory promotion failed"),
-            }
-        }
-
-        // ── Belief confidence decay ──
-        match self.db.decay_beliefs() {
-            Ok((demoted_high, demoted_med, deactivated)) => {
-                if demoted_high + demoted_med + deactivated > 0 {
-                    tracing::debug!(demoted_high, demoted_med, deactivated, "Belief decay cycle");
-                }
-            }
-            Err(e) => tracing::warn!(error = %e, "Belief decay failed"),
-        }
-
-        // Maybe consolidate memory every 10 cycles
-        if let Some(llm_ref) = &self.llm {
-            self.maybe_consolidate(llm_ref).await;
-        }
+        // Decay, promotion, belief decay, and consolidation are now handled
+        // by the mind's subconscious loop (x402-mind crate).
 
         Ok(CycleResult {
             tool_calls: tool_calls_made,
@@ -1111,111 +1078,6 @@ impl ThinkingLoop {
         self.db
             .set_state("last_think_at", &chrono::Utc::now().timestamp().to_string())?;
         Ok(())
-    }
-
-    /// Every 10 cycles, consolidate recent thoughts into a MemoryConsolidation summary.
-    async fn maybe_consolidate(&self, llm: &LlmClient) {
-        let total_cycles: u64 = self
-            .db
-            .get_state("total_think_cycles")
-            .ok()
-            .flatten()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-
-        if !total_cycles.is_multiple_of(10) || total_cycles == 0 {
-            return;
-        }
-
-        // Fetch last 20 substantive thoughts (including reflections and predictions)
-        let thoughts = match self.db.recent_thoughts_by_type(
-            &[
-                ThoughtType::Reasoning,
-                ThoughtType::Decision,
-                ThoughtType::Observation,
-                ThoughtType::Reflection,
-                ThoughtType::Prediction,
-            ],
-            20,
-        ) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to fetch thoughts for consolidation");
-                return;
-            }
-        };
-
-        if thoughts.len() < 5 {
-            return;
-        }
-
-        // Build summary prompt
-        let thought_text: String = thoughts
-            .iter()
-            .map(|t| {
-                format!(
-                    "[{}] {}",
-                    t.thought_type.as_str(),
-                    t.content.chars().take(400).collect::<String>()
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let prompt = format!(
-            "Summarize these recent thoughts into a concise 2-3 sentence consolidation. \
-             Focus on key patterns, decisions made, and current state of understanding. \
-             Be specific and factual.\n\n{thought_text}"
-        );
-
-        let conversation = vec![ConversationMessage {
-            role: "user".to_string(),
-            parts: vec![ConversationPart::Text(prompt)],
-        }];
-
-        match llm
-            .think_with_tools(
-                "You are a memory consolidation system. Produce brief, factual summaries.",
-                &conversation,
-                &[],
-            )
-            .await
-        {
-            Ok(LlmResult::Text(summary)) => {
-                let consolidation = Thought {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    thought_type: ThoughtType::MemoryConsolidation,
-                    content: summary,
-                    context: None,
-                    created_at: chrono::Utc::now().timestamp(),
-                    salience: None,
-                    memory_tier: None,
-                    strength: None,
-                };
-                let insert_result = if self.config.neuroplastic_enabled {
-                    // Consolidations are always high-salience, long-term
-                    self.db.insert_thought_with_salience(
-                        &consolidation,
-                        0.9,
-                        r#"{"novelty":0.8,"prediction_error":0.0,"reward_signal":0.0,"recency_boost":0.1,"reinforcement":0.0}"#,
-                        "long_term",
-                        1.0,
-                        None,
-                    )
-                } else {
-                    self.db.insert_thought(&consolidation)
-                };
-                if let Err(e) = insert_result {
-                    tracing::warn!(error = %e, "Failed to insert consolidation thought");
-                } else {
-                    tracing::info!(cycle = total_cycles, "Memory consolidation recorded");
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::warn!(error = %e, "Memory consolidation LLM call failed");
-            }
-        }
     }
 
     /// Sync auto-beliefs from a snapshot: ground truth that doesn't need the LLM.

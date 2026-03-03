@@ -1126,7 +1126,7 @@ fn format_timestamp(unix_ts: i64) -> String {
     format!("{:02}:{:02}", h, m)
 }
 
-/// Mind status panel — dual-hemisphere display
+/// Mind status panel — subconscious background loop stats
 #[component]
 fn MindPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
     view! {
@@ -1137,81 +1137,40 @@ fn MindPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                     None => return view! { <span></span> }.into_view(),
                 };
 
-                let left = data.get("left").cloned();
-                let right = data.get("right").cloned();
+                let enabled = data.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+                if !enabled {
+                    return view! { <span></span> }.into_view();
+                }
 
-                let render_hemisphere = |hemi: Option<serde_json::Value>, side: &str| {
-                    let data = hemi.unwrap_or_default();
-                    let active = data.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let cycles = data.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
-                    let last_think = data.get("last_think_at")
-                        .and_then(|v| v.as_i64())
-                        .map(format_relative_time)
-                        .unwrap_or_else(|| "never".to_string());
-                    let last_thought = data.get("recent_thoughts")
-                        .and_then(|v| v.as_array())
-                        .and_then(|arr| arr.first())
-                        .and_then(|t| t.get("content"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let truncated = if last_thought.len() > 100 {
-                        format!("{}...", &last_thought[..100])
-                    } else {
-                        last_thought
-                    };
+                let cycles = data.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+                let last_cycle = data.get("last_cycle_at")
+                    .and_then(|v| v.as_i64())
+                    .map(format_relative_time)
+                    .unwrap_or_else(|| "never".to_string());
+                let last_consolidation = data.get("last_consolidation_at")
+                    .and_then(|v| v.as_i64())
+                    .map(format_relative_time)
+                    .unwrap_or_else(|| "never".to_string());
 
-                    let (badge_class, badge_text) = if active {
-                        ("soul-status--green", "Active")
-                    } else {
-                        ("soul-status--gray", "Inactive")
-                    };
-
-                    let hemisphere_class = format!("mind-hemisphere mind-hemisphere--{}", side);
-                    let title_class = format!("hemisphere-title hemisphere-title--{}", side);
-                    let label = if side == "left" { "Left (Analytical)" } else { "Right (Holistic)" };
-
-                    view! {
-                        <div class=hemisphere_class>
-                            <div class="hemisphere-header">
-                                <span class=title_class>{label}</span>
-                                <span class={format!("soul-status-badge {}", badge_class)}>
-                                    {badge_text}
-                                </span>
-                            </div>
+                view! {
+                    <div class="mind-card">
+                        <div class="mind-header">
+                            <h2>"Subconscious"</h2>
+                            <span class="soul-status-badge soul-status--green">"Active"</span>
+                        </div>
+                        <div class="mind-stats">
                             <div class="hemisphere-stat">
                                 <span class="hemisphere-stat-label">"Cycles"</span>
                                 <span class="hemisphere-stat-value">{cycles.to_string()}</span>
                             </div>
                             <div class="hemisphere-stat">
-                                <span class="hemisphere-stat-label">"Last thought"</span>
-                                <span class="hemisphere-stat-value">{last_think}</span>
+                                <span class="hemisphere-stat-label">"Last cycle"</span>
+                                <span class="hemisphere-stat-value">{last_cycle}</span>
                             </div>
-                            {if !truncated.is_empty() {
-                                Some(view! {
-                                    <div class="hemisphere-thought">{truncated}</div>
-                                })
-                            } else {
-                                None
-                            }}
-                        </div>
-                    }
-                };
-
-                view! {
-                    <div class="mind-card">
-                        <div class="mind-header">
-                            <h2>"Mind"</h2>
-                            <span class="soul-status-badge soul-status--green">"Enabled"</span>
-                        </div>
-                        <div class="mind-hemispheres">
-                            {render_hemisphere(left, "left")}
-                            <div class="mind-callosum">
-                                <div class="callosum-line"></div>
-                                <span class="callosum-label">"Callosum"</span>
-                                <div class="callosum-line"></div>
+                            <div class="hemisphere-stat">
+                                <span class="hemisphere-stat-label">"Last consolidation"</span>
+                                <span class="hemisphere-stat-value">{last_consolidation}</span>
                             </div>
-                            {render_hemisphere(right, "right")}
                         </div>
                     </div>
                 }.into_view()
