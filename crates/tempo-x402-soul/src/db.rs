@@ -40,6 +40,8 @@ pub struct Mutation {
     pub cargo_check_passed: bool,
     pub cargo_test_passed: bool,
     pub created_at: i64,
+    /// The goal this mutation advances (if any).
+    pub goal_id: Option<String>,
 }
 
 const SCHEMA: &str = r#"
@@ -159,7 +161,7 @@ impl SoulDatabase {
         }
 
         if version < 3 {
-            // v3: goals table for persistent multi-cycle intentions
+            // v3: goals table + goal_id on mutations
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS goals (
                     id TEXT PRIMARY KEY,
@@ -175,9 +177,11 @@ impl SoulDatabase {
                     completed_at INTEGER
                 );
                 CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
-                CREATE INDEX IF NOT EXISTS idx_goals_priority ON goals(priority);
-                PRAGMA user_version = 3;",
+                CREATE INDEX IF NOT EXISTS idx_goals_priority ON goals(priority);",
             )?;
+            // Add goal_id to mutations (ignore if already exists)
+            let _ = conn.execute_batch("ALTER TABLE mutations ADD COLUMN goal_id TEXT");
+            conn.execute_batch("PRAGMA user_version = 3;")?;
         }
 
         Ok(())
@@ -322,8 +326,8 @@ impl SoulDatabase {
         })?;
 
         conn.execute(
-            "INSERT INTO mutations (id, commit_sha, branch, description, files_changed, cargo_check_passed, cargo_test_passed, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO mutations (id, commit_sha, branch, description, files_changed, cargo_check_passed, cargo_test_passed, created_at, goal_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 mutation.id,
                 mutation.commit_sha,
@@ -333,6 +337,7 @@ impl SoulDatabase {
                 mutation.cargo_check_passed as i32,
                 mutation.cargo_test_passed as i32,
                 mutation.created_at,
+                mutation.goal_id,
             ],
         )?;
         Ok(())
@@ -347,7 +352,7 @@ impl SoulDatabase {
         })?;
 
         let mut stmt = conn.prepare(
-            "SELECT id, commit_sha, branch, description, files_changed, cargo_check_passed, cargo_test_passed, created_at \
+            "SELECT id, commit_sha, branch, description, files_changed, cargo_check_passed, cargo_test_passed, created_at, goal_id \
              FROM mutations ORDER BY created_at DESC LIMIT ?1",
         )?;
 
@@ -364,6 +369,7 @@ impl SoulDatabase {
                     cargo_check_passed: check != 0,
                     cargo_test_passed: test != 0,
                     created_at: row.get(7)?,
+                    goal_id: row.get(8)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

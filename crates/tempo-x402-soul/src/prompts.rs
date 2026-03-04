@@ -176,11 +176,17 @@ fn build_situational_guidance(ctx: &ThinkContext, _config: &SoulConfig) -> Strin
     ));
 
     if ctx.boring_streak >= 3 {
+        let goal_nudge = if ctx.goals.is_empty() {
+            " You have no active goals — create one to give yourself direction.".to_string()
+        } else {
+            format!(
+                " You have {} active goal(s). Pick one and [CODE] to advance it.",
+                ctx.goals.len()
+            )
+        };
         facts.push(format!(
-            "WARNING: You have had {} consecutive cycles with no decisions or code changes. \
-             Either use [CODE] to act on something, update_memory with learnings, \
-             or explicitly acknowledge nothing needs doing.",
-            ctx.boring_streak
+            "WARNING: {} consecutive cycles with no decisions or code changes.{}",
+            ctx.boring_streak, goal_nudge
         ));
     }
 

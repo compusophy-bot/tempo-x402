@@ -646,6 +646,12 @@ impl ToolExecutor {
         let workspace = self.workspace_root.to_string_lossy().to_string();
         let result = coding::validated_commit(git, &workspace, files, message).await?;
 
+        // Link mutation to highest-priority active goal (if any)
+        let active_goal_id = db
+            .get_active_goals()
+            .ok()
+            .and_then(|goals| goals.first().map(|g| g.id.clone()));
+
         // Record mutation in database
         let mutation = Mutation {
             id: uuid::Uuid::new_v4().to_string(),
@@ -656,6 +662,7 @@ impl ToolExecutor {
             cargo_check_passed: result.cargo_check_passed,
             cargo_test_passed: result.cargo_test_passed,
             created_at: chrono::Utc::now().timestamp(),
+            goal_id: active_goal_id,
         };
         let _ = db.insert_mutation(&mutation);
 

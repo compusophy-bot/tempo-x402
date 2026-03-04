@@ -78,6 +78,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Active goals shown in prompt every cycle under "## Active Goals"
 - Goal cap: max 10 active goals (prevents goal sprawl)
 - Goals survive between cycles — the soul checks active goals each cycle and decides whether to [CODE] to advance them
+- Goal-reward loop: mutations linked to goals (goal_id on mutations table), reflection matches goals to endpoint reward signals, completed/abandoned goals become high-salience neuroplastic memories
+- Boring streak warning references active goals: "You have N goals, pick one and [CODE]"
 - Gated by `SOUL_NEUROPLASTIC` env var (default true) — harmless if false, just skips salience/decay/prediction
 - **Feedback loop**: Observe → [CODE] → Phase 2 (Code mode, write/edit/commit) → Phase 3 (Reflection: check_self, verify, record learnings)
 - **Fresh conversation per phase**: each phase gets its own conversation with a text summary of the previous phase's conclusion — prevents Phase 2/3 from re-sending all of Phase 1's tool outputs

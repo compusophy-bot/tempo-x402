@@ -866,9 +866,51 @@ impl ThinkingLoop {
                 reflect_context.push_str(&format!("Reward signal: {:.2}\n\n", rb.total_reward));
             }
 
+            // Include active goals with endpoint reward signal matching
+            let reflect_goals = self.db.get_active_goals().unwrap_or_default();
+            if !reflect_goals.is_empty() {
+                reflect_context.push_str("Active goals:\n");
+                for g in &reflect_goals {
+                    let mut signals = Vec::new();
+                    // Match goal description against endpoint reward signals
+                    if let Some(ref rb) = reward_breakdown {
+                        let desc_lower = g.description.to_lowercase();
+                        for slug in &rb.new_endpoints {
+                            if desc_lower.contains(&slug.to_lowercase()) {
+                                signals.push(format!("NEW endpoint '{slug}'"));
+                            }
+                        }
+                        for slug in &rb.growing_endpoints {
+                            if desc_lower.contains(&slug.to_lowercase()) {
+                                signals.push(format!("GROWING '{slug}'"));
+                            }
+                        }
+                        for slug in &rb.stagnant_endpoints {
+                            if desc_lower.contains(&slug.to_lowercase()) {
+                                signals.push(format!("STAGNANT '{slug}'"));
+                            }
+                        }
+                    }
+                    let signal_str = if signals.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" → {}", signals.join(", "))
+                    };
+                    reflect_context.push_str(&format!(
+                        "- [P{}] {} (id:{}){}\n",
+                        g.priority,
+                        g.description,
+                        &g.id[..g.id.len().min(8)],
+                        signal_str,
+                    ));
+                }
+                reflect_context.push('\n');
+            }
+
             reflect_context.push_str(
                 "VERIFY: use check_self to check health and analytics. \
-                 Did your changes move the needle? Record what you learned with update_memory. \
+                 Did your changes advance any active goals? If so, update_goal with progress or complete_goal. \
+                 Record what you learned with update_memory. \
                  End with [STRATEGY] followed by what you plan to do next cycle. \
                  Keep it brief.",
             );
@@ -1282,17 +1324,90 @@ impl ThinkingLoop {
                 self.db.update_goal(goal_id, status_str, notes_str, None)
             }
             ModelUpdate::CompleteGoal { goal_id, outcome } => {
+                // Fetch goal description before completing
+                let goal_desc = self
+                    .db
+                    .get_goal(goal_id)
+                    .ok()
+                    .flatten()
+                    .map(|g| g.description.clone())
+                    .unwrap_or_default();
+
                 let notes = if outcome.is_empty() {
                     None
                 } else {
                     Some(outcome.as_str())
                 };
-                self.db
-                    .update_goal(goal_id, Some("completed"), notes, Some(now))
+                let result = self
+                    .db
+                    .update_goal(goal_id, Some("completed"), notes, Some(now));
+
+                // Record high-salience Decision thought for completed goals
+                if matches!(result, Ok(true)) && !goal_desc.is_empty() {
+                    let content = format!(
+                        "[GOAL COMPLETED] {}: {}",
+                        goal_desc,
+                        if outcome.is_empty() { "done" } else { outcome }
+                    );
+                    let thought = Thought {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        thought_type: ThoughtType::Decision,
+                        content,
+                        context: Some(format!("goal_id:{goal_id}")),
+                        created_at: now,
+                        salience: None,
+                        memory_tier: None,
+                        strength: None,
+                    };
+                    // High salience — successful goal completion is very memorable
+                    let _ = self.db.insert_thought_with_salience(
+                        &thought,
+                        0.85,
+                        r#"{"novelty":0.5,"prediction_error":0.0,"reward_signal":0.8,"recency_boost":0.1,"reinforcement":0.0}"#,
+                        "long_term",
+                        1.0,
+                        None,
+                    );
+                }
+                result
             }
             ModelUpdate::AbandonGoal { goal_id, reason } => {
-                self.db
-                    .update_goal(goal_id, Some("abandoned"), Some(reason.as_str()), Some(now))
+                let goal_desc = self
+                    .db
+                    .get_goal(goal_id)
+                    .ok()
+                    .flatten()
+                    .map(|g| g.description.clone())
+                    .unwrap_or_default();
+
+                let result = self
+                    .db
+                    .update_goal(goal_id, Some("abandoned"), Some(reason.as_str()), Some(now));
+
+                // Record moderate-salience Decision thought for abandoned goals (learn from failure)
+                if matches!(result, Ok(true)) && !goal_desc.is_empty() {
+                    let content =
+                        format!("[GOAL ABANDONED] {}: {}", goal_desc, reason);
+                    let thought = Thought {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        thought_type: ThoughtType::Decision,
+                        content,
+                        context: Some(format!("goal_id:{goal_id}")),
+                        created_at: now,
+                        salience: None,
+                        memory_tier: None,
+                        strength: None,
+                    };
+                    let _ = self.db.insert_thought_with_salience(
+                        &thought,
+                        0.6,
+                        r#"{"novelty":0.3,"prediction_error":0.3,"reward_signal":0.0,"recency_boost":0.1,"reinforcement":0.0}"#,
+                        "working",
+                        1.0,
+                        None,
+                    );
+                }
+                result
             }
         }
     }
