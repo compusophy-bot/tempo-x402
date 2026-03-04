@@ -93,8 +93,19 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         .flatten()
         .and_then(|s| s.parse().ok());
 
+    // Show what the soul *thinks*, not what it *greps* — filter out ToolExecution
     let recent_thoughts: Vec<ThoughtEntry> = soul_db
-        .recent_thoughts(15)
+        .recent_thoughts_by_type(
+            &[
+                x402_soul::ThoughtType::Decision,
+                x402_soul::ThoughtType::Reasoning,
+                x402_soul::ThoughtType::Observation,
+                x402_soul::ThoughtType::Reflection,
+                x402_soul::ThoughtType::MemoryConsolidation,
+                x402_soul::ThoughtType::Prediction,
+            ],
+            15,
+        )
         .unwrap_or_default()
         .into_iter()
         .map(|t| ThoughtEntry {

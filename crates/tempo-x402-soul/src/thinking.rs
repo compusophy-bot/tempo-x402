@@ -507,55 +507,33 @@ impl ThinkingLoop {
         };
 
         // ── Step 7: Structured thought retrieval (salience-based if neuroplastic) ──
-        // Include ToolExecution + Reflection so the soul knows what it already read/did/learned.
-        let (decisions, reasoning, observations, consolidations, reflections, tool_executions) =
-            if neuroplastic {
-                (
-                    self.db
-                        .salient_thoughts_by_type(&[ThoughtType::Decision], 3)?,
-                    self.db
-                        .salient_thoughts_by_type(&[ThoughtType::Reasoning], 3)?,
-                    self.db
-                        .salient_thoughts_by_type(&[ThoughtType::Observation], 2)?,
-                    self.db
-                        .salient_thoughts_by_type(&[ThoughtType::MemoryConsolidation], 1)?,
-                    self.db
-                        .salient_thoughts_by_type(&[ThoughtType::Reflection], 2)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::ToolExecution], 8)?,
-                )
-            } else {
-                (
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::Decision], 3)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::Reasoning], 3)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::Observation], 2)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::MemoryConsolidation], 1)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::Reflection], 2)?,
-                    self.db
-                        .recent_thoughts_by_type(&[ThoughtType::ToolExecution], 8)?,
-                )
-            };
-
-        // Deduplicate tool executions: keep only the most recent occurrence of each unique tool call.
-        // "read_file: main.rs" appearing 5 times → show once. Cap at 3 unique entries.
-        let deduped_tools = {
-            let mut seen = std::collections::HashSet::new();
-            let mut unique = Vec::new();
-            for t in &tool_executions {
-                // Use content as the dedup key (e.g. "read_file: crates/.../main.rs")
-                if seen.insert(t.content.clone()) {
-                    unique.push(t.clone());
-                }
-                if unique.len() >= 3 {
-                    break;
-                }
-            }
-            unique
+        // Retrieve actual reasoning thoughts — tool executions are ephemeral and not stored.
+        let (decisions, reasoning, observations, consolidations, reflections) = if neuroplastic {
+            (
+                self.db
+                    .salient_thoughts_by_type(&[ThoughtType::Decision], 3)?,
+                self.db
+                    .salient_thoughts_by_type(&[ThoughtType::Reasoning], 3)?,
+                self.db
+                    .salient_thoughts_by_type(&[ThoughtType::Observation], 2)?,
+                self.db
+                    .salient_thoughts_by_type(&[ThoughtType::MemoryConsolidation], 1)?,
+                self.db
+                    .salient_thoughts_by_type(&[ThoughtType::Reflection], 2)?,
+            )
+        } else {
+            (
+                self.db
+                    .recent_thoughts_by_type(&[ThoughtType::Decision], 3)?,
+                self.db
+                    .recent_thoughts_by_type(&[ThoughtType::Reasoning], 3)?,
+                self.db
+                    .recent_thoughts_by_type(&[ThoughtType::Observation], 2)?,
+                self.db
+                    .recent_thoughts_by_type(&[ThoughtType::MemoryConsolidation], 1)?,
+                self.db
+                    .recent_thoughts_by_type(&[ThoughtType::Reflection], 2)?,
+            )
         };
 
         // Merge and sort by created_at DESC
@@ -565,7 +543,6 @@ impl ThinkingLoop {
         recent.extend(observations);
         recent.extend(consolidations);
         recent.extend(reflections);
-        recent.extend(deduped_tools);
         recent.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
         // ── Step 8: Reinforce recalled thoughts (Hebbian boost) ──
@@ -793,25 +770,27 @@ impl ThinkingLoop {
             let code_system_prompt =
                 prompts::adaptive_system_prompt(code_mode, &self.config, Some(&think_context));
 
-            // Bridge: append phase 1 output as model message, then a user message entering Code mode
-            conversation.push(ConversationMessage {
-                role: "model".to_string(),
-                parts: vec![ConversationPart::Text(final_text.clone())],
-            });
-            conversation.push(ConversationMessage {
+            // Fresh conversation for Phase 2 — don't re-send Phase 1's tool results
+            let phase1_summary = if final_text.len() > 2000 {
+                format!("{}...", &final_text[..2000])
+            } else {
+                final_text.clone()
+            };
+            let mut phase2_conversation = vec![ConversationMessage {
                 role: "user".to_string(),
-                parts: vec![ConversationPart::Text(
-                    "You are now in CODE mode. Proceed with the action you described above. \
-                     Use edit_file, write_file, and commit_changes tools."
-                        .to_string(),
-                )],
-            });
+                parts: vec![ConversationPart::Text(format!(
+                    "Phase 1 (Observe) concluded:\n{}\n\n\
+                     You are now in CODE mode. Proceed with the action described above. \
+                     Use edit_file, write_file, and commit_changes tools.",
+                    phase1_summary
+                ))],
+            }];
 
             let code_budget = self.config.max_tool_calls;
             let phase2_result = run_tool_loop_with_model(
                 llm,
                 &code_system_prompt,
-                &mut conversation,
+                &mut phase2_conversation,
                 &code_tools,
                 &self.tool_executor,
                 &self.db,
@@ -834,13 +813,16 @@ impl ThinkingLoop {
             let reflect_system =
                 prompts::adaptive_system_prompt(reflect_mode, &self.config, Some(&think_context));
 
-            conversation.push(ConversationMessage {
-                role: "model".to_string(),
-                parts: vec![ConversationPart::Text(final_text.clone())],
-            });
             // Build reflection context: what was just changed + current reward signal
-            let mut reflect_context =
-                String::from("Code phase complete. REFLECT on what just happened.\n\n");
+            let phase2_summary = if final_text.len() > 1000 {
+                format!("{}...", &final_text[..1000])
+            } else {
+                final_text.clone()
+            };
+            let mut reflect_context = format!(
+                "Code phase result:\n{}\n\nREFLECT on what just happened.\n\n",
+                phase2_summary
+            );
 
             // Include the most recent mutation
             if let Ok(mutations) = self.db.recent_mutations(1) {
@@ -887,15 +869,16 @@ impl ThinkingLoop {
                  Keep it brief.",
             );
 
-            conversation.push(ConversationMessage {
+            // Fresh conversation for Phase 3 — don't re-send Phase 1+2's tool results
+            let mut phase3_conversation = vec![ConversationMessage {
                 role: "user".to_string(),
                 parts: vec![ConversationPart::Text(reflect_context)],
-            });
+            }];
 
             let phase3_result = run_tool_loop_with_model(
                 llm,
                 &reflect_system,
-                &mut conversation,
+                &mut phase3_conversation,
                 &reflect_tools,
                 &self.tool_executor,
                 &self.db,
@@ -1321,7 +1304,7 @@ pub(crate) async fn run_tool_loop_with_model(
     conversation: &mut Vec<ConversationMessage>,
     tool_declarations: &[FunctionDeclaration],
     tool_executor: &ToolExecutor,
-    db: &Arc<SoulDatabase>,
+    _db: &Arc<SoulDatabase>,
     max_tool_calls: u32,
     use_deep: bool,
 ) -> Result<ToolLoopResult, SoulError> {
@@ -1369,21 +1352,8 @@ pub(crate) async fn run_tool_loop_with_model(
                     }
                 };
 
-                // Record tool execution as a thought
-                let tool_summary = summarize_tool_call(&fc.name, &fc.args);
-                let tool_thought = Thought {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    thought_type: ThoughtType::ToolExecution,
-                    content: tool_summary.clone(),
-                    context: Some(serde_json::to_string(&tool_result).unwrap_or_default()),
-                    created_at: chrono::Utc::now().timestamp(),
-                    salience: None,
-                    memory_tier: None,
-                    strength: None,
-                };
-                db.insert_thought(&tool_thought)?;
-
                 // Record for return value
+                let tool_summary = summarize_tool_call(&fc.name, &fc.args);
                 tool_executions.push(ToolExecution {
                     command: tool_summary,
                     stdout: tool_result.stdout.clone(),

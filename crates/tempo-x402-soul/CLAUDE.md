@@ -48,7 +48,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Dormant mode: without `GEMINI_API_KEY`, still observes and records, skips LLM calls
 - Default model: `gemini-3-flash-preview` (configurable via `GEMINI_MODEL_FAST` env var)
 - Gemini 3+ requires `thoughtSignature` passback on function calls — handled in `llm.rs`
-- Tool output truncated to 16KB per stream to stay within Gemini context limits
+- Tool output truncated to 4KB per stream to stay within Gemini context limits
 - Tools disabled via `SOUL_TOOLS_ENABLED=false`
 - Coding disabled by default — requires `SOUL_CODING_ENABLED=true` + `INSTANCE_ID`
 - Protected paths are hardcoded (not env-var) so the soul cannot bypass via shell
@@ -60,7 +60,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Direct push mode (`SOUL_DIRECT_PUSH=true`): pushes to fork's main branch directly, triggering auto-deploy. Used for self-editing instances.
 - Deep model: `SOUL_DIRECT_PUSH` + `SOUL_AUTONOMOUS_CODING` together use Gemini Pro (think model) instead of Flash for deeper reasoning
 - Persistent memory: soul reads `/data/soul_memory.md` every cycle, can update via `update_memory` tool, seeded on first boot, 4KB cap
-- Structured thought retrieval: salience-weighted when neuroplastic enabled (most important thoughts first), falls back to recency — includes Reflection and ToolExecution types
+- Structured thought retrieval: salience-weighted when neuroplastic enabled (most important thoughts first), falls back to recency — Decision, Reasoning, Observation, Reflection, MemoryConsolidation (no ToolExecution)
+- Tool calls are ephemeral — NOT recorded as thoughts, NOT fed back into context
 - Memory consolidation: every 10 cycles, summarize last 20 substantive thoughts (including Reflection and Prediction) into a MemoryConsolidation thought (LongTerm tier)
 - `register_endpoint` tool: full x402 payment flow (402 → sign → retry), Code mode only, requires `EVM_PRIVATE_KEY`
 - `check_self` tool: whitelisted self-introspection (health, analytics, analytics/{slug}, soul/status), available in Observe/Chat/Code modes
@@ -74,6 +75,7 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Schema migration: `PRAGMA user_version` based (v1: neuroplastic columns, v2: beliefs table), ALTER TABLE for backward compat
 - Gated by `SOUL_NEUROPLASTIC` env var (default true) — harmless if false, just skips salience/decay/prediction
 - **Feedback loop**: Observe → [CODE] → Phase 2 (Code mode, write/edit/commit) → Phase 3 (Reflection: check_self, verify, record learnings)
+- **Fresh conversation per phase**: each phase gets its own conversation with a text summary of the previous phase's conclusion — prevents Phase 2/3 from re-sending all of Phase 1's tool outputs
 - Phase 3 reflection: 5-tool budget, non-deep model, receives mutation context (SHA, pass/fail, files) + reward breakdown (new/growing/stagnant endpoints)
 - Reflection salience is dynamic: base 0.5 + reward contribution (max 0.3), tied to actual endpoint performance
 - Mutation history (last 5 commits with check/test pass/fail) and endpoint summary table (slug, price, requests, payments, revenue) provided in think context
