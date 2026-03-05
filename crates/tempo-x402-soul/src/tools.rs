@@ -733,10 +733,7 @@ impl ToolExecutor {
             "http://localhost:{}",
             std::env::var("PORT").unwrap_or_else(|_| "4023".to_string())
         );
-        let gateway_url = self
-            .gateway_url
-            .clone()
-            .unwrap_or(default_url);
+        let gateway_url = self.gateway_url.clone().unwrap_or(default_url);
 
         let private_key = std::env::var("EVM_PRIVATE_KEY")
             .map_err(|_| "EVM_PRIVATE_KEY not set — cannot sign payment".to_string())?;
@@ -861,15 +858,13 @@ impl ToolExecutor {
             "http://localhost:{}",
             std::env::var("PORT").unwrap_or_else(|_| "4023".to_string())
         );
-        let gateway_url = self
-            .gateway_url
-            .clone()
-            .unwrap_or(default_url);
+        let gateway_url = self.gateway_url.clone().unwrap_or(default_url);
 
         let url = format!("{gateway_url}/{trimmed}");
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -1040,12 +1035,7 @@ impl ToolExecutor {
                     goal_id,
                     progress_notes,
                     status,
-                } => db.update_goal(
-                    goal_id,
-                    status.as_deref(),
-                    progress_notes.as_deref(),
-                    None,
-                ),
+                } => db.update_goal(goal_id, status.as_deref(), progress_notes.as_deref(), None),
                 ModelUpdate::CompleteGoal { goal_id, outcome } => {
                     let notes = if outcome.is_empty() {
                         None

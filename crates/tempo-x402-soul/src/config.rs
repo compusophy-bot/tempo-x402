@@ -61,6 +61,8 @@ pub struct SoulConfig {
     /// Strength threshold below which non-long-term thoughts are pruned.
     /// (env: SOUL_PRUNE_THRESHOLD, default: 0.01)
     pub prune_threshold: f64,
+    /// Maximum number of steps in a plan (env: SOUL_MAX_PLAN_STEPS, default: 20).
+    pub max_plan_steps: usize,
 }
 
 const DEFAULT_PERSONALITY: &str = "\
@@ -108,8 +110,8 @@ impl SoulConfig {
         let llm_model_fast = std::env::var("GEMINI_MODEL_FAST")
             .unwrap_or_else(|_| "gemini-3-flash-preview".to_string());
 
-        let llm_model_think = std::env::var("GEMINI_MODEL_THINK")
-            .unwrap_or_else(|_| llm_model_fast.clone());
+        let llm_model_think =
+            std::env::var("GEMINI_MODEL_THINK").unwrap_or_else(|_| llm_model_fast.clone());
 
         let db_path = std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "./soul.db".to_string());
 
@@ -195,6 +197,11 @@ impl SoulConfig {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.01);
 
+        let max_plan_steps: usize = std::env::var("SOUL_MAX_PLAN_STEPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(20);
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -221,6 +228,7 @@ impl SoulConfig {
             gateway_url,
             neuroplastic_enabled,
             prune_threshold,
+            max_plan_steps,
         })
     }
 }

@@ -16,6 +16,9 @@ struct SoulStatus {
     coding_enabled: bool,
     /// Cycle health metrics for observability.
     cycle_health: CycleHealth,
+    /// Active plan info.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_plan: Option<PlanInfo>,
     recent_thoughts: Vec<ThoughtEntry>,
     /// Active beliefs from the world model.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -23,6 +26,17 @@ struct SoulStatus {
     /// Active goals driving multi-cycle behavior.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     goals: Vec<GoalEntry>,
+}
+
+#[derive(Serialize)]
+struct PlanInfo {
+    id: String,
+    goal_id: String,
+    current_step: usize,
+    total_steps: usize,
+    status: String,
+    replan_count: u32,
+    current_step_type: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -51,12 +65,11 @@ struct BeliefEntry {
 
 #[derive(Serialize)]
 struct CycleHealth {
-    boring_streak: u32,
-    active_streak: u32,
-    last_cycle_tool_calls: u32,
-    last_cycle_decisions: u32,
     last_cycle_entered_code: bool,
     total_code_entries: u64,
+    cycles_since_last_commit: u64,
+    failed_plans_count: u64,
+    goals_active: u64,
 }
 
 #[derive(Serialize)]
@@ -84,12 +97,11 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
                 "tools_enabled": tools_enabled,
                 "coding_enabled": coding_enabled,
                 "cycle_health": {
-                    "boring_streak": 0,
-                    "active_streak": 0,
-                    "last_cycle_tool_calls": 0,
-                    "last_cycle_decisions": 0,
                     "last_cycle_entered_code": false,
-                    "total_code_entries": 0
+                    "total_code_entries": 0,
+                    "cycles_since_last_commit": 0,
+                    "failed_plans_count": 0,
+                    "goals_active": 0
                 },
                 "recent_thoughts": []
             }));
@@ -137,30 +149,6 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
     };
 
     // Read cycle health metrics from soul_state
-    let boring_streak: u32 = soul_db
-        .get_state("boring_streak")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let active_streak: u32 = soul_db
-        .get_state("active_streak")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let last_cycle_tool_calls: u32 = soul_db
-        .get_state("last_cycle_tool_calls")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let last_cycle_decisions: u32 = soul_db
-        .get_state("last_cycle_decisions")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
     let last_cycle_entered_code: bool = soul_db
         .get_state("last_cycle_entered_code")
         .ok()
@@ -172,6 +160,17 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         .ok()
         .flatten()
         .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let cycles_since_last_commit: u64 = soul_db
+        .get_state("cycles_since_last_commit")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let failed_plans_count: u64 = soul_db.count_plans_by_status("failed").unwrap_or(0);
+    let goals_active: u64 = soul_db
+        .get_active_goals()
+        .map(|g| g.len() as u64)
         .unwrap_or(0);
 
     // Determine displayed mode based on last cycle
@@ -215,6 +214,20 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         })
         .collect();
 
+    // Fetch active plan
+    let active_plan = soul_db.get_active_plan().ok().flatten().map(|p| {
+        let current_step_type = p.steps.get(p.current_step).map(|s| s.summary());
+        PlanInfo {
+            id: p.id,
+            goal_id: p.goal_id,
+            current_step: p.current_step,
+            total_steps: p.steps.len(),
+            status: p.status.as_str().to_string(),
+            replan_count: p.replan_count,
+            current_step_type,
+        }
+    });
+
     HttpResponse::Ok().json(SoulStatus {
         active: true,
         dormant: state.soul_dormant,
@@ -224,13 +237,13 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         tools_enabled,
         coding_enabled,
         cycle_health: CycleHealth {
-            boring_streak,
-            active_streak,
-            last_cycle_tool_calls,
-            last_cycle_decisions,
             last_cycle_entered_code,
             total_code_entries,
+            cycles_since_last_commit,
+            failed_plans_count,
+            goals_active,
         },
+        active_plan,
         recent_thoughts,
         beliefs,
         goals,
@@ -302,66 +315,70 @@ async fn soul_chat(state: web::Data<NodeState>, body: web::Json<ChatRequest>) ->
     }
 }
 
-/// Mind status: subconscious background loop stats.
-#[derive(Serialize)]
-struct MindStatus {
-    enabled: bool,
-    total_cycles: u64,
-    last_cycle_at: Option<i64>,
-    last_consolidation_at: Option<i64>,
+// ── Nudge endpoints ──
+
+#[derive(Deserialize)]
+struct NudgeRequest {
+    message: String,
+    priority: Option<u32>,
 }
 
-async fn mind_status(state: web::Data<NodeState>) -> HttpResponse {
-    if !state.mind_enabled {
-        return HttpResponse::Ok().json(serde_json::json!({
-            "enabled": false,
-            "total_cycles": 0,
-            "last_cycle_at": null,
-            "last_consolidation_at": null
-        }));
-    }
-
+async fn soul_nudge(state: web::Data<NodeState>, body: web::Json<NudgeRequest>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,
         None => {
-            return HttpResponse::Ok().json(MindStatus {
-                enabled: true,
-                total_cycles: 0,
-                last_cycle_at: None,
-                last_consolidation_at: None,
-            });
+            return HttpResponse::ServiceUnavailable().json(serde_json::json!({
+                "error": "soul is not active"
+            }));
         }
     };
 
-    let total_cycles: u64 = soul_db
-        .get_state("mind_total_cycles")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+    let message = body.message.trim();
+    if message.is_empty() || message.len() > 2048 {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "message must be 1-2048 characters"
+        }));
+    }
 
-    let last_cycle_at: Option<i64> = soul_db
-        .get_state("mind_last_cycle_at")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok());
+    // User nudges get highest priority (5) by default
+    let priority = body.priority.unwrap_or(5).min(5);
 
-    let last_consolidation_at: Option<i64> = soul_db
-        .get_state("mind_last_consolidation_at")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok());
+    match soul_db.insert_nudge("user", message, priority) {
+        Ok(id) => HttpResponse::Ok().json(serde_json::json!({
+            "id": id,
+            "status": "queued"
+        })),
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to insert nudge");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("failed to queue nudge: {e}")
+            }))
+        }
+    }
+}
 
-    HttpResponse::Ok().json(MindStatus {
-        enabled: true,
-        total_cycles,
-        last_cycle_at,
-        last_consolidation_at,
-    })
+async fn soul_nudges(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::Ok().json(serde_json::json!([]));
+        }
+    };
+
+    match soul_db.get_unprocessed_nudges(20) {
+        Ok(nudges) => HttpResponse::Ok().json(nudges),
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to fetch nudges");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("failed to fetch nudges: {e}")
+            }))
+        }
+    }
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(soul_status))
         .route("/soul/chat", web::post().to(soul_chat))
-        .route("/mind/status", web::get().to(mind_status));
+        .route("/soul/nudge", web::post().to(soul_nudge))
+        .route("/soul/nudges", web::get().to(soul_nudges));
 }
