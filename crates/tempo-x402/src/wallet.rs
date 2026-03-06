@@ -2,30 +2,21 @@
 //!
 //! Provides key generation, EIP-712 signing, and payment payload construction
 //! without pulling in network/transport dependencies (reqwest, tokio, rusqlite).
+//!
+//! Enable the `wasm` feature (and disable `full`) for browser WASM builds.
 
 use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::signers::SignerSync;
-use alloy::sol;
 use alloy::sol_types::SolStruct;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-// --- Constants (mirrors core crate) ---
+use crate::constants::TEMPO_CHAIN_ID;
+use crate::PaymentAuthorization;
 
-pub const TEMPO_CHAIN_ID: u64 = 42431;
-pub const TEMPO_NETWORK: &str = "eip155:42431";
-pub const SCHEME_NAME: &str = "tempo-tip20";
-pub const EIP712_DOMAIN_NAME: &str = "x402-tempo";
-pub const EIP712_DOMAIN_VERSION: &str = "1";
-pub const TOKEN_DECIMALS: u32 = 6;
-pub const EXPLORER_BASE: &str = "https://explore.moderato.tempo.xyz";
-
-/// pathUSD token address on Tempo Moderato
-pub const DEFAULT_TOKEN: Address = Address::new([
-    0x20, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00,
-]);
+const EIP712_DOMAIN_NAME: &str = "x402-tempo";
+const EIP712_DOMAIN_VERSION: &str = "1";
 
 /// Well-known Hardhat Account #0 private key, used for testnet demos only.
 ///
@@ -37,20 +28,8 @@ pub const DEFAULT_TOKEN: Address = Address::new([
 pub const DEMO_PRIVATE_KEY: &str =
     "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-// --- EIP-712 structs (duplicated from core to avoid non-WASM deps) ---
-
-sol! {
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    struct PaymentAuthorization {
-        address from;
-        address to;
-        uint256 value;
-        address token;
-        uint256 validAfter;
-        uint256 validBefore;
-        bytes32 nonce;
-    }
-}
+// Re-export constants that WASM consumers need
+pub use crate::constants::TEMPO_CHAIN_ID as CHAIN_ID;
 
 // --- Payment types ---
 
@@ -104,7 +83,6 @@ fn eip712_domain(token: Address) -> alloy::sol_types::Eip712Domain {
 
 fn random_nonce_bytes() -> [u8; 32] {
     let mut bytes = [0u8; 32];
-    // Use getrandom which works on both native and WASM
     getrandom::fill(&mut bytes).expect("getrandom failed");
     bytes
 }
@@ -314,6 +292,7 @@ pub fn build_payment_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
 
     #[test]
     fn test_wallet_signer_random() {
@@ -396,45 +375,6 @@ mod tests {
     fn test_recover_invalid_signature_length() {
         let result = recover_message_signer(b"test", &[0u8; 64]);
         assert!(result.is_err());
-    }
-
-    /// Cross-validate wallet constants against the core crate to prevent silent EIP-712 mismatches.
-    #[test]
-    fn test_constants_match_core_crate() {
-        assert_eq!(
-            TEMPO_CHAIN_ID,
-            x402::constants::TEMPO_CHAIN_ID,
-            "TEMPO_CHAIN_ID mismatch"
-        );
-        assert_eq!(
-            TEMPO_NETWORK,
-            x402::constants::TEMPO_NETWORK,
-            "TEMPO_NETWORK mismatch"
-        );
-        assert_eq!(
-            SCHEME_NAME,
-            x402::constants::SCHEME_NAME,
-            "SCHEME_NAME mismatch"
-        );
-        assert_eq!(
-            TOKEN_DECIMALS,
-            x402::constants::TOKEN_DECIMALS,
-            "TOKEN_DECIMALS mismatch"
-        );
-        assert_eq!(
-            format!("{}", DEFAULT_TOKEN),
-            format!("{}", x402::constants::DEFAULT_TOKEN),
-            "DEFAULT_TOKEN mismatch"
-        );
-        let core_config = x402::constants::ChainConfig::default();
-        assert_eq!(
-            EIP712_DOMAIN_NAME, core_config.eip712_domain_name,
-            "EIP712_DOMAIN_NAME mismatch"
-        );
-        assert_eq!(
-            EIP712_DOMAIN_VERSION, core_config.eip712_domain_version,
-            "EIP712_DOMAIN_VERSION mismatch"
-        );
     }
 
     #[test]

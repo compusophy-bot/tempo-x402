@@ -1,3 +1,4 @@
+use crate::facilitator::state::AppState as FacilitatorState;
 use actix_web::{HttpRequest, HttpResponse};
 use alloy::primitives::Address;
 use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME, TEMPO_NETWORK};
@@ -5,7 +6,6 @@ use x402::hmac::compute_hmac;
 use x402::payment::{PaymentPayload, PaymentRequiredBody, PaymentRequirements};
 use x402::response::SettleResponse;
 use x402::scheme::SchemeFacilitator;
-use x402_facilitator::state::AppState as FacilitatorState;
 
 use crate::error::GatewayError;
 

@@ -9,7 +9,7 @@ use alloy::providers::Provider;
 use serde::{Deserialize, Serialize};
 use x402::X402Error;
 
-use crate::identity;
+use crate::onchain;
 use crate::types::AgentId;
 
 /// Discovered peer from the on-chain registry.
@@ -39,14 +39,14 @@ pub async fn enumerate_agents<P: Provider>(
     provider: &P,
     registry: Address,
 ) -> Result<Vec<(AgentId, Address)>, X402Error> {
-    let supply = identity::total_supply(provider, registry).await?;
+    let supply = onchain::total_supply(provider, registry).await?;
     let count: u64 = supply.try_into().unwrap_or(0);
 
     let mut agents = Vec::with_capacity(count as usize);
     for i in 0..count {
         let idx = U256::from(i);
-        let agent_id = identity::token_by_index(provider, registry, idx).await?;
-        let owner = identity::owner_of(provider, registry, &agent_id).await?;
+        let agent_id = onchain::token_by_index(provider, registry, idx).await?;
+        let owner = onchain::owner_of(provider, registry, &agent_id).await?;
         agents.push((agent_id, owner));
     }
 
@@ -84,7 +84,7 @@ pub async fn discover_peers<P: Provider>(
         }
 
         // Fetch metadata URI from chain
-        let metadata_uri = match identity::get_metadata_uri(provider, registry, agent_id).await {
+        let metadata_uri = match onchain::get_metadata_uri(provider, registry, agent_id).await {
             Ok(uri) => uri,
             Err(e) => {
                 tracing::debug!(agent_id = %agent_id, error = %e, "Failed to fetch metadata URI");

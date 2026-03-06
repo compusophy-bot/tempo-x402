@@ -1,8 +1,8 @@
 //! Node-specific state extending the gateway's AppState.
 
-use std::sync::Arc;
 #[cfg(feature = "agent")]
-use x402_agent::CloneOrchestrator;
+use crate::clone::CloneOrchestrator;
+use std::sync::Arc;
 use x402_gateway::state::AppState as GatewayState;
 use x402_identity::InstanceIdentity;
 #[cfg(feature = "soul")]

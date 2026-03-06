@@ -7,8 +7,8 @@ use alloy::signers::local::PrivateKeySigner;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use x402_facilitator::routes;
-use x402_facilitator::state::AppState;
+use x402_gateway::facilitator::routes;
+use x402_gateway::facilitator::state::AppState;
 
 fn parse_cors_origins() -> Vec<String> {
     match std::env::var("ALLOWED_ORIGINS") {
@@ -136,7 +136,7 @@ async fn main() -> std::io::Result<()> {
 
     if !webhook_urls.is_empty() {
         tracing::info!("Webhook URLs configured: {}", webhook_urls.len());
-        if let Err(e) = x402_facilitator::webhook::validate_webhook_urls(&webhook_urls) {
+        if let Err(e) = x402_gateway::facilitator::webhook::validate_webhook_urls(&webhook_urls) {
             tracing::error!("Invalid webhook configuration: {e}");
             std::process::exit(1);
         }
@@ -161,7 +161,7 @@ async fn main() -> std::io::Result<()> {
         hmac_secret,
         chain_config: x402::constants::ChainConfig::default(),
         webhook_urls,
-        http_client: x402_facilitator::webhook::webhook_client(),
+        http_client: x402_gateway::facilitator::webhook::webhook_client(),
         metrics_token,
         webhook_hmac_key,
     });

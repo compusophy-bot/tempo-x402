@@ -91,13 +91,13 @@ pub async fn connect_wallet() -> Result<WalletState, String> {
 
 /// Use the pre-funded demo key for testnet demos.
 pub fn use_demo_key() -> Result<WalletState, String> {
-    let signer = x402_wallet::WalletSigner::new(x402_wallet::DEMO_PRIVATE_KEY)?;
+    let signer = x402::wallet::WalletSigner::new(x402::wallet::DEMO_PRIVATE_KEY)?;
     Ok(WalletState {
         connected: true,
         address: Some(signer.address_string()),
-        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
         mode: WalletMode::DemoKey,
-        private_key: Some(x402_wallet::DEMO_PRIVATE_KEY.to_string()),
+        private_key: Some(x402::wallet::DEMO_PRIVATE_KEY.to_string()),
     })
 }
 
@@ -131,11 +131,11 @@ pub async fn load_encrypted_wallet(password: &str) -> Result<WalletState, String
         key
     };
 
-    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    let signer = x402::wallet::WalletSigner::new(&key_hex)?;
     Ok(WalletState {
         connected: true,
         address: Some(signer.address_string()),
-        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
         mode: WalletMode::Embedded,
         private_key: Some(key_hex),
     })
@@ -155,8 +155,8 @@ pub async fn create_embedded_wallet(password: &str) -> Result<(WalletState, bool
         return Ok((state, false));
     }
 
-    let key_hex = x402_wallet::generate_random_key();
-    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    let key_hex = x402::wallet::generate_random_key();
+    let signer = x402::wallet::WalletSigner::new(&key_hex)?;
     let address = signer.address_string();
 
     // Encrypt and store
@@ -167,7 +167,7 @@ pub async fn create_embedded_wallet(password: &str) -> Result<(WalletState, bool
         WalletState {
             connected: true,
             address: Some(address),
-            chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+            chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
             mode: WalletMode::Embedded,
             private_key: Some(key_hex),
         },
@@ -187,12 +187,12 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
             return Err("Wallet is encrypted — enter your password to unlock".to_string());
         }
 
-        let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+        let signer = x402::wallet::WalletSigner::new(&key_hex)?;
         return Ok((
             WalletState {
                 connected: true,
                 address: Some(signer.address_string()),
-                chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+                chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
                 mode: WalletMode::Embedded,
                 private_key: Some(key_hex),
             },
@@ -200,8 +200,8 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
         ));
     }
 
-    let key_hex = x402_wallet::generate_random_key();
-    let signer = x402_wallet::WalletSigner::new(&key_hex)?;
+    let key_hex = x402::wallet::generate_random_key();
+    let signer = x402::wallet::WalletSigner::new(&key_hex)?;
     let address = signer.address_string();
 
     storage_set(STORAGE_KEY, &key_hex);
@@ -210,7 +210,7 @@ pub fn load_or_create_embedded_wallet() -> Result<(WalletState, bool), String> {
         WalletState {
             connected: true,
             address: Some(address),
-            chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+            chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
             mode: WalletMode::Embedded,
             private_key: Some(key_hex),
         },
@@ -231,7 +231,7 @@ pub async fn import_embedded_wallet_encrypted(
         return Err("Password is required for wallet encryption".to_string());
     }
 
-    let signer = x402_wallet::WalletSigner::new(trimmed)?;
+    let signer = x402::wallet::WalletSigner::new(trimmed)?;
     let address = signer.address_string();
 
     let encrypted = wallet_crypto::encrypt_key(password, trimmed).await?;
@@ -240,7 +240,7 @@ pub async fn import_embedded_wallet_encrypted(
     Ok(WalletState {
         connected: true,
         address: Some(address),
-        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
         mode: WalletMode::Embedded,
         private_key: Some(trimmed.to_string()),
     })
@@ -253,7 +253,7 @@ pub fn import_embedded_wallet(key_hex: &str) -> Result<WalletState, String> {
         return Err("Empty private key".to_string());
     }
 
-    let signer = x402_wallet::WalletSigner::new(trimmed)?;
+    let signer = x402::wallet::WalletSigner::new(trimmed)?;
     let address = signer.address_string();
 
     storage_set(STORAGE_KEY, trimmed);
@@ -261,7 +261,7 @@ pub fn import_embedded_wallet(key_hex: &str) -> Result<WalletState, String> {
     Ok(WalletState {
         connected: true,
         address: Some(address),
-        chain_id: Some(format!("0x{:x}", x402_wallet::TEMPO_CHAIN_ID)),
+        chain_id: Some(format!("0x{:x}", x402::constants::TEMPO_CHAIN_ID)),
         mode: WalletMode::Embedded,
         private_key: Some(trimmed.to_string()),
     })

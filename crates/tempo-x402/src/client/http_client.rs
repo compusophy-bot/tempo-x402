@@ -1,9 +1,9 @@
+use crate::constants::SCHEME_NAME;
+use crate::error::X402Error;
+use crate::payment::{PaymentPayload, PaymentRequiredBody};
+use crate::response::SettleResponse;
+use crate::scheme::SchemeClient;
 use base64::Engine;
-use x402::constants::SCHEME_NAME;
-use x402::error::X402Error;
-use x402::payment::{PaymentPayload, PaymentRequiredBody};
-use x402::response::SettleResponse;
-use x402::scheme::SchemeClient;
 
 /// HTTP client that automatically handles 402 payment responses.
 ///
@@ -108,8 +108,6 @@ impl<S: SchemeClient> X402Client<S> {
 
         // Extract settlement info from headers.
         // Format: "base64payload" or "base64payload.hmac_hex" (HMAC-signed).
-        // Only base64-encoded JSON is accepted — raw JSON fallback has been removed
-        // to prevent ambiguity and ensure consistent encoding.
         let settle = resp
             .headers()
             .get("payment-response")
@@ -145,8 +143,8 @@ pub fn decode_payment(encoded: &str) -> Result<PaymentPayload, X402Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::payment::TempoPaymentData;
     use alloy::primitives::{Address, FixedBytes};
-    use x402::payment::TempoPaymentData;
 
     fn sample_payload() -> PaymentPayload {
         PaymentPayload {

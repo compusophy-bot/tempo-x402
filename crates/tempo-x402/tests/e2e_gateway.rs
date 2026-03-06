@@ -1,25 +1,16 @@
 //! End-to-end payment test against live deployments.
 //!
-//! Tests the full 402 payment flow:
-//!   1. Check wallet balance & allowance
-//!   2. GET gateway /register → 402 with payment requirements
-//!   3. Sign EIP-712 payment authorization
-//!   4. POST /register with PAYMENT-SIGNATURE header → 201 Created
-//!   5. GET /g/{slug} → 402 (proxy payment gate)
-//!   6. GET /g/{slug} with payment → 200 + proxied response
-//!   7. Cleanup: DELETE /endpoints/{slug} with payment
-//!
 //! Run:  cargo test --test e2e_gateway -- --nocapture
 
 use alloy::primitives::Address;
 use alloy::providers::RootProvider;
 use alloy::signers::local::PrivateKeySigner;
 use base64::Engine;
+use x402::client::TempoSchemeClient;
 use x402::constants::{DEFAULT_TOKEN, SCHEME_NAME};
 use x402::payment::{PaymentRequiredBody, PaymentRequirements};
 use x402::response::SettleResponse;
 use x402::scheme::SchemeClient;
-use x402_client::TempoSchemeClient;
 
 fn gateway_url() -> String {
     std::env::var("GATEWAY_URL")
@@ -53,7 +44,6 @@ async fn check_allowance(address: Address) -> u128 {
     a
 }
 
-/// Sign a payment for the given requirements, return the base64-encoded PAYMENT-SIGNATURE header.
 async fn sign_payment(signer: &TempoSchemeClient, requirements: &PaymentRequirements) -> String {
     let payload = signer
         .create_payment_payload(1, requirements)
@@ -64,7 +54,7 @@ async fn sign_payment(signer: &TempoSchemeClient, requirements: &PaymentRequirem
 }
 
 #[tokio::test]
-#[ignore] // e2e: runs via dedicated workflow, not cargo test --workspace
+#[ignore]
 async fn e2e_full_payment_flow() {
     let gateway_url = gateway_url();
     let signer = client_signer();
@@ -77,7 +67,6 @@ async fn e2e_full_payment_flow() {
     println!("Wallet:   {address}");
     println!();
 
-    // ── Step 1: Check balance & allowance ──────────────────────────────
     let balance = check_balance(address).await;
     let allowance = check_allowance(address).await;
     println!(
@@ -99,7 +88,6 @@ async fn e2e_full_payment_flow() {
     );
     assert!(allowance > 10_000, "Insufficient allowance for test");
 
-    // ── Step 2: GET /register → expect 405 (method not allowed) or hit POST without payment → 402 ──
     println!("\nStep 2: POST /register without payment → expect 402");
     let slug = format!(
         "e2e-test-{}",
@@ -126,32 +114,14 @@ async fn e2e_full_payment_flow() {
     assert_eq!(status, 402, "Expected 402 Payment Required, got {status}");
 
     let body_402: PaymentRequiredBody = resp.json().await.expect("parse 402 body");
-    println!("        x402 version: {}", body_402.x402_version);
-    println!(
-        "        Accepts: {:?}",
-        body_402
-            .accepts
-            .iter()
-            .map(|r| &r.scheme)
-            .collect::<Vec<_>>()
-    );
-
     let requirements = body_402
         .accepts
         .iter()
         .find(|r| r.scheme == SCHEME_NAME)
         .expect("no tempo-tip20 scheme in 402 response");
 
-    println!("        Pay to: {}", requirements.pay_to);
-    println!(
-        "        Amount: {} (price: {})",
-        requirements.amount, requirements.price
-    );
-
-    // ── Step 3: Sign payment and retry ─────────────────────────────────
     println!("\nStep 3: Sign EIP-712 payment and POST /register with PAYMENT-SIGNATURE");
     let payment_header = sign_payment(&scheme, requirements).await;
-    println!("        Signed payment ({}B base64)", payment_header.len());
 
     let resp = http
         .post(format!("{gateway_url}/register"))
@@ -169,45 +139,30 @@ async fn e2e_full_payment_flow() {
     let status = resp.status().as_u16();
     let resp_text = resp.text().await.unwrap_or_default();
     println!("        Status: {status}");
-    println!("        Body: {resp_text}");
     assert!(
         status == 201 || status == 200,
         "Registration failed with status {status}: {resp_text}"
     );
 
-    let register_result: serde_json::Value =
-        serde_json::from_str(&resp_text).expect("parse register response");
-    if let Some(tx) = register_result.get("transaction") {
-        println!("        Tx: {tx}");
-    }
-
-    // ── Step 4: Verify endpoint exists ─────────────────────────────────
     println!("\nStep 4: GET /endpoints/{slug} → verify registration");
     let resp = http
         .get(format!("{gateway_url}/endpoints/{slug}"))
         .send()
         .await
         .expect("get endpoint failed");
-    let status = resp.status().as_u16();
-    println!("        Status: {status}");
-    assert_eq!(status, 200, "Endpoint not found after registration");
-
-    let endpoint_info: serde_json::Value = resp.json().await.expect("parse endpoint");
-    println!(
-        "        Endpoint: {}",
-        serde_json::to_string_pretty(&endpoint_info).unwrap_or_default()
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "Endpoint not found after registration"
     );
 
-    // ── Step 5: GET /g/{slug} without payment → 402 ───────────────────
     println!("\nStep 5: GET /g/{slug} without payment → expect 402");
     let resp = http
         .get(format!("{gateway_url}/g/{slug}"))
         .send()
         .await
         .expect("proxy request failed");
-    let status = resp.status().as_u16();
-    println!("        Status: {status}");
-    assert_eq!(status, 402, "Expected 402 for unpaid proxy, got {status}");
+    assert_eq!(resp.status().as_u16(), 402);
 
     let proxy_402: PaymentRequiredBody = resp.json().await.expect("parse proxy 402 body");
     let proxy_requirements = proxy_402
@@ -215,12 +170,7 @@ async fn e2e_full_payment_flow() {
         .iter()
         .find(|r| r.scheme == SCHEME_NAME)
         .expect("no tempo-tip20 in proxy 402");
-    println!(
-        "        Price: {} (amount: {})",
-        proxy_requirements.price, proxy_requirements.amount
-    );
 
-    // ── Step 6: GET /g/{slug} with payment → proxied response ─────────
     println!("\nStep 6: GET /g/{slug} with payment → expect proxied 200");
     let proxy_payment = sign_payment(&scheme, proxy_requirements).await;
 
@@ -232,7 +182,6 @@ async fn e2e_full_payment_flow() {
         .expect("paid proxy request failed");
 
     let status = resp.status().as_u16();
-    // Check for PAYMENT-RESPONSE header
     let payment_response = resp
         .headers()
         .get("payment-response")
@@ -242,7 +191,6 @@ async fn e2e_full_payment_flow() {
     let body = resp.text().await.unwrap_or_default();
     println!("        Status: {status}");
     if let Some(ref pr) = payment_response {
-        // Decode payment-response
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(pr) {
             if let Ok(settle) = serde_json::from_slice::<SettleResponse>(&bytes) {
                 println!(
@@ -252,39 +200,20 @@ async fn e2e_full_payment_flow() {
             }
         }
     }
-    println!(
-        "        Proxied body (first 200 chars): {}",
-        &body[..body.len().min(200)]
-    );
     assert_eq!(status, 200, "Paid proxy failed with {status}: {body}");
 
-    // ── Step 7: Check post-test balance ────────────────────────────────
     let new_balance = check_balance(address).await;
     let spent = balance.saturating_sub(new_balance);
-    println!("\nStep 7: Post-test balance");
-    println!("        Before: {} pathUSD", balance as f64 / 1_000_000.0);
-    println!(
-        "        After:  {} pathUSD",
-        new_balance as f64 / 1_000_000.0
-    );
-    println!(
-        "        Spent:  {} pathUSD (raw: {})",
-        spent as f64 / 1_000_000.0,
-        spent
-    );
-
+    println!("\nStep 7: Spent {} pathUSD", spent as f64 / 1_000_000.0);
     println!("\n=== E2E Test PASSED ===\n");
 }
 
-/// Register the permanent "demo" endpoint for the SPA frontend.
-/// Idempotent — skips if already registered.
 #[tokio::test]
-#[ignore] // e2e: runs via dedicated workflow, not cargo test --workspace
+#[ignore]
 async fn register_demo_endpoint() {
     let gateway_url = gateway_url();
     let http = reqwest::Client::new();
 
-    // Check if demo already exists
     let resp = http
         .get(format!("{gateway_url}/endpoints/demo"))
         .send()
@@ -298,7 +227,6 @@ async fn register_demo_endpoint() {
     let signer = client_signer();
     let scheme = TempoSchemeClient::new(signer);
 
-    // POST /register without payment -> 402
     let resp = http
         .post(format!("{gateway_url}/register"))
         .json(&serde_json::json!({

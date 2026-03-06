@@ -284,9 +284,9 @@ fn sign_with_local_key(
         .as_deref()
         .ok_or("No private key available")?;
 
-    let signer = x402_wallet::WalletSigner::new(private_key)?;
+    let signer = x402::wallet::WalletSigner::new(private_key)?;
 
-    let wallet_req = x402_wallet::PaymentRequirements {
+    let wallet_req = x402::wallet::PaymentRequirements {
         scheme: requirements.scheme.clone(),
         network: requirements.network.clone(),
         price: requirements.price.clone(),

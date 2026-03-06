@@ -9,7 +9,7 @@ Binary: `x402-gateway` on port 4023.
 ## Depends On
 
 - `x402` (core types, nonce store, HMAC, security, scheme server)
-- `x402-facilitator` (AppState as FacilitatorState, routes, webhooks — for embedded mode)
+- Facilitator is now an embedded module (`src/facilitator/`) — no external crate dependency
 
 ## Non-Obvious Patterns
 

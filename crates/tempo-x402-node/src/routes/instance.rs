@@ -184,7 +184,7 @@ pub async fn siblings(state: web::Data<NodeState>) -> HttpResponse {
 /// GET /instance/peers — decentralized peer discovery via on-chain ERC-8004 registry
 #[cfg(feature = "erc8004")]
 pub async fn peers(state: web::Data<NodeState>) -> HttpResponse {
-    let registry = x402_erc8004::identity_registry();
+    let registry = x402_identity::identity_registry();
     if registry == alloy::primitives::Address::ZERO {
         return HttpResponse::Ok().json(serde_json::json!({
             "source": "none",
@@ -206,7 +206,7 @@ pub async fn peers(state: web::Data<NodeState>) -> HttpResponse {
 
     let provider = alloy::providers::RootProvider::<alloy::network::Ethereum>::new_http(rpc_parsed);
 
-    match x402_erc8004::discovery::discover_peers(&provider, registry, self_address, 100).await {
+    match x402_identity::discovery::discover_peers(&provider, registry, self_address, 100).await {
         Ok(peers) => HttpResponse::Ok().json(serde_json::json!({
             "source": "on-chain",
             "registry": format!("{:#x}", registry),

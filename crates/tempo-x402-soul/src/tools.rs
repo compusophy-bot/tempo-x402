@@ -1044,12 +1044,12 @@ impl ToolExecutor {
             .first()
             .ok_or_else(|| "402 response 'accepts' array is empty".to_string())?;
 
-        let requirements: x402_wallet::PaymentRequirements =
+        let requirements: x402::wallet::PaymentRequirements =
             serde_json::from_value(req_value.clone())
                 .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
 
         // Step 3: Sign payment
-        let signer = x402_wallet::WalletSigner::new(&private_key)
+        let signer = x402::wallet::WalletSigner::new(&private_key)
             .map_err(|e| format!("failed to create signer: {e}"))?;
 
         let now_secs = std::time::SystemTime::now()
@@ -1242,7 +1242,7 @@ impl ToolExecutor {
                 rpc_url.parse().map_err(|e| format!("bad RPC URL: {e}"))?,
             );
 
-            match x402_erc8004::discovery::discover_peers(&provider, registry, self_address, 50)
+            match x402_identity::discovery::discover_peers(&provider, registry, self_address, 50)
                 .await
             {
                 Ok(peers) => {
@@ -1387,12 +1387,12 @@ impl ToolExecutor {
             .first()
             .ok_or_else(|| "402 response 'accepts' array is empty".to_string())?;
 
-        let requirements: x402_wallet::PaymentRequirements =
+        let requirements: x402::wallet::PaymentRequirements =
             serde_json::from_value(req_value.clone())
                 .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
 
         // Step 3: Sign payment using wallet signer (same pattern as register_endpoint)
-        let signer = x402_wallet::WalletSigner::new(&private_key)
+        let signer = x402::wallet::WalletSigner::new(&private_key)
             .map_err(|e| format!("failed to create signer: {e}"))?;
 
         let now_secs = std::time::SystemTime::now()

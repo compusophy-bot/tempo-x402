@@ -1,7 +1,7 @@
 use crate::config::GatewayConfig;
 use crate::db::Database;
+use crate::facilitator::state::AppState as FacilitatorState;
 use std::sync::Arc;
-use x402_facilitator::state::AppState as FacilitatorState;
 
 /// Shared application state
 #[derive(Clone)]

@@ -4,36 +4,33 @@
 
 x402 (HTTP 402 Payment Required) implementation for the **Tempo blockchain** using TIP-20 tokens (pathUSD). Pay-per-request API monetization where clients sign EIP-712 payment authorizations and a facilitator settles them on-chain.
 
-Rust workspace. Published as `tempo-x402`, `tempo-x402-server`, `tempo-x402-facilitator`, `tempo-x402-gateway`, `tempo-x402-wallet`, `tempo-x402-node`, `tempo-x402-identity`, `tempo-x402-agent`, `tempo-x402-soul` on crates.io.
+Rust workspace. Published as `tempo-x402`, `tempo-x402-gateway`, `tempo-x402-identity`, `tempo-x402-soul`, `tempo-x402-node` on crates.io.
 
 ## Architecture
 
 ```
-Client (x402-client) --> Resource Server (x402-server:4021) --> Facilitator (x402-facilitator:4022) --> Tempo Chain (42431)
-                \--- or uses x402-wallet (WASM) for signing ---/
+Client (x402::client) --> Gateway (x402-gateway:4023) --> Facilitator (embedded) --> Tempo Chain (42431)
+                \--- or uses x402::wallet (WASM) for signing ---/
 ```
 
-Three-party model: **Client** signs + pays, **Server** gates endpoints, **Facilitator** verifies + settles on-chain. The **Wallet** crate provides a lightweight, WASM-compatible alternative for signing (key generation + EIP-712) without network dependencies.
+Three-party model: **Client** signs + pays, **Gateway** gates endpoints + embeds facilitator, **Facilitator** verifies + settles on-chain. The `wallet` module provides a lightweight, WASM-compatible alternative for signing (key generation + EIP-712) without network dependencies.
 
 ## Workspace
 
 ```
 crates/
-├── tempo-x402/               # core lib: types, traits, EIP-712, nonce store, TIP-20
-├── tempo-x402-client/        # Rust SDK + CLI for making paid requests
-├── tempo-x402-server/        # resource server + payment middleware (actix-web)
-├── tempo-x402-facilitator/   # payment verification + on-chain settlement (actix-web)
-├── tempo-x402-gateway/       # API proxy with endpoint registration + embedded facilitator
-├── tempo-x402-wallet/        # WASM-compatible wallet: key gen, EIP-712 signing
-├── tempo-x402-node/          # self-deploying node: gateway + identity + clone orchestration
-├── tempo-x402-identity/      # wallet generation, persistence, faucet, parent registration
-├── tempo-x402-agent/         # Railway API client + clone orchestration
+├── tempo-x402/               # core lib: types, traits, EIP-712, nonce store, TIP-20, wallet, client SDK
+├── tempo-x402-gateway/       # API proxy + embedded facilitator + payment middleware
+├── tempo-x402-identity/      # wallet generation, persistence, faucet, on-chain ERC-8004 identity
 ├── tempo-x402-soul/          # agentic thinking loop powered by Gemini 3 Flash + nudge queue + stagnation detection
+├── tempo-x402-node/          # self-deploying node: gateway + identity + clone orchestration + Railway agent
 ├── tempo-x402-app/           # Leptos WASM demo SPA (not published)
-└── tempo-x402-security-audit/# test-only: 15 security invariant checks (not published)
+└── tempo-x402-security-audit/# test-only: security invariant checks (not published)
 ```
 
-Package names use `tempo-` prefix for crates.io. Library names stay `x402`, `x402_server`, `x402_facilitator`, `x402_wallet` in code.
+Package names use `tempo-` prefix for crates.io. Library names stay `x402`, `x402_gateway` in code.
+
+Dependency DAG: `x402 → gateway → node`, `x402 → identity → node`, `x402 → soul → node`.
 
 Each crate has its own `CLAUDE.md` with local context. Read that first when working in a crate.
 

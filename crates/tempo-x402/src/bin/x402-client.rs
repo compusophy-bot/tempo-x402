@@ -1,5 +1,5 @@
 use alloy::signers::local::PrivateKeySigner;
-use x402_client::{TempoSchemeClient, X402Client};
+use x402::client::{TempoSchemeClient, X402Client};
 
 #[tokio::main]
 async fn main() {

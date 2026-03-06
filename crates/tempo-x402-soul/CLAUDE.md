@@ -22,10 +22,9 @@ Observes node state via `NodeObserver` trait, can read/write/edit files and exec
 
 ## Depends On
 
-- `x402` (core types only)
-- `x402-wallet` (EIP-712 signing for `register_endpoint` tool)
+- `x402` (core types + wallet module for EIP-712 signing in `register_endpoint` tool)
 
-No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` trait — the node crate implements it.
+No dependency on gateway/identity/node. Communicates via `NodeObserver` trait — the node crate implements it.
 
 ## Module Overview
 

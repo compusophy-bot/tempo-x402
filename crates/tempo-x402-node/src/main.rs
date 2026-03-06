@@ -9,12 +9,18 @@ use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(feature = "agent")]
-use x402_agent::{CloneConfig, CloneOrchestrator, RailwayClient};
+use crate::clone::{CloneConfig, CloneOrchestrator};
+#[cfg(feature = "agent")]
+use crate::railway::RailwayClient;
 use x402_gateway::{
     config::GatewayConfig, db::Database, metrics::register_metrics, state::AppState as GatewayState,
 };
 
+#[cfg(feature = "agent")]
+mod clone;
 mod db;
+#[cfg(feature = "agent")]
+mod railway;
 mod routes;
 #[cfg(feature = "soul")]
 mod soul_observer;
@@ -89,19 +95,21 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
 
-        Some(x402_facilitator::bootstrap::bootstrap_embedded_facilitator(
-            x402_facilitator::bootstrap::BootstrapConfig {
-                private_key: key,
-                rpc_url: &config.rpc_url,
-                nonce_db_path: &config.nonce_db_path,
-                hmac_secret: config
-                    .hmac_secret
-                    .clone()
-                    .expect("HMAC secret must be set when embedded facilitator is enabled"),
-                webhook_urls: config.webhook_urls.clone(),
-                metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
-            },
-        ))
+        Some(
+            x402_gateway::facilitator::bootstrap::bootstrap_embedded_facilitator(
+                x402_gateway::facilitator::bootstrap::BootstrapConfig {
+                    private_key: key,
+                    rpc_url: &config.rpc_url,
+                    nonce_db_path: &config.nonce_db_path,
+                    hmac_secret: config
+                        .hmac_secret
+                        .clone()
+                        .expect("HMAC secret must be set when embedded facilitator is enabled"),
+                    webhook_urls: config.webhook_urls.clone(),
+                    metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
+                },
+            ),
+        )
     } else {
         tracing::info!("Facilitator URL: {}", config.facilitator_url);
         None
@@ -359,15 +367,15 @@ async fn main() -> std::io::Result<()> {
 
     // ── ERC-8004 reputation channel ─────────────────────────────────────
     #[cfg(feature = "erc8004")]
-    let reputation_tx = if x402_erc8004::reputation_enabled() {
-        let rep_registry = x402_erc8004::reputation_registry();
+    let reputation_tx = if x402_identity::reputation_enabled() {
+        let rep_registry = x402_identity::reputation_registry();
         if rep_registry != alloy::primitives::Address::ZERO {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<state::SettlementEvent>(256);
             let rep_rpc = rpc_url.clone();
             let agent_token = identity.as_ref().and_then(|id| id.agent_token_id.clone());
             let rep_private_key = identity.as_ref().map(|id| id.private_key.clone());
             tokio::spawn(async move {
-                use x402_erc8004::types::AgentId;
+                use x402_identity::types::AgentId;
 
                 let Some(pk) = rep_private_key else {
                     tracing::info!("ERC-8004 reputation: no identity, skipping");
@@ -401,7 +409,7 @@ async fn main() -> std::io::Result<()> {
 
                 while let Some(event) = rx.recv().await {
                     let metadata = event.tx_hash.as_deref().unwrap_or(&event.endpoint_slug);
-                    if let Err(e) = x402_erc8004::reputation::submit_feedback(
+                    if let Err(e) = x402_identity::reputation::submit_feedback(
                         &provider,
                         rep_registry,
                         &agent_id,
@@ -480,11 +488,11 @@ async fn main() -> std::io::Result<()> {
 
         // ERC-8004 auto-deploy + auto-mint (if enabled and no token ID yet)
         #[cfg(feature = "erc8004")]
-        if x402_erc8004::auto_mint_enabled() && id.agent_token_id.is_none() {
+        if x402_identity::auto_mint_enabled() && id.agent_token_id.is_none() {
             // Try loading previously deployed registries from disk
             let registries_path = std::env::var("ERC8004_REGISTRIES_PATH")
                 .unwrap_or_else(|_| "/data/erc8004_registries.json".to_string());
-            x402_erc8004::load_persisted_registries(&registries_path);
+            x402_identity::load_persisted_registries(&registries_path);
 
             let rpc_clone = rpc_url.clone();
             let owner = id.address;
@@ -509,12 +517,12 @@ async fn main() -> std::io::Result<()> {
                     .connect_http(rpc_clone.parse().expect("invalid RPC URL"));
 
                 // If no identity registry is configured, self-deploy contracts
-                let mut identity_registry = x402_erc8004::identity_registry();
+                let mut identity_registry = x402_identity::identity_registry();
                 if identity_registry == alloy::primitives::Address::ZERO {
                     tracing::info!(
                         "ERC-8004: no registry addresses configured — self-deploying contracts"
                     );
-                    match x402_erc8004::deploy::deploy_all(&provider).await {
+                    match x402_identity::deploy::deploy_all(&provider).await {
                         Ok(registries) => {
                             tracing::info!(
                                 identity = %registries.identity,
@@ -538,7 +546,7 @@ async fn main() -> std::io::Result<()> {
                             identity_registry = registries.identity;
                             // Persist to disk for next restart
                             if let Err(e) =
-                                x402_erc8004::save_deployed_registries(&reg_path, &registries)
+                                x402_identity::save_deployed_registries(&reg_path, &registries)
                             {
                                 tracing::warn!("Failed to persist registry addresses: {e}");
                             }
@@ -551,7 +559,7 @@ async fn main() -> std::io::Result<()> {
                 }
 
                 tracing::info!("ERC-8004: attempting to mint agent identity NFT");
-                match x402_erc8004::identity::mint(
+                match x402_identity::identity::mint(
                     &provider,
                     identity_registry,
                     owner,
@@ -930,8 +938,8 @@ async fn main() -> std::io::Result<()> {
             app = app.service(
                 web::scope("/facilitator")
                     .app_data(fac_data.clone())
-                    .service(x402_facilitator::routes::supported)
-                    .service(x402_facilitator::routes::verify_and_settle),
+                    .service(x402_gateway::facilitator::routes::supported)
+                    .service(x402_gateway::facilitator::routes::verify_and_settle),
             );
         }
 

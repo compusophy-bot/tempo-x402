@@ -54,19 +54,21 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
 
-        Some(x402_facilitator::bootstrap::bootstrap_embedded_facilitator(
-            x402_facilitator::bootstrap::BootstrapConfig {
-                private_key: key,
-                rpc_url: &config.rpc_url,
-                nonce_db_path: &config.nonce_db_path,
-                hmac_secret: config
-                    .hmac_secret
-                    .clone()
-                    .expect("HMAC secret must be set when embedded facilitator is enabled"),
-                webhook_urls: config.webhook_urls.clone(),
-                metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
-            },
-        ))
+        Some(
+            x402_gateway::facilitator::bootstrap::bootstrap_embedded_facilitator(
+                x402_gateway::facilitator::bootstrap::BootstrapConfig {
+                    private_key: key,
+                    rpc_url: &config.rpc_url,
+                    nonce_db_path: &config.nonce_db_path,
+                    hmac_secret: config
+                        .hmac_secret
+                        .clone()
+                        .expect("HMAC secret must be set when embedded facilitator is enabled"),
+                    webhook_urls: config.webhook_urls.clone(),
+                    metrics_token: config.metrics_token.as_ref().map(|t| t.as_bytes().to_vec()),
+                },
+            ),
+        )
     } else {
         tracing::info!("Facilitator URL: {}", config.facilitator_url);
         None
@@ -131,8 +133,8 @@ async fn main() -> std::io::Result<()> {
             app = app.service(
                 web::scope("/facilitator")
                     .app_data(fac_data.clone())
-                    .service(x402_facilitator::routes::supported)
-                    .service(x402_facilitator::routes::verify_and_settle),
+                    .service(x402_gateway::facilitator::routes::supported)
+                    .service(x402_gateway::facilitator::routes::verify_and_settle),
             );
         }
 

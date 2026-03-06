@@ -4,7 +4,7 @@
 //! that a wallet controls a specific address — needed for recovery address setup.
 
 use alloy::primitives::Address;
-use x402_wallet::{recover_message_signer, WalletSigner};
+use x402::{recover_message_signer, WalletSigner};
 
 /// A signed proof that the signer controls a specific address.
 #[derive(Clone, Debug)]

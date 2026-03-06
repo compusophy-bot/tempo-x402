@@ -9,11 +9,10 @@ Binary: `x402-node` on port 4023.
 ## Depends On
 
 - `x402` (core)
-- `x402-gateway` (AppState, Database, middleware, config, routes)
-- `x402-identity` (bootstrap, faucet, registration)
-- `x402-agent` (CloneOrchestrator)
-- `x402-facilitator` (embedded facilitator state, routes)
+- `x402-gateway` (AppState, Database, middleware, config, routes, embedded facilitator)
+- `x402-identity` (bootstrap, faucet, registration, on-chain ERC-8004)
 - `x402-soul` (SoulDatabase for status queries)
+- Clone orchestration (`clone.rs`, `railway.rs`) is now inline (absorbed from former x402-agent crate)
 
 ## Non-Obvious Patterns
 

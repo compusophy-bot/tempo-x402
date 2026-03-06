@@ -1,13 +1,13 @@
 # tempo-x402-identity
 
-Library crate. Identity management for x402 node instances. Single-file crate (`src/lib.rs`).
+Library crate. Identity management for x402 node instances: off-chain bootstrap + on-chain ERC-8004 identity.
 
-Generates/loads wallet keypairs, persists to disk, requests faucet funds, registers with parent node. Adds server-side concerns (file I/O, HTTP) on top of x402-wallet's pure crypto.
+Off-chain (`lib.rs`): generates/loads wallet keypairs, persists to disk, requests faucet funds, registers with parent node.
+On-chain (`erc8004` feature): sol! contract bindings, NFT identity minting, reputation, validation, peer discovery, self-deployment.
 
 ## Depends On
 
-- `x402-wallet` (key generation, WalletSigner)
-- `x402` (HMAC for deriving facilitator shared secret)
+- `x402` (wallet for key generation, HMAC for deriving facilitator shared secret)
 
 ## Non-Obvious Patterns
 

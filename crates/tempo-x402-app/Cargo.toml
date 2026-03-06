@@ -43,7 +43,7 @@ web-sys = { version = "0.3", features = [
     "SubtleCrypto",
     "CryptoKey",
 ] }
-x402-wallet = { path = "../tempo-x402-wallet", package = "tempo-x402-wallet", features = ["demo"] }
+x402 = { path = "../tempo-x402", package = "tempo-x402", default-features = false, features = ["wasm", "demo"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"

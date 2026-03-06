@@ -2,13 +2,15 @@
 
 Library name: `x402`. Foundation crate — all other crates depend on this.
 
-Core protocol types, EIP-712 signing, TIP-20 contract calls, nonce replay protection (InMemory + SQLite), and trait abstractions (SchemeClient, SchemeFacilitator, SchemeServer).
+Core protocol types, EIP-712 signing, TIP-20 contract calls, nonce replay protection (InMemory + SQLite), trait abstractions (SchemeClient, SchemeFacilitator, SchemeServer), WASM-compatible wallet, and client SDK.
 
-Binary: `x402-approve` — CLI for token approval to facilitator.
+Features: `full` (default — all modules), `wasm` (types + wallet only, no tokio/rusqlite/reqwest), `demo` (demo private key).
+
+Binaries: `x402-approve` (token approval CLI), `x402-client` (paid request demo). Both require `full` feature.
 
 ## Depends On
 
-No workspace crates. External: alloy, serde, dashmap, rusqlite, reqwest, hmac/sha2/subtle.
+No workspace crates. External: alloy, serde, dashmap, rusqlite, reqwest, hmac/sha2/subtle (heavy deps optional behind `full` feature).
 
 ## Non-Obvious Patterns
 
@@ -21,8 +23,8 @@ No workspace crates. External: alloy, serde, dashmap, rusqlite, reqwest, hmac/sh
 
 ## If You're Changing...
 
-- **EIP-712 struct fields**: Update `PaymentAuthorization` sol! macro in BOTH `lib.rs` AND `x402-wallet/src/lib.rs`
-- **Chain constants**: Update `constants.rs` AND `x402-wallet/src/lib.rs` (wallet mirrors them; test verifies sync)
+- **EIP-712 struct fields**: Update `PaymentAuthorization` sol! macro in `lib.rs` (wallet.rs uses the same one)
+- **Chain constants**: Update `constants.rs` (wallet.rs mirrors domain name/version as local constants)
 - **NonceStore trait**: Both InMemory and Sqlite impls must be updated. Security-audit checks Sqlite is used in prod.
 - **Price parsing**: `scheme_server.rs` has edge-case tests — run them
 - **HMAC or security module**: Security-audit crate tests for constant-time usage patterns

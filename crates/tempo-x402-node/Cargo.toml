@@ -16,17 +16,14 @@ path = "src/main.rs"
 [features]
 default = ["soul", "agent"]
 soul = ["dep:x402-soul"]
-agent = ["dep:x402-agent"]
-erc8004 = ["dep:x402-erc8004"]
+agent = []
+erc8004 = ["x402-identity/erc8004"]
 
 [dependencies]
 x402 = { workspace = true }
-x402-agent = { workspace = true, optional = true }
-x402-facilitator = { workspace = true }
 x402-gateway = { workspace = true }
 x402-identity = { workspace = true }
 x402-soul = { workspace = true, optional = true }
-x402-erc8004 = { workspace = true, optional = true }
 actix-web = { workspace = true }
 actix-files = { workspace = true }
 actix-governor = { workspace = true }
