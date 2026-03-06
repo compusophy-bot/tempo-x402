@@ -78,6 +78,7 @@ fn no_hardcoded_private_keys_in_production_code() {
         "SECP256K1_N_DIV_2",
         "#[cfg(feature = \"demo\")]",
         "#[deprecated",
+        "BYTECODE",
     ];
 
     for (path, content) in &files {

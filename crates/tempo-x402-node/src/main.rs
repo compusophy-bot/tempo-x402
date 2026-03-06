@@ -17,9 +17,11 @@ use x402_gateway::{
 };
 
 #[cfg(feature = "agent")]
+#[allow(dead_code)]
 mod clone;
 mod db;
 #[cfg(feature = "agent")]
+#[allow(dead_code)]
 mod railway;
 mod routes;
 #[cfg(feature = "soul")]
