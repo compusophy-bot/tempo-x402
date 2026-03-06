@@ -64,8 +64,8 @@ No dependency on gateway/identity/agent/node. Communicates via `NodeObserver` tr
 - Plan completed → 300s (time to create next plan)
 - No goals → 600s
 
-### PlanStep Types (9 variants)
-**Mechanical (no LLM):** ReadFile, SearchCode, ListDir, RunShell, Commit, CheckSelf
+### PlanStep Types (12 variants)
+**Mechanical (no LLM):** ReadFile, SearchCode, ListDir, RunShell, Commit, CheckSelf, CreateScriptEndpoint, TestScriptEndpoint, CargoCheck
 **LLM-assisted:** GenerateCode, EditCode, Think
 
 Each step can have `store_as` to accumulate results in plan context. LLM steps reference context via `context_keys`.
@@ -89,6 +89,12 @@ Each step can have `store_as` to accumulate results in plan context. LLM steps r
 - Replan limit: 3 attempts before plan is marked Failed
 - LLM called only for: goal creation, plan creation, code steps (GenerateCode/EditCode), reflection, replanning
 - Mechanical steps use ToolExecutor directly — no LLM overhead
+- Mechanical step batching: consecutive non-LLM steps execute in a single cycle (no 30s gaps between reads)
+- Compile-fix loop: after GenerateCode/EditCode, runs cargo check and feeds errors back to LLM for up to 3 fix attempts
+- Code step tools: read_file, write_file, edit_file, list_directory, search_files, execute_shell, commit_changes (budget: 20 calls)
+- Goal deduplication: new goals with similar descriptions to existing active goals are silently skipped
+- Script endpoints: bash scripts at `/data/endpoints/{slug}.sh` served at `/x/{slug}` — instant, no compilation
+- Runtime tools in scripts: bash, jq, python3, curl, bc, git, date, sed, awk, grep
 - Dormant mode: without `GEMINI_API_KEY`, still observes and records, skips LLM calls
 - Gemini 3+ requires `thoughtSignature` passback on function calls — handled in `llm.rs`
 - Fork workflow: `SOUL_FORK_REPO` + `SOUL_UPSTREAM_REPO` enable push-to-fork + cross-fork PRs
