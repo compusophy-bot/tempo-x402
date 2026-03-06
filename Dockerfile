@@ -31,7 +31,10 @@ RUN cargo build --release --package tempo-x402-gateway --package tempo-x402-node
 # Stage 2: Runtime
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates gosu git curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates gosu git curl \
+    jq python3 bc \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI for soul PR/issue creation
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

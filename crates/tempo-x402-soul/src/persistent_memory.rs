@@ -22,21 +22,38 @@ Use create_script_endpoint to write bash scripts that become HTTP endpoints inst
 - Test with: test_script_endpoint before advertising
 - List with: list_script_endpoints to see what exists
 
-Example (timestamp endpoint):
+Available tools in scripts: bash, jq, python3, curl, bc, git, date, sed, awk, grep
+NOT available: node, npm, ruby, go, cargo (no compilers in runtime)
+
+Example (JSON formatting with jq):
 ```bash
 #!/bin/bash
-echo '{\"unix\":'$(date +%s)',\"iso\":\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}'
+echo \"$REQUEST_BODY\" | jq '.' 2>/dev/null || echo '{\"error\":\"invalid JSON\",\"input\":\"'\"$REQUEST_BODY\"'\"}'
+```
+
+Example (python3 for complex logic):
+```bash
+#!/bin/bash
+python3 -c \"
+import json,sys
+body = '''$REQUEST_BODY'''
+try:
+    d = json.loads(body)
+    print(json.dumps({'result': d, 'valid': True}, indent=2))
+except: print(json.dumps({'error': str(sys.exc_info()[1]), 'valid': False}))
+\"
 ```
 
 ## Rust Endpoints (for complex logic only)
 - File: crates/tempo-x402-node/src/routes/utils.rs
 - CANNOT modify: Cargo.toml, Dockerfile, soul crate, identity crate
-- Requires: read file → edit → commit → wait for deploy
+- Requires: read file → edit → cargo_check → commit → wait for deploy
 
 ## Lessons
 - Script endpoints first, Rust only when bash can't do it.
 - Test before advertising. Simple is better than clever.
 - Do NOT edit deployment config — it wastes plans.
+- jq and python3 ARE available in scripts. Use them for JSON processing.
 ";
 
 /// Read the persistent memory file, or create it with seed content on first boot.

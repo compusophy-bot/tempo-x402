@@ -210,10 +210,17 @@ pub fn planning_prompt(
          Use create_script_endpoint to write a bash script. It becomes live at /x/{{slug}} immediately.\n\
          Steps: 1) create_script_endpoint with slug + bash script  2) test_script_endpoint to verify  3) Done!\n\
          The script gets REQUEST_BODY, REQUEST_METHOD, QUERY_STRING as env vars. Output JSON to stdout.\n\
-         Example:\n\
+         Available tools in scripts: bash, jq, python3, curl, bc, git, date, sed, awk, grep.\n\
+         Use jq for JSON processing. Use python3 for complex logic. Use curl to call external APIs.\n\
+         Example (jq):\n\
          ```bash\n\
          #!/bin/bash\n\
-         echo '{{\"timestamp\": '$(date +%s)', \"iso\": \"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"}}'\n\
+         echo \"$REQUEST_BODY\" | jq '.' 2>/dev/null || echo '{{\"error\":\"invalid JSON\"}}'\n\
+         ```\n\
+         Example (python3):\n\
+         ```bash\n\
+         #!/bin/bash\n\
+         python3 -c \"import json,sys; print(json.dumps({{'time':__import__('time').time()}}))\"\n\
          ```\n\n\
          ## Option B: Rust Endpoints (for complex logic, requires compilation + deploy)\n\
          Edit `crates/tempo-x402-node/src/routes/utils.rs` — add handler fn + .service() in configure.\n\

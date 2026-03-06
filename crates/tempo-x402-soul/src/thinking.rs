@@ -1546,6 +1546,31 @@ impl ThinkingLoop {
                 parent_goal_id,
             } => {
                 use crate::world_model::GoalStatus;
+
+                let active_goals = self.db.get_active_goals().unwrap_or_default();
+
+                // Cap at 10 active goals
+                if active_goals.len() >= 10 {
+                    tracing::warn!("Goal cap reached (10 active)");
+                    return Ok(false);
+                }
+
+                // Dedup: skip if an active goal has very similar description
+                let desc_lower = description.to_lowercase();
+                let is_duplicate = active_goals.iter().any(|g| {
+                    let existing = g.description.to_lowercase();
+                    // Exact match or high overlap (one contains the other's key words)
+                    existing == desc_lower
+                        || (desc_lower.len() > 20
+                            && existing.len() > 20
+                            && (existing.contains(&desc_lower[..desc_lower.len().min(40)])
+                                || desc_lower.contains(&existing[..existing.len().min(40)])))
+                });
+                if is_duplicate {
+                    tracing::info!(%description, "Skipping duplicate goal");
+                    return Ok(false);
+                }
+
                 let goal = Goal {
                     id: uuid::Uuid::new_v4().to_string(),
                     description: description.clone(),
@@ -1559,11 +1584,6 @@ impl ThinkingLoop {
                     updated_at: now,
                     completed_at: None,
                 };
-                let active_count = self.db.get_active_goals().map(|g| g.len()).unwrap_or(0);
-                if active_count >= 10 {
-                    tracing::warn!("Goal cap reached (10 active)");
-                    return Ok(false);
-                }
                 self.db.insert_goal(&goal)?;
                 tracing::info!(goal_id = %goal.id, %description, "Goal created");
                 Ok(true)
