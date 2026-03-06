@@ -578,6 +578,61 @@ async fn soul_nudges(state: web::Data<NodeState>) -> HttpResponse {
     }
 }
 
+/// POST /soul/goals/abandon-all — abandon all active goals (emergency reset).
+async fn abandon_all_goals(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    match soul_db.abandon_all_active_goals() {
+        Ok(count) => HttpResponse::Ok().json(serde_json::json!({
+            "abandoned": count,
+            "status": "ok"
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("failed to abandon goals: {e}")
+        })),
+    }
+}
+
+/// POST /soul/goals/abandon — abandon a single goal by ID.
+#[derive(Deserialize)]
+struct AbandonGoalRequest {
+    goal_id: String,
+}
+
+async fn abandon_goal(
+    state: web::Data<NodeState>,
+    body: web::Json<AbandonGoalRequest>,
+) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    match soul_db.update_goal(
+        &body.goal_id,
+        Some("abandoned"),
+        None,
+        Some(chrono::Utc::now().timestamp()),
+    ) {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "goal_id": body.goal_id,
+            "status": "abandoned"
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("failed to abandon goal: {e}")
+        })),
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(soul_status))
         .route("/soul/chat", web::post().to(soul_chat))
@@ -587,5 +642,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/plan/reject", web::post().to(plan_reject))
         .route("/soul/plan/pending", web::get().to(plan_pending))
         .route("/soul/nudge", web::post().to(soul_nudge))
-        .route("/soul/nudges", web::get().to(soul_nudges));
+        .route("/soul/nudges", web::get().to(soul_nudges))
+        .route(
+            "/soul/goals/abandon-all",
+            web::post().to(abandon_all_goals),
+        )
+        .route("/soul/goals/abandon", web::post().to(abandon_goal));
 }
