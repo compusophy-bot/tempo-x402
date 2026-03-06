@@ -60,6 +60,7 @@ alloy = { version = "1", features = [
     "contract",
     "provider-http",
     "network",
+    "rpc-types",
 ] }
 
 # Optimize WASM builds for small size

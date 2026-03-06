@@ -39,7 +39,7 @@ pub async fn mint<P: Provider>(
 
     // Extract token ID from Transfer event logs (ERC-721 Transfer(from, to, tokenId))
     // Transfer event topic: keccak256("Transfer(address,address,uint256)")
-    for log in &receipt.inner.logs() {
+    for log in receipt.inner.logs() {
         if log.topics().len() == 4 {
             // ERC-721 Transfer has tokenId as the 4th topic
             let token_id = U256::from_be_bytes(log.topics()[3].0);

@@ -3,7 +3,8 @@
 //! Embeds compiled Solidity bytecode for the three registries and deploys
 //! them on-chain. Used by the node to bootstrap its own identity infrastructure.
 
-use alloy::primitives::Address;
+use alloy::network::TransactionBuilder;
+use alloy::primitives::{Address, Bytes};
 use alloy::providers::Provider;
 use std::time::Duration;
 use x402::X402Error;
@@ -26,7 +27,8 @@ async fn deploy_bytecode<P: Provider>(
     let bytecode = alloy::hex::decode(bytecode_hex.strip_prefix("0x").unwrap_or(bytecode_hex))
         .map_err(|e| X402Error::ChainError(format!("{label} bytecode decode failed: {e}")))?;
 
-    let tx = alloy::network::TransactionRequest::default().with_deploy_code(bytecode);
+    let tx =
+        alloy::rpc::types::TransactionRequest::default().with_deploy_code(Bytes::from(bytecode));
 
     let pending = tokio::time::timeout(Duration::from_secs(30), provider.send_transaction(tx))
         .await
@@ -42,7 +44,7 @@ async fn deploy_bytecode<P: Provider>(
         return Err(X402Error::ChainError(format!("{label} deploy reverted")));
     }
 
-    receipt.contract_address().ok_or_else(|| {
+    receipt.contract_address.ok_or_else(|| {
         X402Error::ChainError(format!(
             "{label} deploy succeeded but no contract address in receipt"
         ))
