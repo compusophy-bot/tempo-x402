@@ -66,10 +66,16 @@ pub async fn handle_script(
     }
     let headers_str = serde_json::to_string(&headers_json).unwrap_or_default();
 
+    // SECURITY: clear inherited environment to prevent scripts from accessing
+    // secrets (API keys, private keys, tokens). Only pass the sandbox vars.
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(SCRIPT_TIMEOUT_SECS),
         tokio::process::Command::new("bash")
             .arg(script_path.to_str().unwrap_or_default())
+            .env_clear()
+            .env("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            .env("HOME", "/tmp")
+            .env("LANG", "C.UTF-8")
             .env("REQUEST_METHOD", &method)
             .env("QUERY_STRING", &query)
             .env("REQUEST_BODY", &body_str)
