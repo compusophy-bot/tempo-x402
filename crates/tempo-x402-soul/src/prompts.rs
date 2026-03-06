@@ -235,8 +235,6 @@ pub fn goal_creation_prompt(
     );
 
     sections.push(task_section);
-            .to_string(),
-    );
 
     sections.join("\n\n")
 }
