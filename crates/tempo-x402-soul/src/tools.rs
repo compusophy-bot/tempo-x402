@@ -1238,10 +1238,8 @@ impl ToolExecutor {
                 .ok()
                 .and_then(|s| s.parse::<alloy::primitives::Address>().ok());
 
-            let provider = alloy::providers::RootProvider::<
-                alloy::transports::http::Http<reqwest::Client>,
-            >::new_http(
-                rpc_url.parse().map_err(|e| format!("bad RPC URL: {e}"))?
+            let provider = alloy::providers::RootProvider::<alloy::network::Ethereum>::new_http(
+                rpc_url.parse().map_err(|e| format!("bad RPC URL: {e}"))?,
             );
 
             match x402_erc8004::discovery::discover_peers(&provider, registry, self_address, 50)

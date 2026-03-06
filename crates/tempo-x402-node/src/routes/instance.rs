@@ -204,10 +204,7 @@ pub async fn peers(state: web::Data<NodeState>) -> HttpResponse {
         }));
     };
 
-    let provider =
-        alloy::providers::RootProvider::<alloy::transports::http::Http<reqwest::Client>>::new_http(
-            rpc_parsed,
-        );
+    let provider = alloy::providers::RootProvider::<alloy::network::Ethereum>::new_http(rpc_parsed);
 
     match x402_erc8004::discovery::discover_peers(&provider, registry, self_address, 100).await {
         Ok(peers) => HttpResponse::Ok().json(serde_json::json!({
