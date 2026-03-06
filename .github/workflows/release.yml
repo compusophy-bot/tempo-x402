@@ -55,7 +55,7 @@ jobs:
           echo "✓ Tag matches core version: $CORE_VERSION"
 
           # Check all crates match
-          for crate in tempo-x402-client tempo-x402-server tempo-x402-facilitator tempo-x402-gateway tempo-x402-wallet tempo-x402-identity tempo-x402-agent tempo-x402-soul tempo-x402-node tempo-x402-app tempo-x402-security-audit; do
+          for crate in tempo-x402-gateway tempo-x402-identity tempo-x402-soul tempo-x402-node tempo-x402-app tempo-x402-security-audit; do
             CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
             if [ "$CRATE_VERSION" != "$CORE_VERSION" ]; then
               echo "❌ crates/$crate version ($CRATE_VERSION) != core ($CORE_VERSION)"
@@ -182,7 +182,7 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           mkdir -p dist
-          for bin in x402-server x402-facilitator x402-client x402-approve x402-gateway x402-node; do
+          for bin in x402-approve x402-client x402-facilitator x402-gateway x402-node; do
             src="target/${{ matrix.target }}/release/${bin}"
             if [ -f "$src" ]; then
               cp "$src" "dist/${bin}-${tag}-${{ matrix.target }}"
@@ -261,21 +261,14 @@ jobs:
           # Layer 1: core (no workspace deps)
           publish_crate tempo-x402
 
-          # Layer 2: wallet (dev-dep on x402 only)
-          publish_crate tempo-x402-wallet
-
-          # Layer 3: depend on x402 only
-          publish_crate tempo-x402-client
-          publish_crate tempo-x402-server
-          publish_crate tempo-x402-facilitator
-
-          # Layer 4: depend on layer 2+3
+          # Layer 2: depend on x402 only
           publish_crate tempo-x402-identity
-          publish_crate tempo-x402-gateway
-          publish_crate tempo-x402-agent
           publish_crate tempo-x402-soul
 
-          # Layer 5: depends on everything
+          # Layer 3: depend on x402
+          publish_crate tempo-x402-gateway
+
+          # Layer 4: depends on everything
           publish_crate tempo-x402-node
 
           echo ""

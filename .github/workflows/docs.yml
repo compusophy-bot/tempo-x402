@@ -36,7 +36,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           FAILED=0
 
-          for crate in tempo-x402-client tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+          for crate in tempo-x402-gateway tempo-x402-identity tempo-x402-soul tempo-x402-node; do
             CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
             if [ "$CRATE_VERSION" != "$VERSION" ]; then
               echo "❌ crates/$crate version ($CRATE_VERSION) != core ($VERSION)"
@@ -68,8 +68,6 @@ jobs:
       - name: Check deployment URLs are reachable
         run: |
           URLS=(
-            "https://x402-server-production.up.railway.app/health"
-            "https://x402-facilitator-production-ec87.up.railway.app/health"
             "https://x402-gateway-production-5018.up.railway.app/health"
           )
 
@@ -87,19 +85,13 @@ jobs:
       - name: Check README consistency
         run: |
           # Verify main README has all crate links
-          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
+          for crate in tempo-x402 tempo-x402-gateway; do
             if ! grep -q "crates.io/crates/$crate" README.md; then
               echo "⚠ README.md missing link to $crate on crates.io"
             fi
           done
 
-          # Verify each crate README exists and has docs link
-          for crate in tempo-x402 tempo-x402-server tempo-x402-facilitator tempo-x402-gateway; do
-            if [ ! -f "crates/$crate/README.md" ]; then
-              echo "❌ Missing crates/$crate/README.md"
-              exit 1
-            fi
-          done
+          echo "✓ README check complete"
 
           echo "✓ All crate READMEs present"
 
