@@ -1312,6 +1312,40 @@ impl SoulDatabase {
         Ok(count)
     }
 
+    /// Get recently abandoned/failed goals (for retread detection).
+    pub fn get_recently_abandoned_goals(&self, limit: u32) -> Result<Vec<Goal>, SoulError> {
+        let conn = self.conn.lock().map_err(|_| {
+            SoulError::Database(rusqlite::Error::InvalidParameterName(
+                "lock poisoned".into(),
+            ))
+        })?;
+        let mut stmt = conn.prepare(
+            "SELECT id, description, status, priority, success_criteria, progress_notes, \
+             parent_goal_id, retry_count, created_at, updated_at, completed_at \
+             FROM goals WHERE status IN ('abandoned', 'completed') \
+             ORDER BY updated_at DESC LIMIT ?1",
+        )?;
+        let goals = stmt
+            .query_map(params![limit], |row| {
+                Ok(Goal {
+                    id: row.get(0)?,
+                    description: row.get(1)?,
+                    status: GoalStatus::parse(&row.get::<_, String>(2)?).unwrap_or(GoalStatus::Abandoned),
+                    priority: row.get(3)?,
+                    success_criteria: row.get(4)?,
+                    progress_notes: row.get::<_, String>(5).unwrap_or_default(),
+                    parent_goal_id: row.get(6)?,
+                    retry_count: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    completed_at: row.get(10)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(goals)
+    }
+
     // ── Chat session operations ──
 
     /// Create a new chat session. Returns the session ID.

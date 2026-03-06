@@ -927,6 +927,11 @@ impl ThinkingLoop {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
         let failed_plans = self.db.count_plans_by_status("failed").unwrap_or(0);
+        let recently_abandoned = self.db.get_recently_abandoned_goals(5).unwrap_or_default();
+        let failed_descriptions: Vec<String> = recently_abandoned
+            .iter()
+            .map(|g| g.description.clone())
+            .collect();
         let prompt = prompts::goal_creation_prompt(
             snapshot,
             &beliefs,
@@ -935,6 +940,7 @@ impl ThinkingLoop {
             failed_plans,
             total_cycles,
             &recent_errors,
+            &failed_descriptions,
         );
         let system = "You are an autonomous agent. Output ONLY a JSON array of goal operations.";
 
@@ -1549,25 +1555,58 @@ impl ThinkingLoop {
 
                 let active_goals = self.db.get_active_goals().unwrap_or_default();
 
-                // Cap at 10 active goals
-                if active_goals.len() >= 10 {
-                    tracing::warn!("Goal cap reached (10 active)");
+                // Cap at 3 active goals — prevents goal sprawl
+                if active_goals.len() >= 3 {
+                    tracing::warn!("Goal cap reached (3 active)");
                     return Ok(false);
                 }
 
-                // Dedup: skip if an active goal has very similar description
+                // Dedup: skip if an active goal has similar description (Jaccard word similarity)
                 let desc_lower = description.to_lowercase();
+                let desc_words: std::collections::HashSet<String> =
+                    desc_lower.split_whitespace()
+                        .filter(|w| w.len() > 3) // skip short words like "the", "and", "for"
+                        .map(|w| w.to_string())
+                        .collect();
                 let is_duplicate = active_goals.iter().any(|g| {
-                    let existing = g.description.to_lowercase();
-                    // Exact match or high overlap (one contains the other's key words)
-                    existing == desc_lower
-                        || (desc_lower.len() > 20
-                            && existing.len() > 20
-                            && (existing.contains(&desc_lower[..desc_lower.len().min(40)])
-                                || desc_lower.contains(&existing[..existing.len().min(40)])))
+                    let existing_lower = g.description.to_lowercase();
+                    let existing_words: std::collections::HashSet<String> =
+                        existing_lower.split_whitespace()
+                            .filter(|w| w.len() > 3)
+                            .map(|w| w.to_string())
+                            .collect();
+                    if desc_words.is_empty() || existing_words.is_empty() {
+                        return false;
+                    }
+                    let intersection = desc_words.intersection(&existing_words).count();
+                    let union = desc_words.union(&existing_words).count();
+                    let similarity = intersection as f64 / union as f64;
+                    similarity > 0.4 // 40% word overlap = duplicate
                 });
                 if is_duplicate {
-                    tracing::info!(%description, "Skipping duplicate goal");
+                    tracing::info!(%description, "Skipping duplicate goal (word similarity)");
+                    return Ok(false);
+                }
+
+                // Also skip if recently abandoned goal has similar description
+                let recently_abandoned = self.db.get_recently_abandoned_goals(10).unwrap_or_default();
+                let is_retread = recently_abandoned.iter().any(|g| {
+                    let existing_lower = g.description.to_lowercase();
+                    let existing_words: std::collections::HashSet<String> =
+                        existing_lower.split_whitespace()
+                            .filter(|w| w.len() > 3)
+                            .map(|w| w.to_string())
+                            .collect();
+                    if desc_words.is_empty() || existing_words.is_empty() {
+                        return false;
+                    }
+                    let intersection = desc_words.intersection(&existing_words).count();
+                    let union = desc_words.union(&existing_words).count();
+                    let similarity = intersection as f64 / union as f64;
+                    similarity > 0.5 // 50% overlap with abandoned = retread
+                });
+                if is_retread {
+                    tracing::info!(%description, "Skipping retread of abandoned goal");
                     return Ok(false);
                 }
 

@@ -79,6 +79,7 @@ pub fn goal_creation_prompt(
     failed_plans: u64,
     total_cycles: u64,
     recent_errors: &[String],
+    recently_failed_goals: &[String],
 ) -> String {
     let mut sections = Vec::new();
 
@@ -155,12 +156,28 @@ pub fn goal_creation_prompt(
         sections.push(diag_lines.join("\n"));
     }
 
+    // Show recently failed/abandoned goals so LLM doesn't repeat them
+    if !recently_failed_goals.is_empty() {
+        let mut failed_lines =
+            vec!["# Recently Failed Goals (do NOT retry these — try something DIFFERENT)".to_string()];
+        for desc in recently_failed_goals.iter().take(5) {
+            failed_lines.push(format!("- {desc}"));
+        }
+        sections.push(failed_lines.join("\n"));
+    }
+
     sections.push(
         "# Task\n\
          You have NO active goals. Create 1-3 goals that will make this node useful to other agents.\n\
          Focus on: building paid API endpoints that other AI agents will call via x402.\n\n\
          If there are pending nudges, prioritize those. If there are recent errors, avoid repeating \
          the same approach that caused them.\n\n\
+         IMPORTANT RULES:\n\
+         - Create 1-2 goals MAX (not 3+)\n\
+         - ALWAYS use script endpoints (create_script_endpoint) — they work instantly with no compilation\n\
+         - Do NOT create goals to edit Rust source code unless explicitly asked by a nudge\n\
+         - Do NOT create \"fix\" goals — if something failed before, try a DIFFERENT approach entirely\n\
+         - Each goal should produce a NEW, DIFFERENT endpoint — not retry a failed one\n\n\
          Respond with a JSON array of goal operations:\n\
          ```json\n\
          [\n\
@@ -222,11 +239,11 @@ pub fn planning_prompt(
          #!/bin/bash\n\
          python3 -c \"import json,sys; print(json.dumps({{'time':__import__('time').time()}}))\"\n\
          ```\n\n\
-         ## Option B: Rust Endpoints (for complex logic, requires compilation + deploy)\n\
-         Edit `crates/tempo-x402-node/src/routes/utils.rs` — add handler fn + .service() in configure.\n\
-         Must read the file first. End with commit step. Available: actix_web, alloy, serde_json.\n\
-         CANNOT modify: Cargo.toml, Dockerfile, railway.toml, soul crate, identity crate.\n\n\
-         PREFER script endpoints unless you specifically need Rust's type system or performance.\n\n\
+         ## Option B: Rust Endpoints (ADVANCED — almost never needed)\n\
+         WARNING: Editing Rust source code requires the full project to compile. Past attempts to \
+         edit utils.rs have consistently failed with cargo check errors. Do NOT attempt Rust code \
+         changes unless a nudge explicitly requests it.\n\n\
+         USE SCRIPT ENDPOINTS. They are instant, always work, and support jq + python3 for complex logic.\n\n\
          # Task\n\
          Create a step-by-step plan to achieve this goal. Each step is one of:\n\n\
          Mechanical (no LLM needed):\n\
@@ -368,11 +385,14 @@ pub fn reflection_prompt(
          Respond with a JSON array of goal/belief updates:\n\
          ```json\n\
          [\n\
-           {{\"op\": \"complete_goal\", \"goal_id\": \"...\", \"outcome\": \"...\"}},\n\
-           {{\"op\": \"create_goal\", \"description\": \"next step...\", \"success_criteria\": \"...\", \"priority\": 3}}\n\
+           {{\"op\": \"complete_goal\", \"goal_id\": \"...\", \"outcome\": \"...\"}}\n\
          ]\n\
          ```\n\
-         Or if the goal isn't done yet, use update_goal with progress notes.",
+         Or if the goal isn't done yet, use update_goal with progress notes.\n\n\
+         RULES:\n\
+         - Do NOT create follow-up \"fix\" goals. If something broke, it will be retried differently.\n\
+         - You may create AT MOST 1 new goal, and only if it's a genuinely NEW idea (not fixing the current one).\n\
+         - Focus on marking the current goal complete or abandoned — do not cascade.",
         goal.description,
         goal.success_criteria,
         steps_completed,
