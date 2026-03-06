@@ -1696,6 +1696,26 @@ impl ThinkingLoop {
                 }
                 Err(e) => tracing::warn!(error = %e, "Housekeeping: belief decay failed"),
             }
+
+            // Lifecycle pruning — keep the database bounded
+            match self.db.prune_old_data() {
+                Ok(stats) => {
+                    if stats.total() > 0 {
+                        tracing::info!(
+                            thoughts = stats.thoughts,
+                            goals = stats.goals,
+                            plans = stats.plans,
+                            mutations = stats.mutations,
+                            nudges = stats.nudges,
+                            beliefs = stats.beliefs,
+                            messages = stats.messages,
+                            sessions = stats.sessions,
+                            "Housekeeping: lifecycle pruning"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "Housekeeping: pruning failed"),
+            }
         }
 
         // Every 40 cycles: simple consolidation (no LLM — save tokens for coding)
@@ -1761,7 +1781,22 @@ impl ThinkingLoop {
             1.0,
             None,
         ) {
-            Ok(()) => tracing::info!("Housekeeping: memory consolidation recorded"),
+            Ok(()) => {
+                // Consolidation is digestion — delete the source thoughts that were absorbed
+                let ids: Vec<String> = thoughts.iter().map(|t| t.id.clone()).collect();
+                let mut deleted = 0u32;
+                for id in &ids {
+                    if let Ok(1) = self.db.delete_thought(id) {
+                        deleted += 1;
+                    }
+                }
+                tracing::info!(
+                    consolidated = thoughts.len(),
+                    deleted,
+                    "Housekeeping: memory consolidation (absorbed {} thoughts)",
+                    deleted
+                );
+            }
             Err(e) => tracing::warn!(error = %e, "Housekeeping: consolidation insert failed"),
         }
     }

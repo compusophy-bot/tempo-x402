@@ -11,6 +11,26 @@ use crate::memory::{Thought, ThoughtType};
 use crate::plan::{Plan, PlanStatus, PlanStep};
 use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, GoalStatus};
 
+/// Stats from a pruning cycle.
+#[derive(Debug, Default)]
+pub struct PruneStats {
+    pub thoughts: u32,
+    pub goals: u32,
+    pub plans: u32,
+    pub mutations: u32,
+    pub nudges: u32,
+    pub beliefs: u32,
+    pub messages: u32,
+    pub sessions: u32,
+}
+
+impl PruneStats {
+    pub fn total(&self) -> u32 {
+        self.thoughts + self.goals + self.plans + self.mutations
+            + self.nudges + self.beliefs + self.messages + self.sessions
+    }
+}
+
 /// A dynamically registered tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DynamicTool {
@@ -306,6 +326,17 @@ impl SoulDatabase {
             ],
         )?;
         Ok(())
+    }
+
+    /// Delete a single thought by ID. Returns 1 if deleted, 0 if not found.
+    pub fn delete_thought(&self, id: &str) -> Result<usize, SoulError> {
+        let conn = self.conn.lock().map_err(|_| {
+            SoulError::Database(rusqlite::Error::InvalidParameterName(
+                "lock poisoned".into(),
+            ))
+        })?;
+        let deleted = conn.execute("DELETE FROM thoughts WHERE id = ?1", params![id])?;
+        Ok(deleted)
     }
 
     /// Get the most recent N thoughts, newest first.
@@ -1166,6 +1197,102 @@ impl SoulDatabase {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    /// Lifecycle pruning: keep the database bounded. Called every 10 cycles from housekeeping.
+    /// Life is birth AND death — things that served their purpose must be released.
+    pub fn prune_old_data(&self) -> Result<PruneStats, SoulError> {
+        let conn = self.conn.lock().map_err(|_| {
+            SoulError::Database(rusqlite::Error::InvalidParameterName(
+                "lock poisoned".into(),
+            ))
+        })?;
+
+        let now = chrono::Utc::now().timestamp();
+        let one_day = 86400i64;
+        let three_days = one_day * 3;
+        let seven_days = one_day * 7;
+
+        // 1. Cap total thoughts at 500 — delete oldest beyond cap
+        let thoughts_pruned: u32 = conn.execute(
+            "DELETE FROM thoughts WHERE id IN (
+                SELECT id FROM thoughts ORDER BY created_at DESC LIMIT -1 OFFSET 500
+            )",
+            [],
+        ).unwrap_or(0) as u32;
+
+        // 2. Delete completed/abandoned goals older than 7 days (keep last 10 regardless of age)
+        let goals_pruned: u32 = conn.execute(
+            "DELETE FROM goals WHERE status IN ('completed', 'abandoned') AND created_at < ?1
+             AND id NOT IN (
+                SELECT id FROM goals WHERE status IN ('completed', 'abandoned')
+                ORDER BY updated_at DESC LIMIT 10
+            )",
+            params![now - seven_days],
+        ).unwrap_or(0) as u32;
+
+        // 3. Delete completed/failed/abandoned plans older than 3 days (keep last 10)
+        let plans_pruned: u32 = conn.execute(
+            "DELETE FROM plans WHERE status IN ('completed', 'failed', 'abandoned') AND created_at < ?1
+             AND id NOT IN (
+                SELECT id FROM plans WHERE status IN ('completed', 'failed', 'abandoned')
+                ORDER BY updated_at DESC LIMIT 10
+            )",
+            params![now - three_days],
+        ).unwrap_or(0) as u32;
+
+        // 4. Cap mutations at 50 — delete oldest beyond cap
+        let mutations_pruned: u32 = conn.execute(
+            "DELETE FROM mutations WHERE id IN (
+                SELECT id FROM mutations ORDER BY created_at DESC LIMIT -1 OFFSET 50
+            )",
+            [],
+        ).unwrap_or(0) as u32;
+
+        // 5. Delete processed nudges older than 24h
+        let nudges_pruned: u32 = conn.execute(
+            "DELETE FROM nudges WHERE processed = 1 AND created_at < ?1",
+            params![now - one_day],
+        ).unwrap_or(0) as u32;
+
+        // 6. Delete inactive beliefs (already deactivated by decay)
+        let beliefs_pruned: u32 = conn.execute(
+            "DELETE FROM beliefs WHERE active = 0 AND updated_at < ?1",
+            params![now - three_days],
+        ).unwrap_or(0) as u32;
+
+        // 7. Cap chat messages per session (keep last 100 per session)
+        let messages_pruned: u32 = conn.execute(
+            "DELETE FROM chat_messages WHERE id IN (
+                SELECT cm.id FROM chat_messages cm
+                INNER JOIN (
+                    SELECT session_id, id,
+                    ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn
+                    FROM chat_messages
+                ) ranked ON cm.id = ranked.id
+                WHERE ranked.rn > 100
+            )",
+            [],
+        ).unwrap_or(0) as u32;
+
+        // 8. Delete old inactive chat sessions (keep last 20)
+        let sessions_pruned: u32 = conn.execute(
+            "DELETE FROM chat_sessions WHERE active = 0 AND id NOT IN (
+                SELECT id FROM chat_sessions ORDER BY updated_at DESC LIMIT 20
+            )",
+            [],
+        ).unwrap_or(0) as u32;
+
+        Ok(PruneStats {
+            thoughts: thoughts_pruned,
+            goals: goals_pruned,
+            plans: plans_pruned,
+            mutations: mutations_pruned,
+            nudges: nudges_pruned,
+            beliefs: beliefs_pruned,
+            messages: messages_pruned,
+            sessions: sessions_pruned,
+        })
     }
 
     /// Reset historical data: clear old thoughts, failed/completed plans, processed nudges,
