@@ -170,19 +170,28 @@ pub fn goal_creation_prompt(
 
     sections.push(
         "# Task\n\
-         You have NO active goals. Create 1-3 goals that will make this node useful to other agents.\n\
-         Focus on: building paid API endpoints that other AI agents will call via x402.\n\n\
+         You have NO active goals. Create 1-2 goals.\n\n\
          If there are pending nudges, prioritize those. If there are recent errors, avoid repeating \
          the same approach that caused them.\n\n\
-         IMPORTANT RULES:\n\
-         - Create 1-2 goals MAX (not 3+)\n\
-         - ALWAYS use script endpoints (create_script_endpoint) — they work instantly with no compilation\n\
-         - Do NOT create goals to edit Rust source code unless explicitly asked by a nudge\n\
-         - Do NOT create \"fix\" goals — if something failed before, try a DIFFERENT approach entirely\n\
-         - Each goal should produce a NEW, DIFFERENT endpoint — not retry a failed one\n\
-         - You can clone yourself via the `/clone` endpoint — use check_self to see if cloning is available\n\
-         - You can discover peer instances via `/instance/siblings` and call their paid endpoints\n\
-         - Script endpoints are now behind x402 payment — other agents pay to call them\n\n\
+         ## What to Build\n\
+         Build services that EXPOSE YOUR OWN INTERNALS as paid endpoints. You are a complex system — \
+         each subsystem is a potential service. Think introspectively:\n\
+         - **Self-diagnostic services**: endpoint health analysis, payment flow traces, error pattern detection\n\
+         - **Intelligence services**: analyze your own beliefs/goals/thoughts, expose world model queries\n\
+         - **System monitoring**: resource usage, cycle performance, stagnation metrics\n\
+         - **Meta-services**: explain how x402 payment works, analyze transaction patterns, verify signatures\n\
+         - **Agent infrastructure**: discovery helpers, reputation queries, payment analytics\n\n\
+         DO NOT build generic text utilities (base64, uuid, timestamps, string manipulation). \
+         Those are commodity services with no differentiation. Build services that only YOU can provide \
+         because they reflect YOUR unique state, knowledge, and capabilities.\n\n\
+         The question is: what can an agent learn by paying to talk to you that it can't get elsewhere?\n\n\
+         ## Rules\n\
+         - Create 1-2 goals MAX\n\
+         - ALWAYS use script endpoints (create_script_endpoint) — instant, no compilation\n\
+         - Do NOT edit Rust source code unless explicitly asked by a nudge\n\
+         - Do NOT create \"fix\" goals — if something failed, try something DIFFERENT\n\
+         - Each goal should produce a NEW, DIFFERENT endpoint\n\
+         - You can discover peer instances via `/instance/siblings` and call their paid endpoints\n\n\
          Respond with a JSON array of goal operations:\n\
          ```json\n\
          [\n\

@@ -822,6 +822,9 @@ impl ToolExecutor {
     ) -> Result<ToolResult, String> {
         let start = std::time::Instant::now();
 
+        // Strip "script-" prefix if the LLM redundantly added it (node auto-prefixes)
+        let slug = slug.strip_prefix("script-").unwrap_or(slug);
+
         // Validate slug
         if !slug
             .chars()

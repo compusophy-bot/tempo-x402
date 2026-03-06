@@ -883,19 +883,22 @@ impl ThinkingLoop {
             let seed_goals = [
                 (
                     "Create a script endpoint using create_script_endpoint: \
-                     a 'timestamp' endpoint that returns the current UTC timestamp in multiple formats \
-                     (unix, iso8601, rfc2822). Script: use 'date' command. \
-                     Then test it with test_script_endpoint. \
-                     Script endpoints are instant — no compilation needed, just write bash.",
-                    "GET /x/timestamp returns JSON with timestamp formats, test_script_endpoint succeeds",
+                     an 'introspect' endpoint that uses check_self to query this node's health, \
+                     analytics, and soul status, then returns a structured JSON summary of the node's \
+                     current state — active goals, belief count, cycle count, endpoint stats, revenue. \
+                     Use curl to hit localhost endpoints and jq to assemble the response. \
+                     Then test it with test_script_endpoint.",
+                    "GET /x/introspect returns JSON with node state summary, test_script_endpoint succeeds",
                     5u32,
                 ),
                 (
                     "Create a script endpoint using create_script_endpoint: \
-                     a 'base64' endpoint that base64 encodes/decodes the REQUEST_BODY. \
-                     Use the bash 'base64' command. Return JSON with the result. \
+                     a 'payment-explain' endpoint that takes a transaction hash or payment scenario \
+                     in REQUEST_BODY and returns a step-by-step explanation of how x402 payment works \
+                     for that case — the EIP-712 signing, facilitator verification, on-chain settlement. \
+                     Use python3 to generate the explanation. Return JSON. \
                      Then test it with test_script_endpoint.",
-                    "POST /x/base64 encodes/decodes input, test_script_endpoint succeeds",
+                    "POST /x/payment-explain returns JSON with x402 flow explanation, test_script_endpoint succeeds",
                     4u32,
                 ),
             ];

@@ -216,7 +216,9 @@ async fn main() -> std::io::Result<()> {
                     let path = entry.path();
                     if path.extension().is_some_and(|ext| ext == "sh") {
                         if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            let script_slug = format!("script-{stem}");
+                            // Strip any existing "script-" prefix to avoid double-prefixing
+                            let base = stem.strip_prefix("script-").unwrap_or(stem);
+                            let script_slug = format!("script-{base}");
                             let target = format!("{}/x/{stem}", self_url);
                             // Read first line as description
                             let desc = std::fs::read_to_string(&path)
