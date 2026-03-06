@@ -318,34 +318,42 @@ async fn main() -> std::io::Result<()> {
 
     // ── Soul init (before NodeState so we can store the DB ref) ────────
     #[cfg(feature = "soul")]
-    let (soul_db, soul_dormant, soul, soul_generation, soul_config_for_state) =
-        match x402_soul::SoulConfig::from_env() {
-            Ok(soul_config) => {
-                let dormant = soul_config.llm_api_key.is_none();
-                let generation = soul_config.generation;
-                let config_clone = soul_config.clone();
-                match x402_soul::Soul::new(soul_config) {
-                    Ok(soul) => {
-                        let db = soul.database().clone();
-                        (
-                            Some(db),
-                            dormant,
-                            Some(soul),
-                            generation,
-                            Some(config_clone),
-                        )
-                    }
-                    Err(e) => {
-                        tracing::warn!("Soul init failed (non-fatal): {e}");
-                        (None, true, None, generation, None)
-                    }
+    let (
+        soul_db,
+        soul_dormant,
+        soul,
+        soul_generation,
+        soul_config_for_state,
+        soul_thinking_enabled,
+    ) = match x402_soul::SoulConfig::from_env() {
+        Ok(soul_config) => {
+            let dormant = soul_config.llm_api_key.is_none();
+            let generation = soul_config.generation;
+            let thinking = soul_config.thinking_enabled;
+            let config_clone = soul_config.clone();
+            match x402_soul::Soul::new(soul_config) {
+                Ok(soul) => {
+                    let db = soul.database().clone();
+                    (
+                        Some(db),
+                        dormant,
+                        Some(soul),
+                        generation,
+                        Some(config_clone),
+                        thinking,
+                    )
+                }
+                Err(e) => {
+                    tracing::warn!("Soul init failed (non-fatal): {e}");
+                    (None, true, None, generation, None, false)
                 }
             }
-            Err(e) => {
-                tracing::warn!("Soul config failed (non-fatal): {e}");
-                (None, true, None, 0, None)
-            }
-        };
+        }
+        Err(e) => {
+            tracing::warn!("Soul config failed (non-fatal): {e}");
+            (None, true, None, 0, None, false)
+        }
+    };
     #[cfg(not(feature = "soul"))]
     let (soul_db, soul_dormant, soul_generation): (Option<()>, bool, u32) = (None, true, 0);
 
@@ -470,12 +478,16 @@ async fn main() -> std::io::Result<()> {
     #[cfg(feature = "soul")]
     if let Some(soul) = soul {
         if let Some(observer) = soul_observer {
-            soul.spawn(observer);
-            tracing::info!(
-                dormant = node_state.soul_dormant,
-                generation = soul_generation,
-                "Soul spawned"
-            );
+            if soul_thinking_enabled {
+                soul.spawn(observer);
+                tracing::info!(
+                    dormant = node_state.soul_dormant,
+                    generation = soul_generation,
+                    "Soul spawned"
+                );
+            } else {
+                tracing::info!("Soul thinking disabled (SOUL_THINKING_ENABLED=false)");
+            }
         }
     }
 

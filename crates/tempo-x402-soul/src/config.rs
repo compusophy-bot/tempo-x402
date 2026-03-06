@@ -70,6 +70,9 @@ pub struct SoulConfig {
     /// Cycle interval multiplier (env: SOUL_CYCLE_MULTIPLIER, default: 1.0).
     /// Values >1.0 slow down think cycles proportionally (e.g., 3.0 = 3x slower = 1/3 API cost).
     pub cycle_multiplier: f64,
+    /// Master switch for the autonomous thinking loop (env: SOUL_THINKING_ENABLED, default: true).
+    /// When false, soul initializes (DB, chat, status endpoints work) but does not run the thinking loop.
+    pub thinking_enabled: bool,
 }
 
 const DEFAULT_PERSONALITY: &str = "\
@@ -232,6 +235,10 @@ impl SoulConfig {
             .unwrap_or(1.0_f64)
             .max(0.1);
 
+        let thinking_enabled = std::env::var("SOUL_THINKING_ENABLED")
+            .map(|v| v != "false" && v != "0")
+            .unwrap_or(true);
+
         Ok(Self {
             llm_api_key,
             llm_model_fast,
@@ -262,6 +269,7 @@ impl SoulConfig {
             require_plan_approval,
             plan_approval_timeout_mins,
             cycle_multiplier,
+            thinking_enabled,
         })
     }
 }
