@@ -104,6 +104,16 @@ pub enum PlanStep {
         #[serde(default)]
         store_as: Option<String>,
     },
+    /// Call a paid endpoint using x402 payment signing.
+    CallPaidEndpoint {
+        url: String,
+        #[serde(default)]
+        method: Option<String>,
+        #[serde(default)]
+        body: Option<String>,
+        #[serde(default)]
+        store_as: Option<String>,
+    },
     /// Run cargo check to verify compilation. Stores errors if any.
     CargoCheck {
         #[serde(default)]
@@ -156,6 +166,15 @@ impl PlanStep {
             }
             PlanStep::Commit { message } => format!("commit: {message}"),
             PlanStep::CheckSelf { endpoint, .. } => format!("check /{endpoint}"),
+            PlanStep::CallPaidEndpoint { url, method, .. } => {
+                let m = method.as_deref().unwrap_or("GET");
+                let short = if url.len() > 40 {
+                    format!("{}...", &url[..40])
+                } else {
+                    url.clone()
+                };
+                format!("{m} {short} (paid)")
+            }
             PlanStep::CreateScriptEndpoint { slug, .. } => format!("create /x/{slug}"),
             PlanStep::TestScriptEndpoint { slug, .. } => format!("test /x/{slug}"),
             PlanStep::CargoCheck { .. } => "cargo check".to_string(),
@@ -189,6 +208,7 @@ impl PlanStep {
             | PlanStep::ListDir { store_as, .. }
             | PlanStep::RunShell { store_as, .. }
             | PlanStep::CheckSelf { store_as, .. }
+            | PlanStep::CallPaidEndpoint { store_as, .. }
             | PlanStep::CreateScriptEndpoint { store_as, .. }
             | PlanStep::TestScriptEndpoint { store_as, .. }
             | PlanStep::CargoCheck { store_as, .. }
@@ -285,6 +305,18 @@ impl<'a> PlanExecutor<'a> {
             PlanStep::CheckSelf { endpoint, .. } => {
                 self.execute_tool("check_self", &serde_json::json!({ "endpoint": endpoint }))
                     .await
+            }
+            PlanStep::CallPaidEndpoint {
+                url, method, body, ..
+            } => {
+                let mut args = serde_json::json!({ "url": url });
+                if let Some(m) = method {
+                    args["method"] = serde_json::json!(m);
+                }
+                if let Some(b) = body {
+                    args["body"] = serde_json::json!(b);
+                }
+                self.execute_tool("call_paid_endpoint", &args).await
             }
             PlanStep::CreateScriptEndpoint {
                 slug,

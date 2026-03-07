@@ -184,10 +184,11 @@ pub fn goal_creation_prompt(
              Possible next steps:\n\
              - Discover peers (discover_peers) and try calling their endpoints to generate actual traffic\n\
              - Delete garbage endpoints and focus on 2-3 high-quality ones\n\
-             - Clone yourself (check_self on /clone endpoint) to create a peer that can pay you\n\
              - Investigate: are other agents even aware you exist? Can they reach you?\n\
              - Think about what's actually missing from the network, not what's easy to build\n\n\
-             DO NOT create another script endpoint. Stop. Think about the system."
+             DO NOT create another script endpoint. Stop. Think about the system.\n\n\
+             NOTE: Cloning requires x402 payment signing. Use `call_paid_endpoint` in a plan step \
+             (type: call_paid_endpoint) — do NOT try to clone via curl or shell commands."
         )
     } else if endpoint_count > 5 && paid_endpoints == 0 {
         format!(
@@ -224,7 +225,7 @@ pub fn goal_creation_prompt(
          - Do NOT edit Rust source code unless explicitly asked by a nudge\n\
          - Do NOT create \"fix\" goals — if something failed, try something DIFFERENT\n\
          - You can discover peer instances via `/instance/siblings` and call their paid endpoints\n\
-         - You can clone yourself via the `/clone` endpoint to create peers\n\n\
+         - You can clone yourself using `call_paid_endpoint` with the `/clone` endpoint (do NOT use curl — cloning requires x402 payment signing)\n\n\
          Respond with a JSON array of goal operations:\n\
          ```json\n\
          [\n\
@@ -306,6 +307,7 @@ pub fn planning_prompt(
          - {{\"type\": \"run_shell\", \"command\": \"...\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"commit\", \"message\": \"...\"}}\n\
          - {{\"type\": \"check_self\", \"endpoint\": \"health\", \"store_as\": \"key\"}}\n\
+         - {{\"type\": \"call_paid_endpoint\", \"url\": \"http://localhost:8080/clone\", \"method\": \"POST\", \"body\": \"{{}}\", \"store_as\": \"key\"}}  (signs x402 payment automatically)\n\
          - {{\"type\": \"create_script_endpoint\", \"slug\": \"...\", \"script\": \"#!/bin/bash\\n...\", \"description\": \"...\"}}\n\
          - {{\"type\": \"test_script_endpoint\", \"slug\": \"...\", \"input\": \"test data\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"cargo_check\", \"store_as\": \"check_result\"}}\n\n\
