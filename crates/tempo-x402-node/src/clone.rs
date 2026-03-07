@@ -1,8 +1,12 @@
 //! Clone orchestration logic.
 //!
 //! Coordinates the full lifecycle of spawning a child instance on Railway:
-//! service creation, environment configuration, Docker image deployment,
-//! volume attachment, domain assignment, and deployment trigger.
+//! service creation, environment configuration, Docker image or source-based
+//! deployment, volume attachment, domain assignment, and deployment trigger.
+//!
+//! Supports two deployment modes:
+//! - **Docker**: Deploy from a pre-built image (existing behavior)
+//! - **Source**: Create a branch on a GitHub repo and build from source on Railway
 
 use crate::railway::{RailwayClient, RailwayError};
 use serde::{Deserialize, Serialize};
@@ -10,8 +14,15 @@ use serde::{Deserialize, Serialize};
 /// Configuration for clone operations.
 #[derive(Clone, Debug)]
 pub struct CloneConfig {
-    /// Docker image to deploy (e.g., `ghcr.io/compusophy/tempo-x402:latest`)
-    pub docker_image: String,
+    /// Docker image to deploy (e.g., `ghcr.io/compusophy/tempo-x402:latest`).
+    /// If None and `source_repo` is set, uses source-based builds.
+    pub docker_image: Option<String>,
+    /// GitHub repo for source-based builds (e.g., `compusophy-bot/tempo-x402`).
+    /// Each clone gets its own `clone/{name}` branch.
+    pub source_repo: Option<String>,
+    /// GitHub token for branch creation via GitHub REST API.
+    /// Required when `source_repo` is set.
+    pub github_token: Option<String>,
     /// RPC URL for the Tempo chain
     pub rpc_url: String,
     /// URL of this (parent) instance, so children can register back
@@ -37,6 +48,8 @@ pub struct CloneResult {
     pub railway_service_id: String,
     /// Railway deployment ID
     pub deployment_id: String,
+    /// GitHub branch name (only for source-based clones)
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -96,8 +109,9 @@ impl CloneOrchestrator {
                 tracing::error!(
                     service_id = %service_id,
                     error = %e,
-                    "Clone failed after service creation, cleaning up Railway service"
+                    "Clone failed after service creation, cleaning up"
                 );
+                // Clean up Railway service
                 if let Err(cleanup_err) = self.railway.delete_service(&service_id).await {
                     tracing::error!(
                         service_id = %service_id,
@@ -106,6 +120,19 @@ impl CloneOrchestrator {
                     );
                 } else {
                     tracing::info!(service_id = %service_id, "Railway service cleaned up");
+                }
+                // Clean up GitHub branch (best-effort)
+                let branch = format!("clone/{}", &instance_id[..8]);
+                if let (Some(ref repo), Some(ref token)) =
+                    (&self.config.source_repo, &self.config.github_token)
+                {
+                    if let Err(branch_err) = delete_github_branch(token, repo, &branch).await {
+                        tracing::warn!(
+                            branch = %branch,
+                            error = %branch_err,
+                            "Cleanup of GitHub branch failed (best-effort)"
+                        );
+                    }
                 }
                 Err(e)
             }
@@ -123,7 +150,25 @@ impl CloneOrchestrator {
         // 2. Get default environment
         let env_id = self.railway.get_default_environment().await?;
 
-        // 3. Set environment variables
+        // Determine deployment mode: source-based (branch) or Docker
+        let use_source = self.config.source_repo.is_some();
+        let branch_name = if use_source {
+            Some(format!("clone/{}", &instance_id[..8]))
+        } else {
+            None
+        };
+
+        // 3. Create branch on GitHub (source-based only)
+        if let (Some(ref repo), Some(ref branch), Some(ref token)) = (
+            &self.config.source_repo,
+            &branch_name,
+            &self.config.github_token,
+        ) {
+            create_github_branch(token, repo, branch).await?;
+            tracing::info!(repo = %repo, branch = %branch, "GitHub branch created");
+        }
+
+        // 4. Set environment variables
         let mut env_map = serde_json::Map::new();
         env_map.insert("AUTO_BOOTSTRAP".into(), "true".into());
         env_map.insert("INSTANCE_ID".into(), instance_id.into());
@@ -147,19 +192,26 @@ impl CloneOrchestrator {
             .await?;
         tracing::info!("Environment variables configured");
 
-        // 4. Set Docker image
-        self.railway
-            .set_docker_image(service_id, &self.config.docker_image)
-            .await?;
-        tracing::info!(image = %self.config.docker_image, "Docker image set");
+        // 5. Set deployment source (Docker image OR repo+branch)
+        if let (Some(ref repo), Some(ref branch)) = (&self.config.source_repo, &branch_name) {
+            self.railway.connect_repo(service_id, repo, branch).await?;
+            tracing::info!(repo = %repo, branch = %branch, "Source repo connected");
+        } else if let Some(ref image) = self.config.docker_image {
+            self.railway.set_docker_image(service_id, image).await?;
+            tracing::info!(image = %image, "Docker image set");
+        } else {
+            return Err(CloneError::Other(
+                "no deployment source: set DOCKER_IMAGE or CLONE_SOURCE_REPO".to_string(),
+            ));
+        }
 
-        // 5. Add volume
+        // 6. Add volume
         self.railway
             .add_volume(service_id, &env_id, "/data")
             .await?;
         tracing::info!("Volume attached at /data");
 
-        // 6. Set resource limits (conservative defaults for children)
+        // 7. Set resource limits (conservative defaults for children)
         if self.config.clone_cpu_millicores > 0 || self.config.clone_memory_mb > 0 {
             self.railway
                 .update_service_resources(
@@ -176,11 +228,11 @@ impl CloneOrchestrator {
             );
         }
 
-        // 7. Create domain
+        // 8. Create domain
         let url = self.railway.create_domain(service_id, &env_id).await?;
         tracing::info!(url = %url, "Domain created");
 
-        // 8. Deploy
+        // 9. Deploy
         let deployment_id = self.railway.deploy_service(service_id, &env_id).await?;
         tracing::info!(deployment_id = %deployment_id, "Deployment triggered");
 
@@ -189,6 +241,7 @@ impl CloneOrchestrator {
             url,
             railway_service_id: service_id.to_string(),
             deployment_id,
+            branch: branch_name,
         })
     }
 
@@ -213,14 +266,111 @@ impl CloneOrchestrator {
     }
 }
 
+/// Create a branch on a GitHub repo via the REST API.
+///
+/// 1. GET /repos/{repo}/git/ref/heads/main → get SHA
+/// 2. POST /repos/{repo}/git/refs → create refs/heads/{branch}
+async fn create_github_branch(token: &str, repo: &str, branch: &str) -> Result<(), CloneError> {
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
+
+    // 1. Get main branch SHA
+    let ref_url = format!("https://api.github.com/repos/{repo}/git/ref/heads/main");
+    let ref_resp = http
+        .get(&ref_url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "x402-node")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| CloneError::Other(format!("GitHub API error (get ref): {e}")))?;
+
+    if !ref_resp.status().is_success() {
+        let status = ref_resp.status();
+        let body = ref_resp.text().await.unwrap_or_default();
+        return Err(CloneError::Other(format!(
+            "GitHub GET ref failed (HTTP {status}): {body}"
+        )));
+    }
+
+    let ref_json: serde_json::Value = ref_resp
+        .json()
+        .await
+        .map_err(|e| CloneError::Other(format!("GitHub API parse error: {e}")))?;
+
+    let sha = ref_json["object"]["sha"]
+        .as_str()
+        .ok_or_else(|| CloneError::Other("missing SHA in GitHub ref response".to_string()))?;
+
+    // 2. Create new branch
+    let create_url = format!("https://api.github.com/repos/{repo}/git/refs");
+    let create_resp = http
+        .post(&create_url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "x402-node")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .json(&serde_json::json!({
+            "ref": format!("refs/heads/{branch}"),
+            "sha": sha,
+        }))
+        .send()
+        .await
+        .map_err(|e| CloneError::Other(format!("GitHub API error (create ref): {e}")))?;
+
+    if !create_resp.status().is_success() {
+        let status = create_resp.status();
+        let body = create_resp.text().await.unwrap_or_default();
+        return Err(CloneError::Other(format!(
+            "GitHub create branch failed (HTTP {status}): {body}"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Delete a branch on a GitHub repo via the REST API (best-effort cleanup).
+pub async fn delete_github_branch(token: &str, repo: &str, branch: &str) -> Result<(), CloneError> {
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
+
+    let url = format!("https://api.github.com/repos/{repo}/git/refs/heads/{branch}");
+    let resp = http
+        .delete(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "x402-node")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| CloneError::Other(format!("GitHub API error (delete ref): {e}")))?;
+
+    if !resp.status().is_success() && resp.status().as_u16() != 404 {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(CloneError::Other(format!(
+            "GitHub delete branch failed (HTTP {status}): {body}"
+        )));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_clone_config() {
+    fn test_clone_config_docker() {
         let config = CloneConfig {
-            docker_image: "ghcr.io/compusophy/tempo-x402:latest".to_string(),
+            docker_image: Some("ghcr.io/compusophy/tempo-x402:latest".to_string()),
+            source_repo: None,
+            github_token: None,
             rpc_url: "https://rpc.moderato.tempo.xyz".to_string(),
             self_url: "https://my-instance.up.railway.app".to_string(),
             max_children: 10,
@@ -230,6 +380,28 @@ mod tests {
         };
         assert_eq!(config.max_children, 10);
         assert_eq!(config.clone_cpu_millicores, 2000);
+        assert!(config.docker_image.is_some());
+        assert!(config.source_repo.is_none());
+    }
+
+    #[test]
+    fn test_clone_config_source() {
+        let config = CloneConfig {
+            docker_image: None,
+            source_repo: Some("compusophy-bot/tempo-x402".to_string()),
+            github_token: Some("ghp_test".to_string()),
+            rpc_url: "https://rpc.moderato.tempo.xyz".to_string(),
+            self_url: "https://my-instance.up.railway.app".to_string(),
+            max_children: 5,
+            clone_cpu_millicores: 2000,
+            clone_memory_mb: 2048,
+            child_env_vars: std::collections::HashMap::new(),
+        };
+        assert!(config.docker_image.is_none());
+        assert_eq!(
+            config.source_repo.as_deref(),
+            Some("compusophy-bot/tempo-x402")
+        );
     }
 
     #[test]

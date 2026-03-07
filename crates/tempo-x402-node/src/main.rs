@@ -265,10 +265,21 @@ async fn main() -> std::io::Result<()> {
             .ok()
             .filter(|s| !s.is_empty());
         let docker_image = std::env::var("DOCKER_IMAGE").ok().filter(|s| !s.is_empty());
+        let source_repo = std::env::var("CLONE_SOURCE_REPO")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|s| !s.is_empty());
 
-        match (railway_token, railway_project_id, docker_image) {
-            (Some(token), Some(project_id), Some(image)) => {
-                tracing::info!("Clone orchestrator: enabled (image: {})", image);
+        // Clone orchestrator requires Railway credentials + at least one deployment source
+        let has_deploy_source = docker_image.is_some() || source_repo.is_some();
+
+        match (railway_token, railway_project_id, has_deploy_source) {
+            (Some(token), Some(project_id), true) => {
+                if let Some(ref repo) = source_repo {
+                    tracing::info!("Clone orchestrator: enabled (source: {})", repo);
+                } else if let Some(ref image) = docker_image {
+                    tracing::info!("Clone orchestrator: enabled (image: {})", image);
+                }
                 let railway = RailwayClient::new(token, project_id);
                 let clone_cpu: u32 = std::env::var("CLONE_CPU_MILLICORES")
                     .ok()
@@ -289,15 +300,33 @@ async fn main() -> std::io::Result<()> {
                 }
                 child_env_vars.insert("SOUL_CODING_ENABLED".into(), "true".into());
                 child_env_vars.insert("SOUL_DB_PATH".into(), "/data/soul.db".into());
-                if let Ok(fork) = std::env::var("SOUL_FORK_REPO") {
-                    child_env_vars.insert("SOUL_FORK_REPO".into(), fork);
-                }
-                if let Ok(upstream) = std::env::var("SOUL_UPSTREAM_REPO") {
-                    child_env_vars.insert("SOUL_UPSTREAM_REPO".into(), upstream);
+
+                // Source-based clones get coding-specific env vars
+                if source_repo.is_some() {
+                    if let Some(ref repo) = source_repo {
+                        // Clone's SOUL_FORK_REPO = same fork (it pushes to its own branch)
+                        child_env_vars.insert("SOUL_FORK_REPO".into(), repo.clone());
+                        // Clone PRs target fork's main
+                        child_env_vars.insert("SOUL_UPSTREAM_REPO".into(), repo.clone());
+                    }
+                    child_env_vars.insert("SOUL_DIRECT_PUSH".into(), "true".into());
+                    if let Some(ref gh_token) = github_token {
+                        child_env_vars.insert("GITHUB_TOKEN".into(), gh_token.clone());
+                    }
+                } else {
+                    // Docker-based clones: inherit parent's fork/upstream settings
+                    if let Ok(fork) = std::env::var("SOUL_FORK_REPO") {
+                        child_env_vars.insert("SOUL_FORK_REPO".into(), fork);
+                    }
+                    if let Ok(upstream) = std::env::var("SOUL_UPSTREAM_REPO") {
+                        child_env_vars.insert("SOUL_UPSTREAM_REPO".into(), upstream);
+                    }
                 }
 
                 let clone_config = CloneConfig {
-                    docker_image: image,
+                    docker_image,
+                    source_repo,
+                    github_token,
                     rpc_url: rpc_url.clone(),
                     self_url: self_url.clone(),
                     max_children: clone_max_children,
@@ -308,7 +337,7 @@ async fn main() -> std::io::Result<()> {
                 Some(Arc::new(CloneOrchestrator::new(railway, clone_config)))
             }
             _ => {
-                tracing::info!("Clone orchestrator: disabled (missing RAILWAY_TOKEN, RAILWAY_PROJECT_ID, or DOCKER_IMAGE)");
+                tracing::info!("Clone orchestrator: disabled (missing RAILWAY_TOKEN, RAILWAY_PROJECT_ID, or deployment source)");
                 None
             }
         }

@@ -431,6 +431,36 @@ impl RailwayClient {
         Ok(())
     }
 
+    /// Connect a Railway service to a GitHub repo + branch (source-based builds).
+    ///
+    /// Uses `serviceInstanceUpdate` with `source: { repo, branch }` to switch
+    /// a service from Docker image–based to source-based builds.
+    pub async fn connect_repo(
+        &self,
+        service_id: &str,
+        repo: &str,
+        branch: &str,
+    ) -> Result<(), RailwayError> {
+        let query = r#"
+            mutation ServiceInstanceUpdate($serviceId: String!, $input: ServiceInstanceUpdateInput!) {
+                serviceInstanceUpdate(serviceId: $serviceId, input: $input)
+            }
+        "#;
+
+        let variables = serde_json::json!({
+            "serviceId": service_id,
+            "input": {
+                "source": {
+                    "repo": repo,
+                    "branch": branch,
+                }
+            }
+        });
+
+        self.execute(query, variables).await?;
+        Ok(())
+    }
+
     /// Trigger a deployment for a service in an environment.
     ///
     /// Uses `serviceInstanceDeploy` which works for Docker image–based services.

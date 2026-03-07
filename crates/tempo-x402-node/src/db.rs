@@ -16,6 +16,7 @@ pub struct ChildInstance {
     pub funded_amount: Option<String>,
     pub funding_tx: Option<String>,
     pub status: String,
+    pub branch: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -30,15 +31,36 @@ const CHILDREN_SCHEMA: &str = r#"
         funded_amount TEXT,
         funding_tx TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
+        branch TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_children_instance_id ON children(instance_id);
 "#;
 
+/// Migrate: add `branch` column if it doesn't exist (backward-compatible).
+fn migrate_add_branch_column(db: &Database) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        // Check if column exists
+        let has_column: bool = conn
+            .prepare("PRAGMA table_info(children)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "branch");
+
+        if !has_column {
+            conn.execute_batch("ALTER TABLE children ADD COLUMN branch TEXT;")?;
+            tracing::info!("Migrated children table: added `branch` column");
+        }
+        Ok(())
+    })
+}
+
 /// Initialize the children table on an existing gateway database.
 pub fn init_children_schema(db: &Database) -> Result<(), GatewayError> {
-    db.execute_schema(CHILDREN_SCHEMA)
+    db.execute_schema(CHILDREN_SCHEMA)?;
+    migrate_add_branch_column(db)?;
+    Ok(())
 }
 
 /// Atomically check the children count is under the limit, then insert.
@@ -116,21 +138,23 @@ pub fn reserve_child_slot(
 }
 
 /// Update a child after Railway deployment succeeds.
-/// Fills in the URL, service ID, and transitions status to `'deploying'`.
+/// Fills in the URL, service ID, branch, and transitions status to `'deploying'`.
 pub fn update_child_deployment(
     db: &Database,
     instance_id: &str,
     url: &str,
     railway_service_id: &str,
     status: &str,
+    branch: Option<&str>,
 ) -> Result<(), GatewayError> {
     let now = chrono::Utc::now().timestamp();
 
     db.with_connection(|conn| {
         conn.execute(
-            "UPDATE children SET url = ?1, railway_service_id = ?2, status = ?3, updated_at = ?4 \
-             WHERE instance_id = ?5",
-            params![url, railway_service_id, status, now, instance_id],
+            "UPDATE children SET url = ?1, railway_service_id = ?2, status = ?3, \
+             branch = COALESCE(?4, branch), updated_at = ?5 \
+             WHERE instance_id = ?6",
+            params![url, railway_service_id, status, branch, now, instance_id],
         )?;
         Ok(())
     })
@@ -158,7 +182,7 @@ pub fn get_child_by_instance_id(
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, address, url, railway_service_id, \
-                 funded_amount, funding_tx, status, created_at, updated_at \
+                 funded_amount, funding_tx, status, branch, created_at, updated_at \
                  FROM children WHERE instance_id = ?1",
             )
             .map_err(|e| GatewayError::Internal(format!("prepare failed: {e}")))?;
@@ -174,8 +198,9 @@ pub fn get_child_by_instance_id(
                     funded_amount: row.get(5)?,
                     funding_tx: row.get(6)?,
                     status: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    branch: row.get(8)?,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 })
             })
             .optional()
@@ -218,7 +243,7 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, created_at, updated_at
+               funded_amount, funding_tx, status, branch, created_at, updated_at
         FROM children
         ORDER BY created_at DESC
         "#,
@@ -235,8 +260,9 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
                 funded_amount: row.get(5)?,
                 funding_tx: row.get(6)?,
                 status: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                branch: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -251,7 +277,7 @@ pub fn query_children_active(
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, created_at, updated_at
+               funded_amount, funding_tx, status, branch, created_at, updated_at
         FROM children
         WHERE status != 'failed'
         ORDER BY created_at DESC
@@ -269,8 +295,9 @@ pub fn query_children_active(
                 funded_amount: row.get(5)?,
                 funding_tx: row.get(6)?,
                 status: row.get(7)?,
-                created_at: row.get(8)?,
-                updated_at: row.get(9)?,
+                branch: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

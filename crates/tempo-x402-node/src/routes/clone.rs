@@ -112,6 +112,7 @@ pub async fn clone_instance(
         &clone_result.url,
         &clone_result.railway_service_id,
         "deploying",
+        clone_result.branch.as_deref(),
     ) {
         // Railway resources exist but DB update failed — log but still return success
         // since the child is at least tracked from the reservation step
@@ -138,6 +139,7 @@ pub async fn clone_instance(
             "success": true,
             "instance_id": instance_id,
             "url": clone_result.url,
+            "branch": clone_result.branch,
             "status": "deploying",
             "transaction": settle.transaction,
         })))
@@ -155,6 +157,7 @@ pub async fn clone_status(
             "instance_id": child.instance_id,
             "status": child.status,
             "url": child.url,
+            "branch": child.branch,
             "created_at": child.created_at,
         }))),
         Ok(None) => Ok(HttpResponse::NotFound().json(serde_json::json!({
@@ -226,6 +229,23 @@ pub async fn delete_clone(
                     error = %e,
                     "Failed to delete Railway service (best-effort cleanup)"
                 );
+            }
+        }
+    }
+
+    // Best-effort GitHub branch cleanup for source-based clones
+    if let Some(ref branch) = child.branch {
+        if let Some(ref agent) = node.agent {
+            let config = agent.config();
+            if let (Some(ref repo), Some(ref token)) = (&config.source_repo, &config.github_token) {
+                if let Err(e) = crate::clone::delete_github_branch(token, repo, branch).await {
+                    tracing::warn!(
+                        instance_id = %instance_id,
+                        branch = %branch,
+                        error = %e,
+                        "Failed to delete GitHub branch (best-effort cleanup)"
+                    );
+                }
             }
         }
     }
