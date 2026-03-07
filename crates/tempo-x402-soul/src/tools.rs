@@ -32,6 +32,10 @@ pub struct ToolExecutor {
     registry: Option<ToolRegistry>,
     memory_file_path: String,
     gateway_url: Option<String>,
+    railway_token: Option<String>,
+    railway_project_id: Option<String>,
+    railway_service_id: Option<String>,
+    railway_environment_id: Option<String>,
 }
 
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
@@ -61,6 +65,18 @@ impl ToolExecutor {
             registry: None,
             memory_file_path: "/data/soul_memory.md".to_string(),
             gateway_url: None,
+            railway_token: std::env::var("RAILWAY_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            railway_project_id: std::env::var("RAILWAY_PROJECT_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            railway_service_id: std::env::var("RAILWAY_SERVICE_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            railway_environment_id: std::env::var("RAILWAY_ENVIRONMENT_ID")
+                .ok()
+                .filter(|s| !s.is_empty()),
         }
     }
 
@@ -333,6 +349,12 @@ impl ToolExecutor {
                     .ok_or_else(|| "missing 'metadata_uri' argument".to_string())?;
                 self.update_agent_metadata(uri).await
             }
+            "check_deploy_status" => self.check_deploy_status().await,
+            "get_deploy_logs" => {
+                let deployment_id = args.get("deployment_id").and_then(|v| v.as_str());
+                self.get_deploy_logs(deployment_id).await
+            }
+            "trigger_redeploy" => self.trigger_redeploy().await,
             "list_script_endpoints" => self.list_script_endpoints().await,
             "test_script_endpoint" => {
                 let slug = args
@@ -1159,6 +1181,189 @@ impl ToolExecutor {
                 })
             }
         }
+    }
+
+    /// Helper to make a Railway GraphQL API call.
+    async fn railway_graphql(&self, query: &str) -> Result<serde_json::Value, String> {
+        let token = self
+            .railway_token
+            .as_ref()
+            .ok_or("RAILWAY_TOKEN not configured")?;
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .map_err(|e| format!("HTTP client error: {e}"))?;
+
+        let resp = client
+            .post("https://backboard.railway.app/graphql/v2")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({ "query": query }))
+            .send()
+            .await
+            .map_err(|e| format!("Railway API request failed: {e}"))?;
+
+        resp.json::<serde_json::Value>()
+            .await
+            .map_err(|e| format!("Railway API response parse failed: {e}"))
+    }
+
+    /// Check the latest deployment status for this service on Railway.
+    async fn check_deploy_status(&self) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let service_id = self
+            .railway_service_id
+            .as_ref()
+            .ok_or("RAILWAY_SERVICE_ID not configured")?;
+        let env_id = self
+            .railway_environment_id
+            .as_ref()
+            .ok_or("RAILWAY_ENVIRONMENT_ID not configured")?;
+
+        let query = format!(
+            r#"{{ deployments(input: {{ serviceId: "{service_id}", environmentId: "{env_id}" }}, first: 3) {{ edges {{ node {{ id status createdAt updatedAt }} }} }} }}"#
+        );
+
+        let data = self.railway_graphql(&query).await?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        // Format nicely for the LLM
+        let edges = data
+            .pointer("/data/deployments/edges")
+            .and_then(|v| v.as_array());
+
+        let mut output = String::new();
+        if let Some(edges) = edges {
+            for (i, edge) in edges.iter().enumerate() {
+                let node = &edge["node"];
+                let id = node["id"].as_str().unwrap_or("?");
+                let status = node["status"].as_str().unwrap_or("?");
+                let created = node["createdAt"].as_str().unwrap_or("?");
+                let updated = node["updatedAt"].as_str().unwrap_or("?");
+                output.push_str(&format!(
+                    "{}. {} — status: {}, created: {}, updated: {}\n",
+                    i + 1,
+                    id,
+                    status,
+                    created,
+                    updated
+                ));
+            }
+        } else if let Some(errors) = data.get("errors") {
+            output = format!("Railway API error: {errors}");
+        } else {
+            output = "No deployments found".to_string();
+        }
+
+        Ok(ToolResult {
+            stdout: output,
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Get build logs for a Railway deployment.
+    async fn get_deploy_logs(&self, deployment_id: Option<&str>) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let service_id = self
+            .railway_service_id
+            .as_ref()
+            .ok_or("RAILWAY_SERVICE_ID not configured")?;
+        let env_id = self
+            .railway_environment_id
+            .as_ref()
+            .ok_or("RAILWAY_ENVIRONMENT_ID not configured")?;
+
+        // If no deployment ID given, get the latest one first
+        let deploy_id = if let Some(id) = deployment_id {
+            id.to_string()
+        } else {
+            let query = format!(
+                r#"{{ deployments(input: {{ serviceId: "{service_id}", environmentId: "{env_id}" }}, first: 1) {{ edges {{ node {{ id }} }} }} }}"#
+            );
+            let data = self.railway_graphql(&query).await?;
+            data.pointer("/data/deployments/edges/0/node/id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .ok_or("No deployments found")?
+        };
+
+        let query = format!(
+            r#"{{ buildLogs(deploymentId: "{deploy_id}", limit: 200) {{ message timestamp }} }}"#
+        );
+
+        let data = self.railway_graphql(&query).await?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let mut output = format!("Build logs for deployment {deploy_id}:\n\n");
+
+        if let Some(logs) = data.pointer("/data/buildLogs").and_then(|v| v.as_array()) {
+            for log in logs {
+                let msg = log["message"].as_str().unwrap_or("");
+                output.push_str(msg);
+                output.push('\n');
+            }
+            if logs.is_empty() {
+                output.push_str("(no build logs available yet)\n");
+            }
+        } else if let Some(errors) = data.get("errors") {
+            output = format!("Railway API error: {errors}");
+        }
+
+        // Truncate if too long
+        if output.len() > MAX_OUTPUT_BYTES {
+            output = output.chars().take(MAX_OUTPUT_BYTES).collect();
+            output.push_str("\n... (truncated)");
+        }
+
+        Ok(ToolResult {
+            stdout: output,
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
+
+    /// Trigger a redeployment of this service on Railway.
+    async fn trigger_redeploy(&self) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let service_id = self
+            .railway_service_id
+            .as_ref()
+            .ok_or("RAILWAY_SERVICE_ID not configured")?;
+        let env_id = self
+            .railway_environment_id
+            .as_ref()
+            .ok_or("RAILWAY_ENVIRONMENT_ID not configured")?;
+
+        let query = format!(
+            r#"mutation {{ serviceInstanceRedeploy(serviceId: "{service_id}", environmentId: "{env_id}") }}"#
+        );
+
+        let data = self.railway_graphql(&query).await?;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let success = data
+            .pointer("/data/serviceInstanceRedeploy")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(ToolResult {
+            stdout: if success {
+                "Redeployment triggered successfully. Use check_deploy_status to monitor progress."
+                    .to_string()
+            } else {
+                format!("Redeploy response: {data}")
+            },
+            stderr: String::new(),
+            exit_code: if success { 0 } else { 1 },
+            duration_ms,
+        })
     }
 
     /// Discover peer instances by calling parent's /instance/siblings endpoint.
@@ -2229,6 +2434,47 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
     }
 
     tools
+}
+
+/// Return the check_deploy_status tool declaration (Code mode).
+pub fn check_deploy_status_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "check_deploy_status".to_string(),
+        description: "Check the status of your latest Railway deployments. Shows whether your last push built and deployed successfully, is still building, or failed.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+    }
+}
+
+/// Return the get_deploy_logs tool declaration (Code mode).
+pub fn get_deploy_logs_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "get_deploy_logs".to_string(),
+        description: "Get the build logs for a Railway deployment. Use this after check_deploy_status shows a failed build to understand what went wrong. If no deployment_id is given, fetches logs for the latest deployment.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "deployment_id": {
+                    "type": "string",
+                    "description": "Optional deployment ID to get logs for. If omitted, gets the latest deployment's logs."
+                }
+            }
+        }),
+    }
+}
+
+/// Return the trigger_redeploy tool declaration (Code mode).
+pub fn trigger_redeploy_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "trigger_redeploy".to_string(),
+        description: "Trigger a redeployment of your Railway service. Use this if you need to rebuild without pushing new code.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {}
+        }),
+    }
 }
 
 /// Truncate raw output bytes to a UTF-8 string, capping at MAX_OUTPUT_BYTES.

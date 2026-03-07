@@ -59,6 +59,8 @@ impl AgentMode {
                 v.push(tools::check_self_tool());
                 v.push(tools::check_reputation_tool());
                 v.push(tools::discover_peers_tool());
+                v.push(tools::check_deploy_status_tool());
+                v.push(tools::get_deploy_logs_tool());
                 v
             }
             Self::Chat => {
@@ -97,6 +99,9 @@ impl AgentMode {
                 v.push(tools::request_plan_tool());
                 v.push(tools::discover_peers_tool());
                 v.push(tools::call_paid_endpoint_tool());
+                v.push(tools::check_deploy_status_tool());
+                v.push(tools::get_deploy_logs_tool());
+                v.push(tools::trigger_redeploy_tool());
                 v
             }
             Self::Review => {
