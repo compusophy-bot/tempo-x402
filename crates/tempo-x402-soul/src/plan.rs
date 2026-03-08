@@ -408,7 +408,7 @@ impl<'a> PlanExecutor<'a> {
                     .await;
                 let peers_json = match &discover_result {
                     StepResult::Success(output) => output.clone(),
-                    StepResult::Failed(err) => {
+                    StepResult::Failed(err) | StepResult::NeedsReplan(err) => {
                         return StepResult::Failed(format!("peer discovery failed: {err}"));
                     }
                 };
