@@ -34,6 +34,14 @@ struct ScriptEndpoint {
 const DEFAULT_SCRIPT_PRICE: &str = "$0.001";
 const DEFAULT_SCRIPT_AMOUNT: &str = "1000";
 
+/// Get pricing for a script endpoint based on its slug (without 'script-' prefix).
+pub fn get_script_pricing(slug: &str) -> (&'static str, &'static str) {
+    match slug {
+        "atlas" => ("$0.002", "2000"),
+        _ => (DEFAULT_SCRIPT_PRICE, DEFAULT_SCRIPT_AMOUNT),
+    }
+}
+
 /// `GET/POST /x/{slug}` — execute the script for this endpoint.
 pub async fn handle_script(
     req: HttpRequest,
@@ -67,11 +75,14 @@ pub async fn handle_script(
     let (price_usd, price_amount, owner_address) =
         match state.gateway.db.get_endpoint(&format!("script-{slug}")) {
             Ok(Some(ep)) => (ep.price_usd, ep.price_amount, ep.owner_address),
-            _ => (
-                DEFAULT_SCRIPT_PRICE.to_string(),
-                DEFAULT_SCRIPT_AMOUNT.to_string(),
-                std::env::var("EVM_ADDRESS").unwrap_or_default(),
-            ),
+            _ => {
+                let (usd, amount) = get_script_pricing(&slug);
+                (
+                    usd.to_string(),
+                    amount.to_string(),
+                    std::env::var("EVM_ADDRESS").unwrap_or_default(),
+                )
+            }
         };
 
     if !owner_address.is_empty() {

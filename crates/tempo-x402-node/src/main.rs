@@ -263,6 +263,34 @@ async fn main() -> std::io::Result<()> {
                 "Soul status and recent thoughts",
             ),
             (
+                "chat-sessions",
+                format!("{}/soul/chat/sessions", self_url),
+                "$0.0001",
+                "100",
+                "List soul chat sessions",
+            ),
+            (
+                "session-messages",
+                format!("{}/soul/chat/sessions/{{id}}", self_url),
+                "$0.0001",
+                "100",
+                "View session messages",
+            ),
+            (
+                "pending-plan",
+                format!("{}/soul/plan/pending", self_url),
+                "$0.0001",
+                "100",
+                "Get pending plan needing approval",
+            ),
+            (
+                "nudges",
+                format!("{}/soul/nudges", self_url),
+                "$0.0001",
+                "100",
+                "List unprocessed nudges",
+            ),
+            (
                 "info",
                 format!("{}/instance/info", self_url),
                 "$0.0001",
@@ -308,12 +336,13 @@ async fn main() -> std::io::Result<()> {
                                         .and_then(|line| line.strip_prefix("# ").map(String::from))
                                 })
                                 .unwrap_or_else(|| format!("Script endpoint: {stem}"));
+                            let (price_usd, price_amount) = routes::scripts::get_script_pricing(base);
                             match gateway_db.create_endpoint(
                                 &script_slug,
                                 &owner,
                                 &target,
-                                "$0.001",
-                                "1000",
+                                price_usd,
+                                price_amount,
                                 Some(&desc),
                             ) {
                                 Ok(_) => {
