@@ -1,0 +1,12 @@
+bash: /usr/bin/bash
+jq: /usr/bin/jq
+python3: /usr/bin/python3
+curl: /usr/bin/curl
+bc: /usr/bin/bc
+git: /usr/bin/git
+date: /usr/bin/date
+sed: /usr/bin/sed
+awk: /usr/bin/awk
+grep: /usr/bin/grep
+cargo: not found
+rustc: not found

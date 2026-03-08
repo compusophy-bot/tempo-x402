@@ -1,0 +1,243 @@
+openapi: 3.1.0
+info:
+  title: x402 Protocol Unified API
+  description: |
+    Unified OpenAPI specification for the x402 protocol components, including the Gateway, Resource Server, and Node instances.
+    x402 adds payment rails to any HTTP API using the Tempo blockchain.
+  version: 0.4.1
+  contact:
+    url: https://github.com/compusophy/tempo-x402
+  license:
+    name: MIT
+
+servers:
+  - url: https://x402-gateway-production-5018.up.railway.app
+    description: Gateway Production
+  - url: https://x402-server-production.up.railway.app
+    description: Resource Server Production
+  - url: http://localhost:4023
+    description: Local Gateway
+  - url: http://localhost:4021
+    description: Local Resource Server
+
+paths:
+  # --- Gateway Endpoints ---
+  /health:
+    get:
+      tags:
+        - Gateway
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /metrics:
+    get:
+      tags:
+        - Gateway
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /register:
+    post:
+      tags:
+        - Gateway
+      summary: Register a new endpoint
+      description: Requires platform fee payment.
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '201':
+          description: Endpoint registered
+        '402':
+          description: Payment required
+
+  /endpoints:
+    get:
+      tags:
+        - Gateway
+      summary: List all active endpoints
+      responses:
+        '200':
+          description: List of endpoints
+
+  /endpoints/{slug}:
+    get:
+      tags:
+        - Gateway
+      summary: Get endpoint details
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+    patch:
+      tags:
+        - Gateway
+      summary: Update endpoint (owner only)
+    delete:
+      tags:
+        - Gateway
+      summary: Delete endpoint (owner only)
+
+  # --- Node Endpoints ---
+  /info:
+    get:
+      tags:
+        - Node
+      summary: Get node instance information
+      responses:
+        '200':
+          description: Node identity and status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeInfo'
+
+  /clone:
+    post:
+      tags:
+        - Node
+      summary: Create a clone of this node
+      description: Requires payment of the clone price.
+      responses:
+        '202':
+          description: Clone process started
+        '402':
+          description: Payment required
+
+  /soul/chat:
+    post:
+      tags:
+        - Node
+      summary: Chat with the node's soul
+      responses:
+        '200':
+          description: Soul's response
+
+  /summarize:
+    post:
+      tags:
+        - Node
+      summary: Summarize text
+      description: |
+        Summarizes the provided text.
+        Price: 0.05 TEMPO.
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: The text to summarize.
+              required:
+                - text
+      responses:
+        '200':
+          description: Summary generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: string
+        '402':
+          description: Payment required
+
+  /analyze-sentiment:
+    post:
+      tags:
+        - Node
+      summary: Analyze sentiment
+      description: |
+        Analyzes the sentiment of the provided text.
+        Price: 0.02 TEMPO.
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  description: The text to analyze.
+              required:
+                - text
+      responses:
+        '200':
+          description: Sentiment analysis results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sentiment:
+                    type: string
+                  score:
+                    type: number
+        '402':
+          description: Payment required
+
+  # --- Resource Server Endpoints ---
+  /blockNumber:
+    get:
+      tags:
+        - Resource Server
+      summary: Get current block number
+      parameters:
+        - $ref: '#/components/parameters/PaymentSignature'
+      responses:
+        '200':
+          description: Block number
+        '402':
+          description: Payment required
+
+components:
+  parameters:
+    PaymentSignature:
+      name: PAYMENT-SIGNATURE
+      in: header
+      description: Base64-encoded PaymentPayload JSON
+      required: false
+      schema:
+        type: string
+
+  schemas:
+    NodeInfo:
+      type: object
+      properties:
+        identity:
+          type: object
+          nullable: true
+        children:
+          type: array
+          items:
+            type: object
+        version:
+          type: string
+        uptime_seconds:
+          type: integer
