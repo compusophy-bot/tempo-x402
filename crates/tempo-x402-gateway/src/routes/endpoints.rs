@@ -290,8 +290,40 @@ pub async fn delete_endpoint(
         })))
 }
 
+/// POST /endpoints/purge — bulk delete endpoints by slug list or prefix.
+///
+/// Body: `{"slugs": ["a", "b"]}` or `{"prefix": "script-script-"}`
+/// No payment required — admin operation.
+async fn purge_endpoints(
+    body: web::Json<serde_json::Value>,
+    state: web::Data<AppState>,
+) -> Result<HttpResponse, GatewayError> {
+    let mut purged = 0usize;
+
+    if let Some(slugs) = body.get("slugs").and_then(|v| v.as_array()) {
+        for slug_val in slugs {
+            if let Some(slug) = slug_val.as_str() {
+                if let Ok(()) = state.db.delete_endpoint(slug) {
+                    purged += 1;
+                }
+            }
+        }
+    }
+
+    if let Some(prefix) = body.get("prefix").and_then(|v| v.as_str()) {
+        if let Ok(n) = state.db.purge_endpoints_by_prefix(prefix) {
+            purged += n;
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "purged": purged,
+    })))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(web::resource("/endpoints").route(web::get().to(list_endpoints)))
+        .service(web::resource("/endpoints/purge").route(web::post().to(purge_endpoints)))
         .service(
             web::resource("/endpoints/{slug}")
                 .route(web::get().to(get_endpoint))
