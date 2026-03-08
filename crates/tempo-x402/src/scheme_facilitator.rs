@@ -313,13 +313,11 @@ where
                 payer: Some(p.from),
             });
         }
-        if p.to == self.facilitator_address {
-            return Ok(VerifyResponse {
-                is_valid: false,
-                invalid_reason: Some("Recipient cannot be the facilitator".to_string()),
-                payer: Some(p.from),
-            });
-        }
+        // Note: We intentionally do NOT reject p.to == facilitator_address.
+        // In the embedded facilitator model, the node IS both the facilitator
+        // and the endpoint owner, so payTo == facilitator_address is expected.
+        // The transferFrom(payer, facilitator, amount) still works correctly
+        // with ERC-20 because msg.sender == facilitator has spending allowance.
 
         // 4. Verify EIP-712 signature
         let value = p
