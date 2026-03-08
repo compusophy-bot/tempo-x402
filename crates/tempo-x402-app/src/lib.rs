@@ -789,28 +789,13 @@ fn EndpointRegistration() -> impl IntoView {
 fn HomePage() -> impl IntoView {
     view! {
         <div class="page">
-            <h1>"x402 Payment Demo"</h1>
+            <h1>"x402 Node"</h1>
             <p class="subtitle">
                 "HTTP 402 Payment Required — pay-per-request APIs on Tempo"
             </p>
 
-            <PaymentDemo />
             <WalletManagement />
-            <EndpointRegistration />
             <InstancePanel />
-
-            <div class="info-section">
-                <h2>"How it works"</h2>
-                <ol class="steps">
-                    <li>"Connect a wallet (MetaMask, demo key, or create an embedded wallet)"</li>
-                    <li>"Click \"Pay & Request\" to hit a paid API endpoint"</li>
-                    <li>"The gateway returns 402 with payment requirements"</li>
-                    <li>"Your wallet signs an EIP-712 payment authorization"</li>
-                    <li>"The request retries with PAYMENT-SIGNATURE header"</li>
-                    <li>"The facilitator settles the payment on-chain"</li>
-                    <li>"You get the API response + a transaction hash"</li>
-                </ol>
-            </div>
         </div>
     }
 }

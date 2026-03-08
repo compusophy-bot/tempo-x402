@@ -101,11 +101,21 @@ pub async fn verify_and_settle(
 ) -> Result<SettleResponse, GatewayError> {
     // In-process path: call facilitator directly
     if let Some(fac) = facilitator_state {
-        return fac
+        let settle_response = fac
             .facilitator
             .settle(payload, requirements)
             .await
-            .map_err(|e| GatewayError::PaymentFailed(e.to_string()));
+            .map_err(|e| GatewayError::PaymentFailed(e.to_string()))?;
+
+        if !settle_response.success {
+            return Err(GatewayError::PaymentFailed(
+                settle_response
+                    .error_reason
+                    .unwrap_or_else(|| "unknown error".to_string()),
+            ));
+        }
+
+        return Ok(settle_response);
     }
 
     // HTTP fallback path

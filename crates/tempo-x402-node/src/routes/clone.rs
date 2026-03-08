@@ -101,7 +101,11 @@ pub async fn clone_instance(
             if let Err(db_err) = db::mark_child_failed(&node.gateway.db, &instance_id) {
                 tracing::error!(error = %db_err, "Failed to mark child as failed in DB");
             }
-            return Err(GatewayError::Internal("clone operation failed".to_string()));
+            return Ok(HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": "clone_failed",
+                "message": format!("Clone orchestration failed: {e}"),
+            })));
         }
     };
 
