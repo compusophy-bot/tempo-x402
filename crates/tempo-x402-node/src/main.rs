@@ -563,6 +563,71 @@ async fn main() -> std::io::Result<()> {
             }
         });
 
+        // Auto-approve own facilitator for pathUSD (needed for x402 payments).
+        // The node's wallet key and facilitator key are the same, so facilitator = self.
+        // Wait for faucet to fund first (need gas for approve tx).
+        {
+            let rpc = rpc_url.clone();
+            let pk = id.private_key.clone();
+            tokio::spawn(async move {
+                // Wait for faucet to settle
+                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+
+                let Ok(rpc_parsed) = rpc.parse::<reqwest::Url>() else {
+                    return;
+                };
+                let Ok(signer) = pk
+                    .strip_prefix("0x")
+                    .unwrap_or(&pk)
+                    .parse::<alloy::signers::local::PrivateKeySigner>()
+                else {
+                    return;
+                };
+                let wallet_addr = signer.address();
+                let wallet = alloy::network::EthereumWallet::from(signer);
+                let provider = alloy::providers::ProviderBuilder::new()
+                    .wallet(wallet)
+                    .connect_http(rpc_parsed);
+                let token = x402::constants::DEFAULT_TOKEN;
+
+                // Check current allowance (self-approval: wallet approves itself as facilitator)
+                let current_allowance =
+                    x402::tip20::allowance(&provider, token, wallet_addr, wallet_addr)
+                        .await
+                        .unwrap_or(alloy::primitives::U256::ZERO);
+
+                if current_allowance < alloy::primitives::U256::from(1_000_000_000_000_000u64) {
+                    match x402::tip20::approve(
+                        &provider,
+                        token,
+                        wallet_addr,
+                        alloy::primitives::U256::MAX,
+                    )
+                    .await
+                    {
+                        Ok(tx) => {
+                            tracing::info!(
+                                address = %wallet_addr,
+                                tx = %tx,
+                                "Auto-approved own facilitator for pathUSD"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                "Auto-approval failed (non-fatal — can retry via /wallet/setup)"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::debug!(
+                        address = %wallet_addr,
+                        "Facilitator already approved, skipping"
+                    );
+                }
+            });
+        }
+
         // ERC-8004 auto-deploy + auto-mint (if enabled and no token ID yet)
         #[cfg(feature = "erc8004")]
         if x402_identity::auto_mint_enabled() && id.agent_token_id.is_none() {

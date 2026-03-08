@@ -1653,6 +1653,56 @@ impl ToolExecutor {
             serde_json::from_value(req_value.clone())
                 .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
 
+        // Step 2.5: Auto-approve the target's facilitator if needed.
+        // For embedded facilitators, pay_to == facilitator address.
+        // The facilitator calls transferFrom(payer, pay_to, amount), which
+        // requires ERC-20 approve(facilitator, amount) from the payer.
+        if let Ok(pay_to_addr) = requirements.pay_to.parse::<alloy::primitives::Address>() {
+            let rpc_url = std::env::var("RPC_URL")
+                .unwrap_or_else(|_| "https://rpc.moderato.tempo.xyz".to_string());
+            if let Ok(rpc_parsed) = rpc_url.parse::<reqwest::Url>() {
+                let pk_signer: alloy::signers::local::PrivateKeySigner = private_key
+                    .parse()
+                    .map_err(|e| format!("invalid private key for approval: {e}"))?;
+                let payer_addr = pk_signer.address();
+                let wallet = alloy::network::EthereumWallet::from(pk_signer);
+                let provider = alloy::providers::ProviderBuilder::new()
+                    .wallet(wallet)
+                    .connect_http(rpc_parsed);
+                let token = x402::constants::DEFAULT_TOKEN;
+
+                // Check current allowance
+                let current_allowance =
+                    x402::tip20::allowance(&provider, token, payer_addr, pay_to_addr)
+                        .await
+                        .unwrap_or(alloy::primitives::U256::ZERO);
+
+                // If allowance is below 1B pathUSD, approve MAX
+                if current_allowance < alloy::primitives::U256::from(1_000_000_000_000_000u64) {
+                    tracing::info!(
+                        payer = %payer_addr,
+                        facilitator = %pay_to_addr,
+                        "Auto-approving facilitator for pathUSD (first payment to this peer)"
+                    );
+                    match x402::tip20::approve(
+                        &provider,
+                        token,
+                        pay_to_addr,
+                        alloy::primitives::U256::MAX,
+                    )
+                    .await
+                    {
+                        Ok(tx) => {
+                            tracing::info!(tx = %tx, "Facilitator approved for pathUSD");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Auto-approval failed — payment may fail");
+                        }
+                    }
+                }
+            }
+        }
+
         // Step 3: Sign payment using wallet signer (same pattern as register_endpoint)
         let signer = x402::wallet::WalletSigner::new(&private_key)
             .map_err(|e| format!("failed to create signer: {e}"))?;
