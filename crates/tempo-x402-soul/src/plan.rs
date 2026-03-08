@@ -408,8 +408,8 @@ impl<'a> PlanExecutor<'a> {
                     .await;
                 let peers_json = match &discover_result {
                     StepResult::Success(output) => output.clone(),
-                    StepResult::Failure(err) => {
-                        return StepResult::Failure(format!("peer discovery failed: {err}"));
+                    StepResult::Failed(err) => {
+                        return StepResult::Failed(format!("peer discovery failed: {err}"));
                     }
                 };
 
@@ -440,7 +440,7 @@ impl<'a> PlanExecutor<'a> {
                 let url = match callable_url {
                     Some(u) => u,
                     None => {
-                        return StepResult::Failure(format!(
+                        return StepResult::Failed(format!(
                             "endpoint '{slug}' not found on any peer. Available peers: {peers_json}"
                         ));
                     }
