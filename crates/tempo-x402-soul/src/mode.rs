@@ -60,6 +60,7 @@ impl AgentMode {
                 v.push(tools::check_reputation_tool());
                 v.push(tools::discover_peers_tool());
                 v.push(tools::call_paid_endpoint_tool());
+                v.push(tools::delete_endpoint_tool());
                 v.push(tools::check_deploy_status_tool());
                 v.push(tools::get_deploy_logs_tool());
                 v
@@ -92,6 +93,7 @@ impl AgentMode {
                 v.push(tools::update_memory_tool());
                 v.push(tools::update_beliefs_tool());
                 v.push(tools::register_endpoint_tool());
+                v.push(tools::delete_endpoint_tool());
                 v.push(tools::check_self_tool());
                 v.push(tools::check_reputation_tool());
                 v.push(tools::update_agent_metadata_tool());

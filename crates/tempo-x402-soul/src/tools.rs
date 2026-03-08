@@ -268,6 +268,13 @@ impl ToolExecutor {
                     .ok_or_else(|| "missing 'endpoint' argument".to_string())?;
                 self.check_self(endpoint).await
             }
+            "delete_endpoint" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                self.delete_endpoint(slug).await
+            }
             "register_endpoint" => {
                 let slug = args
                     .get("slug")
@@ -988,6 +995,57 @@ impl ToolExecutor {
             }
             Ok(Err(e)) => Err(format!("failed to run script: {e}")),
             Err(_) => Err("script timed out (10s limit for tests)".to_string()),
+        }
+    }
+
+    /// Delete (deactivate) an endpoint on the local gateway.
+    /// Uses the gateway's internal admin path — no payment required for own endpoints.
+    async fn delete_endpoint(&self, slug: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let default_url = format!(
+            "http://localhost:{}",
+            std::env::var("PORT").unwrap_or_else(|_| "4023".to_string())
+        );
+        let gateway_url = self.gateway_url.clone().unwrap_or(default_url);
+
+        // Call the gateway's admin delete endpoint (no payment needed for local)
+        let url = format!(
+            "{}/admin/endpoints/{}",
+            gateway_url.trim_end_matches('/'),
+            slug
+        );
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| format!("failed to build HTTP client: {e}"))?;
+
+        match client.delete(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let duration_ms = start.elapsed().as_millis() as u64;
+                Ok(ToolResult {
+                    stdout: body,
+                    stderr: if status.is_success() {
+                        String::new()
+                    } else {
+                        format!("delete returned status {status}")
+                    },
+                    exit_code: status.as_u16() as i32,
+                    duration_ms,
+                })
+            }
+            Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
+                Ok(ToolResult {
+                    stdout: String::new(),
+                    stderr: format!("delete request failed: {e}"),
+                    exit_code: -1,
+                    duration_ms,
+                })
+            }
         }
     }
 
@@ -2174,6 +2232,24 @@ pub fn register_endpoint_tool() -> FunctionDeclaration {
                 }
             },
             "required": ["slug", "target_url"]
+        }),
+    }
+}
+
+/// Return the delete_endpoint tool declaration (Observe + Code modes).
+pub fn delete_endpoint_tool() -> FunctionDeclaration {
+    FunctionDeclaration {
+        name: "delete_endpoint".to_string(),
+        description: "Delete (deactivate) a registered endpoint by slug. Use this to clean up unused or redundant endpoints.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug of the endpoint to delete"
+                }
+            },
+            "required": ["slug"]
         }),
     }
 }

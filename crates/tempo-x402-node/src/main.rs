@@ -30,6 +30,28 @@ mod state;
 
 use state::NodeState;
 
+/// Admin endpoint: DELETE /admin/endpoints/{slug} — deactivate an endpoint without payment.
+/// Intended for soul/local tools only. No authentication required (local access).
+async fn admin_delete_endpoint(
+    path: web::Path<String>,
+    state: web::Data<NodeState>,
+) -> actix_web::HttpResponse {
+    let slug = path.into_inner();
+    match state.gateway.db.delete_endpoint(&slug) {
+        Ok(()) => {
+            tracing::info!(slug = %slug, "Admin deleted endpoint");
+            actix_web::HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "message": format!("Endpoint '{}' deactivated", slug),
+            }))
+        }
+        Err(e) => actix_web::HttpResponse::NotFound().json(serde_json::json!({
+            "success": false,
+            "error": format!("{e}"),
+        })),
+    }
+}
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // Load .env file if present
@@ -1064,7 +1086,12 @@ async fn main() -> std::io::Result<()> {
             .configure(crate::routes::instance::configure)
             .configure(crate::routes::wallet::configure)
             // Script endpoints — soul-created dynamic handlers (no compilation needed)
-            .configure(crate::routes::scripts::configure);
+            .configure(crate::routes::scripts::configure)
+            // Admin endpoint — local-only endpoint management (no payment required)
+            .route(
+                "/admin/endpoints/{slug}",
+                web::delete().to(admin_delete_endpoint),
+            );
 
         #[cfg(feature = "agent")]
         {
