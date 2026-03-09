@@ -37,7 +37,7 @@ const DEFAULT_SCRIPT_AMOUNT: &str = "1000";
 /// Get pricing for a script endpoint based on its slug (without 'script-' prefix).
 pub fn get_script_pricing(slug: &str) -> (&'static str, &'static str) {
     match slug {
-        "atlas" => ("$0.002", "2000"),
+        "atlas" | "service-manifest" => ("$0.002", "2000"),
         _ => (DEFAULT_SCRIPT_PRICE, DEFAULT_SCRIPT_AMOUNT),
     }
 }
