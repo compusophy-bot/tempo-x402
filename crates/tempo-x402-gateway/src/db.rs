@@ -165,6 +165,61 @@ impl Database {
         })
     }
 
+    /// Create or reactivate an endpoint. If the slug exists (even soft-deleted),
+    /// update it in place and set active=1. Used by startup auto-registration
+    /// to reclaim soft-deleted script endpoints.
+    pub fn create_or_reactivate_endpoint(
+        &self,
+        slug: &str,
+        owner_address: &str,
+        target_url: &str,
+        price_usd: &str,
+        price_amount: &str,
+        description: Option<&str>,
+    ) -> Result<Endpoint, GatewayError> {
+        // Try insert first (fast path for new endpoints)
+        match self.create_endpoint(
+            slug,
+            owner_address,
+            target_url,
+            price_usd,
+            price_amount,
+            description,
+        ) {
+            Ok(ep) => return Ok(ep),
+            Err(GatewayError::SlugExists(_)) => { /* fall through to reactivate */ }
+            Err(e) => return Err(e),
+        }
+
+        // Slug exists (possibly soft-deleted) — reactivate with updated fields
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| GatewayError::Internal("database lock poisoned".to_string()))?;
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            r#"
+            UPDATE endpoints
+            SET owner_address = ?2, target_url = ?3, price_usd = ?4,
+                price_amount = ?5, description = ?6, updated_at = ?7, active = 1
+            WHERE slug = ?1
+            "#,
+            params![
+                slug,
+                owner_address,
+                target_url,
+                price_usd,
+                price_amount,
+                description,
+                now
+            ],
+        )?;
+
+        self.get_endpoint(slug)?
+            .ok_or_else(|| GatewayError::Internal("reactivated endpoint not found".to_string()))
+    }
+
     /// Get endpoint by slug
     pub fn get_endpoint(&self, slug: &str) -> Result<Option<Endpoint>, GatewayError> {
         let conn = self

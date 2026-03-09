@@ -95,6 +95,16 @@ async fn admin_delete_endpoint(
     let slug = path.into_inner();
     match state.gateway.db.delete_endpoint(&slug) {
         Ok(()) => {
+            // Also remove the script file from disk to prevent orphans
+            let base = slug.strip_prefix("script-").unwrap_or(&slug);
+            let script_path = std::path::Path::new("/data/endpoints").join(format!("{base}.sh"));
+            if script_path.exists() {
+                if let Err(e) = std::fs::remove_file(&script_path) {
+                    tracing::warn!(slug = %slug, error = %e, "Failed to remove script file");
+                } else {
+                    tracing::info!(slug = %slug, "Removed script file from disk");
+                }
+            }
             tracing::info!(slug = %slug, "Admin deleted endpoint");
             actix_web::HttpResponse::Ok().json(serde_json::json!({
                 "success": true,
@@ -338,7 +348,7 @@ async fn main() -> std::io::Result<()> {
                                 .unwrap_or_else(|| format!("Script endpoint: {stem}"));
                             let (price_usd, price_amount) =
                                 routes::scripts::get_script_pricing(base);
-                            match gateway_db.create_endpoint(
+                            match gateway_db.create_or_reactivate_endpoint(
                                 &script_slug,
                                 &owner,
                                 &target,
@@ -349,8 +359,8 @@ async fn main() -> std::io::Result<()> {
                                 Ok(_) => {
                                     tracing::info!(slug = %script_slug, "Auto-registered script endpoint")
                                 }
-                                Err(_) => {
-                                    tracing::debug!(slug = %script_slug, "Script endpoint already registered")
+                                Err(e) => {
+                                    tracing::warn!(slug = %script_slug, error = %e, "Failed to register script endpoint")
                                 }
                             }
                         }
