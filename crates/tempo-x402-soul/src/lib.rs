@@ -12,6 +12,7 @@ pub mod coding;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod fitness;
 pub mod git;
 pub mod guard;
 pub mod llm;

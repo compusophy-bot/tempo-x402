@@ -77,6 +77,24 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
         })
         .collect();
 
+    // Include fitness score if soul DB is available
+    let fitness = state
+        .soul_db
+        .as_ref()
+        .and_then(|db| x402_soul::fitness::FitnessScore::load_current(db))
+        .map(|f| {
+            serde_json::json!({
+                "total": f.total,
+                "trend": f.trend,
+                "economic": f.economic,
+                "execution": f.execution,
+                "evolution": f.evolution,
+                "coordination": f.coordination,
+                "introspection": f.introspection,
+                "measured_at": f.measured_at,
+            })
+        });
+
     HttpResponse::Ok().json(serde_json::json!({
         "identity": identity_info,
         "agent_token_id": state.agent_token_id,
@@ -89,6 +107,7 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
         "uptime_seconds": uptime_secs,
         "wallet_balance": wallet_balance,
         "endpoints": endpoints,
+        "fitness": fitness,
     }))
 }
 

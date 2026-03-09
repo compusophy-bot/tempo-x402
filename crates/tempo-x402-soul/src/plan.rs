@@ -164,6 +164,23 @@ pub enum PlanStep {
         #[serde(default)]
         store_as: Option<String>,
     },
+    /// Create a new GitHub repository.
+    CreateGithubRepo {
+        name: String,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        private: Option<bool>,
+        #[serde(default)]
+        store_as: Option<String>,
+    },
+    /// Fork an existing GitHub repository.
+    ForkGithubRepo {
+        owner: String,
+        repo: String,
+        #[serde(default)]
+        store_as: Option<String>,
+    },
 }
 
 impl PlanStep {
@@ -228,6 +245,8 @@ impl PlanStep {
                 let m = method.as_deref().unwrap_or("GET");
                 format!("{m} peer/{slug} (paid)")
             }
+            PlanStep::CreateGithubRepo { name, .. } => format!("create repo {name}"),
+            PlanStep::ForkGithubRepo { owner, repo, .. } => format!("fork {owner}/{repo}"),
         }
     }
 
@@ -246,7 +265,9 @@ impl PlanStep {
             | PlanStep::Think { store_as, .. }
             | PlanStep::DeleteEndpoint { store_as, .. }
             | PlanStep::DiscoverPeers { store_as, .. }
-            | PlanStep::CallPeer { store_as, .. } => store_as.as_deref(),
+            | PlanStep::CallPeer { store_as, .. }
+            | PlanStep::CreateGithubRepo { store_as, .. }
+            | PlanStep::ForkGithubRepo { store_as, .. } => store_as.as_deref(),
             PlanStep::Commit { .. } | PlanStep::GenerateCode { .. } | PlanStep::EditCode { .. } => {
                 None
             }
@@ -500,6 +521,28 @@ impl<'a> PlanExecutor<'a> {
                     args["body"] = serde_json::json!(b);
                 }
                 self.execute_tool("call_paid_endpoint", &args).await
+            }
+            PlanStep::CreateGithubRepo {
+                name,
+                description,
+                private,
+                ..
+            } => {
+                let mut args = serde_json::json!({ "name": name });
+                if let Some(desc) = description {
+                    args["description"] = serde_json::json!(desc);
+                }
+                if let Some(priv_flag) = private {
+                    args["private"] = serde_json::json!(priv_flag);
+                }
+                self.execute_tool("create_github_repo", &args).await
+            }
+            PlanStep::ForkGithubRepo { owner, repo, .. } => {
+                self.execute_tool(
+                    "fork_github_repo",
+                    &serde_json::json!({ "owner": owner, "repo": repo }),
+                )
+                .await
             }
         }
     }

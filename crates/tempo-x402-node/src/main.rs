@@ -399,7 +399,15 @@ async fn main() -> std::io::Result<()> {
         let docker_image = std::env::var("DOCKER_IMAGE").ok().filter(|s| !s.is_empty());
         let source_repo = std::env::var("CLONE_SOURCE_REPO")
             .ok()
-            .filter(|s| !s.is_empty());
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                // Fallback: use SOUL_FORK_REPO if CLONE_SOURCE_REPO not set.
+                // This prevents accidentally spawning Docker-image clones when
+                // a fork repo is available for source-based builds.
+                std::env::var("SOUL_FORK_REPO")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            });
         let github_token = std::env::var("GITHUB_TOKEN").ok().filter(|s| !s.is_empty());
 
         // Clone orchestrator requires Railway credentials + at least one deployment source
@@ -430,6 +438,10 @@ async fn main() -> std::io::Result<()> {
                 if let Ok(key) = std::env::var("GEMINI_API_KEY") {
                     child_env_vars.insert("GEMINI_API_KEY".into(), key);
                 }
+                // Clones use flash-lite by default for cost efficiency
+                let clone_model = std::env::var("CLONE_GEMINI_MODEL")
+                    .unwrap_or_else(|_| "gemini-flash-lite-latest".to_string());
+                child_env_vars.insert("GEMINI_MODEL_FAST".into(), clone_model);
                 child_env_vars.insert("SOUL_CODING_ENABLED".into(), "true".into());
                 child_env_vars.insert("SOUL_DB_PATH".into(), "/data/soul.db".into());
 

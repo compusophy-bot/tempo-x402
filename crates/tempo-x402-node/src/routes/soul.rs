@@ -23,6 +23,9 @@ struct SoulStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_plan: Option<PlanInfo>,
     recent_thoughts: Vec<ThoughtEntry>,
+    /// Fitness score — evolutionary selection pressure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fitness: Option<serde_json::Value>,
     /// Active beliefs from the world model.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     beliefs: Vec<BeliefEntry>,
@@ -258,6 +261,20 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         }
     });
 
+    // Fetch fitness score
+    let fitness = x402_soul::fitness::FitnessScore::load_current(soul_db).map(|f| {
+        serde_json::json!({
+            "total": f.total,
+            "trend": f.trend,
+            "economic": f.economic,
+            "execution": f.execution,
+            "evolution": f.evolution,
+            "coordination": f.coordination,
+            "introspection": f.introspection,
+            "measured_at": f.measured_at,
+        })
+    });
+
     HttpResponse::Ok().json(SoulStatus {
         active: true,
         dormant: state.soul_dormant,
@@ -273,6 +290,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             failed_plans_count,
             goals_active,
         },
+        fitness,
         active_plan,
         pending_plan,
         recent_thoughts,

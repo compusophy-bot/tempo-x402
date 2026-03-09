@@ -231,6 +231,20 @@ impl ThinkingLoop {
             // Run housekeeping (decay, promotion, belief decay, consolidation)
             self.housekeeping();
 
+            // Compute and store fitness score every cycle
+            let fitness = crate::fitness::FitnessScore::compute(&snapshot, &self.db);
+            fitness.store(&self.db);
+            tracing::info!(
+                fitness = format!("{:.3}", fitness.total),
+                trend = format!("{:+.4}", fitness.trend),
+                econ = format!("{:.2}", fitness.economic),
+                exec = format!("{:.2}", fitness.execution),
+                evol = format!("{:.2}", fitness.evolution),
+                coord = format!("{:.2}", fitness.coordination),
+                intro = format!("{:.2}", fitness.introspection),
+                "Fitness score"
+            );
+
             let next_secs = pacer.next_interval(&snapshot, cycle_result.step_type);
 
             // Persist cycle health metrics
@@ -887,13 +901,13 @@ impl ThinkingLoop {
             let now = chrono::Utc::now().timestamp();
             let seed_goals = [
                 (
-                    "Create a script endpoint using create_script_endpoint: \
-                     an 'introspect' endpoint that uses check_self to query this node's health, \
-                     analytics, and soul status, then returns a structured JSON summary of the node's \
-                     current state — active goals, belief count, cycle count, endpoint stats, revenue. \
-                     Use curl to hit localhost endpoints and jq to assemble the response. \
-                     Then test it with test_script_endpoint.",
-                    "GET /x/introspect returns JSON with node state summary, test_script_endpoint succeeds",
+                    "Research your own codebase: read the main thinking loop \
+                     (crates/tempo-x402-soul/src/thinking.rs), the prompt system \
+                     (crates/tempo-x402-soul/src/prompts.rs), and the tool executor \
+                     (crates/tempo-x402-soul/src/tools.rs). Understand how you think, \
+                     plan, and act. Record what you learn as beliefs — what are your \
+                     strengths, weaknesses, and opportunities for self-improvement?",
+                    "At least 3 beliefs recorded about own architecture, capabilities, and limitations",
                     5u32,
                 ),
                 (
@@ -945,15 +959,16 @@ impl ThinkingLoop {
                 let now = chrono::Utc::now().timestamp();
                 let goal = Goal {
                     id: uuid::Uuid::new_v4().to_string(),
-                    description: "Generate demand: use discover_peers to find sibling agents, \
-                         then use call_peer to call at least 3 different peer endpoints. \
-                         This creates real economic activity and makes you visible to the network. \
-                         Record what each peer offers and what responses you get."
+                    description: "Engage with the agent network: use discover_peers to find sibling agents, \
+                         then use call_peer to call at least 2 different peer endpoints. \
+                         Also read your own source code (start with crates/tempo-x402-soul/src/thinking.rs) \
+                         to find one concrete improvement you could make to yourself. \
+                         Record what you learn as beliefs."
                         .to_string(),
                     status: crate::world_model::GoalStatus::Active,
                     priority: 5,
                     success_criteria:
-                        "call_peer succeeds on at least 2 different peer endpoints with paid responses"
+                        "call_peer succeeds on at least 1 peer endpoint AND at least 1 belief recorded about self-improvement opportunity"
                             .to_string(),
                     progress_notes: String::new(),
                     parent_goal_id: None,
@@ -971,7 +986,7 @@ impl ThinkingLoop {
             }
 
             // ── Prune seed: too many endpoints with 0 payments → prune during demand backoff ──
-            if recently_failed_demand && snapshot.endpoint_count > 10 {
+            if recently_failed_demand && snapshot.endpoint_count > 5 {
                 let has_prune_goal = active_goals.iter().any(|g| {
                     let d = g.description.to_lowercase();
                     d.contains("delete_endpoint")
@@ -989,9 +1004,10 @@ impl ThinkingLoop {
                         id: uuid::Uuid::new_v4().to_string(),
                         description: format!(
                             "Prune endpoints: you have {} endpoints and 0 payments. \
-                             Use delete_endpoint to remove low-value diagnostic scripts until \
-                             you have at most 5 high-quality endpoints. Keep: chat, info, clone, \
-                             soul. Delete: duplicate diagnostics, debug scripts, audit tools.",
+                             Use delete_endpoint to remove ALL script endpoints except \
+                             the 2-3 most useful ones. Keep core endpoints: chat, info, clone, \
+                             soul. Target: 5 or fewer total endpoints. \
+                             After pruning, focus on research and code improvement instead.",
                             snapshot.endpoint_count
                         ),
                         status: crate::world_model::GoalStatus::Active,
@@ -1032,6 +1048,7 @@ impl ThinkingLoop {
             .iter()
             .map(|g| g.description.clone())
             .collect();
+        let fitness = crate::fitness::FitnessScore::load_current(&self.db);
         let prompt = prompts::goal_creation_prompt(
             snapshot,
             &beliefs,
@@ -1041,6 +1058,7 @@ impl ThinkingLoop {
             total_cycles,
             &recent_errors,
             &failed_descriptions,
+            fitness.as_ref(),
         );
         let system = "You are an autonomous agent. Output ONLY a JSON array of goal operations.";
 

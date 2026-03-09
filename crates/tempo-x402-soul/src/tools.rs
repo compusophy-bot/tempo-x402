@@ -184,6 +184,16 @@ impl ToolExecutor {
                 self.search_files(pattern, path, glob).await
             }
             "commit_changes" => {
+                // Track commits for fitness evolution score
+                if let Some(ref db) = self.db {
+                    let total_commits: u64 = db
+                        .get_state("total_commits")
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
+                    let _ = db.set_state("total_commits", &(total_commits + 1).to_string());
+                }
                 let message = args
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -342,7 +352,32 @@ impl ToolExecutor {
                     .ok_or_else(|| "missing 'url' argument".to_string())?;
                 let method = args.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
                 let body = args.get("body").and_then(|v| v.as_str());
-                self.call_paid_endpoint(url, method, body).await
+                // Track peer call attempts for fitness scoring
+                if let Some(ref db) = self.db {
+                    let attempted: u64 = db
+                        .get_state("peer_calls_attempted")
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
+                    let _ = db.set_state("peer_calls_attempted", &(attempted + 1).to_string());
+                }
+                let result = self.call_paid_endpoint(url, method, body).await;
+                if let Ok(ref r) = result {
+                    if r.exit_code == 200 || r.exit_code == 0 {
+                        if let Some(ref db) = self.db {
+                            let succeeded: u64 = db
+                                .get_state("peer_calls_succeeded")
+                                .ok()
+                                .flatten()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(0);
+                            let _ =
+                                db.set_state("peer_calls_succeeded", &(succeeded + 1).to_string());
+                        }
+                    }
+                }
+                result
             }
             "check_reputation" => self.check_reputation().await,
             "update_agent_metadata" => {
@@ -358,6 +393,29 @@ impl ToolExecutor {
                 self.get_deploy_logs(deployment_id).await
             }
             "trigger_redeploy" => self.trigger_redeploy().await,
+            "create_github_repo" => {
+                let name = args
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'name' argument".to_string())?;
+                let description = args.get("description").and_then(|v| v.as_str());
+                let private = args
+                    .get("private")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                self.create_github_repo(name, description, private).await
+            }
+            "fork_github_repo" => {
+                let owner = args
+                    .get("owner")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'owner' argument".to_string())?;
+                let repo = args
+                    .get("repo")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'repo' argument".to_string())?;
+                self.fork_github_repo(owner, repo).await
+            }
             "list_script_endpoints" => self.list_script_endpoints().await,
             "test_script_endpoint" => {
                 let slug = args
@@ -846,6 +904,56 @@ impl ToolExecutor {
         description: Option<&str>,
     ) -> Result<ToolResult, String> {
         let start = std::time::Instant::now();
+
+        // Server-side endpoint cap: prevent script endpoint spam
+        let scripts_dir_check = std::path::PathBuf::from("/data/endpoints");
+        if scripts_dir_check.exists() {
+            let script_count = std::fs::read_dir(&scripts_dir_check)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.path().extension().map(|ext| ext == "sh").unwrap_or(false))
+                        .count()
+                })
+                .unwrap_or(0);
+            if script_count >= 10 {
+                return Err(format!(
+                    "script endpoint limit reached ({script_count}/10). \
+                     Delete existing endpoints before creating new ones. \
+                     Focus on improving code quality instead of creating more scripts."
+                ));
+            }
+
+            // Duplicate detection: reject slugs too similar to existing endpoints
+            let existing_slugs: Vec<String> = std::fs::read_dir(&scripts_dir_check)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    e.path()
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(String::from)
+                })
+                .collect();
+            let new_words: std::collections::HashSet<&str> = slug.split('-').collect();
+            for existing in &existing_slugs {
+                let existing_words: std::collections::HashSet<&str> = existing.split('-').collect();
+                let intersection = new_words.intersection(&existing_words).count();
+                let union = new_words.union(&existing_words).count();
+                if union > 0 {
+                    let similarity = intersection as f64 / union as f64;
+                    if similarity > 0.5 && slug != existing.as_str() {
+                        return Err(format!(
+                            "slug '{slug}' is too similar to existing endpoint '{existing}' \
+                             (Jaccard similarity {:.0}%). Each endpoint must be genuinely unique. \
+                             Try something completely different.",
+                            similarity * 100.0
+                        ));
+                    }
+                }
+            }
+        }
 
         // Strip "script-" prefix if the LLM redundantly added it (node auto-prefixes)
         let slug = slug.strip_prefix("script-").unwrap_or(slug);
@@ -1484,6 +1592,128 @@ impl ToolExecutor {
             exit_code: if success { 0 } else { 1 },
             duration_ms,
         })
+    }
+
+    /// Create a new GitHub repository.
+    async fn create_github_repo(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        private: bool,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let token = std::env::var("GITHUB_TOKEN")
+            .map_err(|_| "GITHUB_TOKEN not set — cannot create repos".to_string())?;
+
+        // Validate name
+        if !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
+            return Err(
+                "repo name must be alphanumeric with hyphens, underscores, or dots".to_string(),
+            );
+        }
+
+        let client = reqwest::Client::new();
+        let mut body = serde_json::json!({
+            "name": name,
+            "private": private,
+            "auto_init": true,
+        });
+        if let Some(desc) = description {
+            body["description"] = serde_json::json!(desc);
+        }
+
+        let resp = client
+            .post("https://api.github.com/user/repos")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("User-Agent", "x402-soul")
+            .header("Accept", "application/vnd.github+json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("GitHub API error: {e}"))?;
+
+        let status = resp.status();
+        let resp_body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse GitHub response: {e}"))?;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if status.is_success() {
+            let html_url = resp_body["html_url"].as_str().unwrap_or("unknown");
+            let clone_url = resp_body["clone_url"].as_str().unwrap_or("unknown");
+            Ok(ToolResult {
+                stdout: format!(
+                    "Repository created successfully!\nURL: {html_url}\nClone: {clone_url}\nPrivate: {private}"
+                ),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms,
+            })
+        } else {
+            let msg = resp_body["message"].as_str().unwrap_or("unknown error");
+            Ok(ToolResult {
+                stdout: String::new(),
+                stderr: format!("GitHub API error ({status}): {msg}"),
+                exit_code: 1,
+                duration_ms,
+            })
+        }
+    }
+
+    /// Fork an existing GitHub repository.
+    async fn fork_github_repo(&self, owner: &str, repo: &str) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let token = std::env::var("GITHUB_TOKEN")
+            .map_err(|_| "GITHUB_TOKEN not set — cannot fork repos".to_string())?;
+
+        let client = reqwest::Client::new();
+        let url = format!("https://api.github.com/repos/{owner}/{repo}/forks");
+
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("User-Agent", "x402-soul")
+            .header("Accept", "application/vnd.github+json")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .map_err(|e| format!("GitHub API error: {e}"))?;
+
+        let status = resp.status();
+        let resp_body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse GitHub response: {e}"))?;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if status.is_success() || status.as_u16() == 202 {
+            let html_url = resp_body["html_url"].as_str().unwrap_or("unknown");
+            let full_name = resp_body["full_name"].as_str().unwrap_or("unknown");
+            Ok(ToolResult {
+                stdout: format!(
+                    "Repository forked successfully!\nFork: {full_name}\nURL: {html_url}\nOriginal: {owner}/{repo}"
+                ),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms,
+            })
+        } else {
+            let msg = resp_body["message"].as_str().unwrap_or("unknown error");
+            Ok(ToolResult {
+                stdout: String::new(),
+                stderr: format!("GitHub API error ({status}): {msg}"),
+                exit_code: 1,
+                duration_ms,
+            })
+        }
     }
 
     /// Discover peer instances by calling parent's /instance/siblings endpoint.
@@ -2700,7 +2930,7 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         // Script endpoint tools — create HTTP endpoints without Rust compilation
         tools.push(FunctionDeclaration {
             name: "create_script_endpoint".to_string(),
-            description: "Create an instant HTTP endpoint by writing a bash script. The script becomes available at GET/POST /x/{slug} immediately — no compilation or restart needed. The script receives REQUEST_METHOD, REQUEST_BODY, QUERY_STRING, REQUEST_HEADERS as env vars. Output JSON to stdout for JSON responses, or plain text.".to_string(),
+            description: "Create an instant HTTP endpoint by writing a bash script. The script becomes available at GET/POST /x/{slug} immediately — no compilation or restart needed. The script receives REQUEST_METHOD, REQUEST_BODY, QUERY_STRING, REQUEST_HEADERS as env vars. Output JSON to stdout for JSON responses, or plain text. IMPORTANT: Do NOT create endpoints similar to ones that already exist — each must be genuinely unique and useful.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -2748,6 +2978,49 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     }
                 },
                 "required": ["slug"]
+            }),
+        });
+
+        // GitHub tools — create repos, fork repos, expand into external projects
+        tools.push(FunctionDeclaration {
+            name: "create_github_repo".to_string(),
+            description: "Create a new GitHub repository. Use this to start new projects, libraries, or research repos. Requires GITHUB_TOKEN.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Repository name (e.g. 'my-research-project')"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of the repository"
+                    },
+                    "private": {
+                        "type": "boolean",
+                        "description": "Whether the repo should be private (default: false)"
+                    }
+                },
+                "required": ["name"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "fork_github_repo".to_string(),
+            description: "Fork an existing GitHub repository to your account. Use this to study, improve, or build on other projects.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "owner": {
+                        "type": "string",
+                        "description": "Repository owner (e.g. 'openai')"
+                    },
+                    "repo": {
+                        "type": "string",
+                        "description": "Repository name (e.g. 'whisper')"
+                    }
+                },
+                "required": ["owner", "repo"]
             }),
         });
     }

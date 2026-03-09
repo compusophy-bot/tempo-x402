@@ -81,8 +81,20 @@ pub fn goal_creation_prompt(
     total_cycles: u64,
     recent_errors: &[String],
     recently_failed_goals: &[String],
+    fitness: Option<&crate::fitness::FitnessScore>,
 ) -> String {
     let mut sections = Vec::new();
+
+    let fitness_str = if let Some(f) = fitness {
+        format!(
+            "\n\
+         - **Fitness**: {:.3} (trend: {:+.4})\n\
+         - Economic: {:.2} | Execution: {:.2} | Evolution: {:.2} | Coordination: {:.2} | Introspection: {:.2}",
+            f.total, f.trend, f.economic, f.execution, f.evolution, f.coordination, f.introspection
+        )
+    } else {
+        String::new()
+    };
 
     sections.push(format!(
         "# Current State\n\
@@ -90,7 +102,7 @@ pub fn goal_creation_prompt(
          - Endpoints: {}\n\
          - Total payments: {}\n\
          - Total revenue: {}\n\
-         - Children: {}",
+         - Children: {}{fitness_str}",
         snapshot.uptime_secs / 3600,
         snapshot.endpoint_count,
         snapshot.total_payments,
@@ -205,34 +217,30 @@ pub fn goal_creation_prompt(
         .filter(|ep| ep.payment_count > 0)
         .count();
 
-    let situation_analysis = if endpoint_count > 3 && total_payments == 0 {
+    let situation_analysis = if endpoint_count > 5 && total_payments == 0 {
         format!(
             "## CRITICAL: You have {endpoint_count} endpoints and ZERO payments.\n\
-             STOP CREATING ENDPOINTS. You have enough. The problem is not supply — it's demand.\n\
-             You MUST do one of these instead:\n\
-             1. Discover peers (discover_peers) and call their endpoints — generate REAL traffic\n\
-             2. Delete low-value endpoints (delete_endpoint) until you have ≤5 high-quality ones\n\
-             3. Investigate reachability: can peers actually find and call your endpoints?\n\n\
-             DO NOT create any new script endpoints. This is a hard constraint.\n\
-             Focus on the ECONOMY: call peers, earn revenue, prune dead weight."
+             STOP creating more endpoints — you clearly have enough. Focus on:\n\
+             1. **Research**: Read your own source code, create new repos for experiments\n\
+             2. **Coordinate**: discover_peers + call_peer — engage with sibling agents\n\
+             3. **Prune**: delete_endpoint — remove redundant/similar scripts\n\
+             4. **Expand**: Create GitHub repos, fork interesting projects, do real AI research\n\
+             5. **Improve**: Write real Rust code to make yourself better\n\n\
+             Do NOT create more endpoints until existing ones earn payments."
         )
     } else if endpoint_count > 0 && paid_endpoints == 0 {
         format!(
             "## WARNING: You have {endpoint_count} endpoints but NONE have received payments.\n\
-             DO NOT create more endpoints. Your existing supply is untested.\n\
-             You MUST generate demand first:\n\
-             1. Use discover_peers to find sibling agents\n\
-             2. Use call_peer to call at least 2-3 of their endpoints — this creates real economic activity\n\
-             3. After calling peers, check if they call you back (check_self analytics)\n\
-             4. If no peers exist yet, delete low-value endpoints and wait\n\n\
-             Revenue comes from OTHER agents calling YOUR endpoints. But they won't discover you \
-             unless you participate in the economy first. Call peers to make yourself visible."
+             Before creating more endpoints, try:\n\
+             1. Create a GitHub repo for a new research project\n\
+             2. Use discover_peers + call_peer to engage with the network\n\
+             3. Write real Rust code improvements and commit them\n\
+             4. Fork an interesting project and study/improve it"
         )
     } else if endpoint_count > 0 && paid_endpoints > 0 {
         format!(
-            "## {paid_endpoints}/{endpoint_count} endpoints have received payments. \
-             Focus on what's working. Improve or extend the ones that earn revenue. \
-             Do NOT create new endpoints unless you have a clear reason."
+            "## {paid_endpoints}/{endpoint_count} endpoints have received payments. Good.\n\
+             Expand: create repos, fork projects, research, coordinate with peers, build new capabilities."
         )
     } else {
         String::new()
@@ -254,10 +262,19 @@ pub fn goal_creation_prompt(
         "## Rules\n\
          - Create 1-2 goals MAX\n\
          - {endpoint_rule}\n\
-         - Do NOT edit Rust source code unless explicitly asked by a nudge\n\
+         - Your primary work is expanding capabilities — code improvements, new repos, research, peer coordination\n\
+         - Good goals: create a GitHub repo for research, fork an interesting project, fix a bug, improve peer discovery, research your own codebase, create a genuinely novel endpoint\n\
+         - Bad goals: create an endpoint similar to one that already exists, retry the same failed call, trivial variations of existing work\n\
          - Do NOT create \"fix\" goals — if something failed, try something DIFFERENT\n\
          - You can discover peer instances via `/instance/siblings` and call their paid endpoints\n\
-         - You can clone yourself using `call_peer` with the `/clone` endpoint (do NOT use curl — cloning requires x402 payment signing)\n\n\
+         - You can clone yourself using `call_peer` with the `/clone` endpoint (do NOT use curl — cloning requires x402 payment signing)\n\
+         - Your FITNESS SCORE measures how well you're evolving. Improve your weakest component:\n\
+           - economic: earn payments (quality endpoints, not spam)\n\
+           - execution: succeed at plans (don't fail repeatedly)\n\
+           - evolution: commit code changes that pass validation\n\
+           - coordination: successfully call peers\n\
+           - introspection: maintain accurate beliefs\n\
+         - A POSITIVE trend means you're getting smarter. A negative trend means you're stagnating. Act accordingly.\n\n\
          Respond with a JSON array of goal operations:\n\
          ```json\n\
          [\n\
@@ -265,10 +282,12 @@ pub fn goal_creation_prompt(
          ]\n\
          ```\n\
          Priority: 1 (low) to 5 (critical). Be specific.",
-        endpoint_rule = if total_payments == 0 && endpoint_count > 0 {
-            "DO NOT create new endpoints — you have 0 payments. Focus on demand: discover_peers, call_peer, delete_endpoint"
+        endpoint_rule = if total_payments == 0 && endpoint_count > 5 {
+            "You have too many unpaid endpoints. Do NOT create more. Prune redundant ones, then focus on: create_github_repo, fork_github_repo, research, call_peer"
+        } else if endpoint_count >= 10 {
+            "You have the max 10 endpoints. Do NOT create more. Focus on: create_github_repo, fork_github_repo, research, code improvements, peer coordination"
         } else {
-            "Script endpoints (create_script_endpoint) for new services — only if you have a clear value proposition"
+            "Endpoints are fine but each must be UNIQUE — never duplicate similar functionality. Also consider: create_github_repo, fork_github_repo for new projects"
         }
     ));
 
@@ -308,33 +327,22 @@ pub fn planning_prompt(
          Progress so far: {}\n\n\
          # Workspace\n\
          {}{}\n\n\
-         # How to Add Endpoints — TWO approaches\n\n\
-         ## Option A: Script Endpoints (PREFERRED — instant, no compilation)\n\
-         Use create_script_endpoint to write a bash script. It becomes live at /x/{{slug}} immediately.\n\
-         Steps: 1) create_script_endpoint with slug + bash script  2) test_script_endpoint to verify  3) Done!\n\
-         The script gets REQUEST_BODY, REQUEST_METHOD, QUERY_STRING as env vars. Output JSON to stdout.\n\
-         Available tools in scripts: bash, jq, python3, curl, bc, git, date, sed, awk, grep.\n\
-         Use jq for JSON processing. Use python3 for complex logic. Use curl to call external APIs.\n\
-         Example (jq):\n\
-         ```bash\n\
-         #!/bin/bash\n\
-         echo \"$REQUEST_BODY\" | jq '.' 2>/dev/null || echo '{{\"error\":\"invalid JSON\"}}'\n\
-         ```\n\
-         Example (python3):\n\
-         ```bash\n\
-         #!/bin/bash\n\
-         python3 -c \"import json,sys; print(json.dumps({{'time':__import__('time').time()}}))\"\n\
-         ```\n\n\
-         ## Option B: Rust Endpoints (ADVANCED — almost never needed)\n\
-         WARNING: Editing Rust source code requires the full project to compile. Past attempts to \
-         edit utils.rs have consistently failed with cargo check errors. Do NOT attempt Rust code \
-         changes unless a nudge explicitly requests it.\n\n\
-         USE SCRIPT ENDPOINTS. They are instant, always work, and support jq + python3 for complex logic.\n\n\
-         ## Inter-Agent Economy\n\
-         Your script endpoints are gated by x402 payment — other agents pay to call them.\n\
-         You can call other agents' paid endpoints using `call_peer` (discovers + calls in one step).\n\
-         ALWAYS use `call_peer` for inter-agent calls (discovers + resolves URL + signs payment in one step).\n\
-         Building useful endpoints = revenue from other agents calling them.\n\n\
+         # Approaches — Research, Code, Repos, and Coordination\n\n\
+         ## Code: Read and Improve Your Codebase\n\
+         - read_file to study how you work (thinking loop, peer discovery, payment flow, etc.)\n\
+         - edit_code / generate_code to make real Rust improvements\n\
+         - cargo_check to validate, commit to deploy\n\n\
+         ## Repos: Create and Fork GitHub Projects\n\
+         - create_github_repo to start new research projects, libraries, experiments\n\
+         - fork_github_repo to study and improve existing open-source projects\n\
+         - This is how you expand beyond your own codebase\n\n\
+         ## Endpoints: Paid API Services (quality over quantity)\n\
+         Use create_script_endpoint for genuinely unique, useful HTTP endpoints.\n\
+         Each endpoint must be DIFFERENT from existing ones. Max 10 total.\n\
+         The script gets REQUEST_BODY, REQUEST_METHOD, QUERY_STRING as env vars. Output JSON to stdout.\n\n\
+         ## Inter-Agent Coordination\n\
+         Use `call_peer` for inter-agent calls (discovers + resolves URL + signs payment in one step).\n\
+         The x402 economy works when agents build genuinely useful things for each other.\n\n\
          # Task\n\
          Create a step-by-step plan to achieve this goal. Each step is one of:\n\n\
          Mechanical (no LLM needed):\n\
@@ -344,11 +352,12 @@ pub fn planning_prompt(
          - {{\"type\": \"run_shell\", \"command\": \"...\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"commit\", \"message\": \"...\"}}\n\
          - {{\"type\": \"check_self\", \"endpoint\": \"health\", \"store_as\": \"key\"}}\n\
-         - (DEPRECATED: call_paid_endpoint — use call_peer instead, it handles URL resolution automatically)\n\
          - {{\"type\": \"create_script_endpoint\", \"slug\": \"...\", \"script\": \"#!/bin/bash\\n...\", \"description\": \"...\"}}\n\
          - {{\"type\": \"test_script_endpoint\", \"slug\": \"...\", \"input\": \"test data\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"cargo_check\", \"store_as\": \"check_result\"}}\n\
          - {{\"type\": \"delete_endpoint\", \"slug\": \"script-name\"}}  (deactivate a registered endpoint)\n\
+         - {{\"type\": \"create_github_repo\", \"name\": \"my-project\", \"description\": \"...\", \"store_as\": \"repo\"}}\n\
+         - {{\"type\": \"fork_github_repo\", \"owner\": \"user\", \"repo\": \"project\", \"store_as\": \"fork\"}}\n\
          - {{\"type\": \"discover_peers\", \"store_as\": \"peers\"}}  (fetches sibling/child instances and their endpoints)\n\
          - {{\"type\": \"call_peer\", \"slug\": \"script-peer-discovery\", \"store_as\": \"result\"}}  (RECOMMENDED for inter-agent calls — discovers peers, resolves URL, signs payment — ONE step)\n\n\
          LLM-assisted:\n\
