@@ -1607,9 +1607,39 @@ impl ToolExecutor {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
 
+                if !status.is_success() {
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    return Ok(ToolResult {
+                        stdout: String::new(),
+                        stderr: format!(
+                            "discover_peers: {} returned HTTP {} — {}",
+                            url,
+                            status.as_u16(),
+                            body.chars().take(200).collect::<String>()
+                        ),
+                        exit_code: status.as_u16() as i32,
+                        duration_ms,
+                    });
+                }
+
                 // Parse siblings and enrich each with /instance/info
-                let siblings_json: serde_json::Value =
-                    serde_json::from_str(&body).unwrap_or_default();
+                let siblings_json: serde_json::Value = match serde_json::from_str(&body) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let duration_ms = start.elapsed().as_millis() as u64;
+                        return Ok(ToolResult {
+                            stdout: String::new(),
+                            stderr: format!(
+                                "discover_peers: failed to parse response from {}: {} — body: {}",
+                                url,
+                                e,
+                                body.chars().take(200).collect::<String>()
+                            ),
+                            exit_code: -1,
+                            duration_ms,
+                        });
+                    }
+                };
                 let siblings = siblings_json
                     .get("siblings")
                     .and_then(|v| v.as_array())

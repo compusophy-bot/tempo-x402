@@ -420,8 +420,15 @@ impl<'a> PlanExecutor<'a> {
                 };
 
                 // Step 2: Find the callable_url for the target slug
-                let peers: serde_json::Value =
-                    serde_json::from_str(&peers_json).unwrap_or_default();
+                let peers: serde_json::Value = match serde_json::from_str(&peers_json) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return StepResult::Failed(format!(
+                            "failed to parse discover_peers output: {e} — raw: {}",
+                            peers_json.chars().take(300).collect::<String>()
+                        ));
+                    }
+                };
                 let callable_url = peers
                     .get("peers")
                     .and_then(|p| p.as_array())
