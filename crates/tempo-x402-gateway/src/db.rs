@@ -949,4 +949,86 @@ mod tests {
         .unwrap();
         assert!(db2.get_endpoint("x").unwrap().is_some());
     }
+
+    #[test]
+    fn test_create_or_reactivate_new() {
+        let db = Database::new(":memory:").unwrap();
+        let ep = db
+            .create_or_reactivate_endpoint(
+                "new-ep",
+                "0x1111111111111111111111111111111111111111",
+                "https://example.com",
+                "$0.01",
+                "10000",
+                Some("test endpoint"),
+            )
+            .unwrap();
+        assert_eq!(ep.slug, "new-ep");
+        assert!(ep.active);
+    }
+
+    #[test]
+    fn test_create_or_reactivate_soft_deleted() {
+        let db = Database::new(":memory:").unwrap();
+        db.create_endpoint(
+            "reactivate-me",
+            "0x1111111111111111111111111111111111111111",
+            "https://old.com",
+            "$0.01",
+            "10000",
+            Some("old description"),
+        )
+        .unwrap();
+
+        // Soft-delete
+        db.delete_endpoint("reactivate-me").unwrap();
+        assert!(db.get_endpoint("reactivate-me").unwrap().is_none());
+
+        // Reactivate with updated fields
+        let ep = db
+            .create_or_reactivate_endpoint(
+                "reactivate-me",
+                "0x2222222222222222222222222222222222222222",
+                "https://new.com",
+                "$0.05",
+                "50000",
+                Some("new description"),
+            )
+            .unwrap();
+        assert!(ep.active);
+        assert_eq!(ep.target_url, "https://new.com");
+        assert_eq!(
+            ep.owner_address,
+            "0x2222222222222222222222222222222222222222"
+        );
+        assert_eq!(ep.price_amount, "50000");
+    }
+
+    #[test]
+    fn test_create_or_reactivate_idempotent() {
+        let db = Database::new(":memory:").unwrap();
+        db.create_or_reactivate_endpoint(
+            "idem",
+            "0x1111111111111111111111111111111111111111",
+            "https://a.com",
+            "$0.01",
+            "10000",
+            None,
+        )
+        .unwrap();
+
+        // Second call should succeed (reactivate path, already active)
+        let ep = db
+            .create_or_reactivate_endpoint(
+                "idem",
+                "0x1111111111111111111111111111111111111111",
+                "https://b.com",
+                "$0.02",
+                "20000",
+                None,
+            )
+            .unwrap();
+        assert!(ep.active);
+        assert_eq!(ep.target_url, "https://b.com");
+    }
 }

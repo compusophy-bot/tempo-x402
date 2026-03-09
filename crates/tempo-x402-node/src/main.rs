@@ -74,7 +74,7 @@ async fn admin_register_endpoint(
     let target = format!("{self_url}/x/{stem}");
     let owner = std::env::var("EVM_ADDRESS").unwrap_or_default();
 
-    match state.gateway.db.create_endpoint(
+    match state.gateway.db.create_or_reactivate_endpoint(
         slug,
         &owner,
         &target,
@@ -91,12 +91,10 @@ async fn admin_register_endpoint(
             }))
         }
         Err(e) => {
-            // Already exists is not an error — update description silently
-            tracing::debug!(slug = %slug, error = %e, "Endpoint registration skipped (likely exists)");
-            actix_web::HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "slug": slug,
-                "note": "already registered",
+            tracing::warn!(slug = %slug, error = %e, "Admin endpoint registration failed");
+            actix_web::HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": format!("{e}"),
             }))
         }
     }
