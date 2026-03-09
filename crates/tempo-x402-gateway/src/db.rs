@@ -216,8 +216,34 @@ impl Database {
             ],
         )?;
 
-        self.get_endpoint(slug)?
-            .ok_or_else(|| GatewayError::Internal("reactivated endpoint not found".to_string()))
+        // Query using the already-locked connection (don't call self.get_endpoint
+        // which would deadlock by trying to acquire the mutex again).
+        conn.query_row(
+            r#"
+            SELECT id, slug, owner_address, target_url, price_usd, price_amount,
+                   description, created_at, updated_at, active
+            FROM endpoints
+            WHERE slug = ?1 AND active = 1
+            "#,
+            params![slug],
+            |row| {
+                Ok(Endpoint {
+                    id: row.get(0)?,
+                    slug: row.get(1)?,
+                    owner_address: row.get(2)?,
+                    target_url: row.get(3)?,
+                    price_usd: row.get(4)?,
+                    price_amount: row.get(5)?,
+                    description: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                    active: row.get::<_, i32>(9)? == 1,
+                })
+            },
+        )
+        .optional()
+        .map_err(GatewayError::from)?
+        .ok_or_else(|| GatewayError::Internal("reactivated endpoint not found".to_string()))
     }
 
     /// Get endpoint by slug
