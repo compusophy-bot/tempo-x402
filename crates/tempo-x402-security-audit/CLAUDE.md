@@ -2,7 +2,7 @@
 
 Test-only crate. No runtime code. Not published. Runs on every `cargo test --workspace`.
 
-14 tests that scan production `.rs` files via regex to enforce security invariants. New crates are auto-included (walks `crates/*/src/**/*.rs`).
+15 tests that scan production `.rs` files via regex to enforce security invariants. New crates are auto-included (walks `crates/*/src/**/*.rs`).
 
 ## Depends On
 
@@ -24,6 +24,7 @@ Dev-only: `walkdir`, `regex`. No workspace crate deps.
 12. Clone route uses atomic limit check
 13. Clone errors don't leak internal details
 14. HMAC secret is mandatory (not Optional)
+15. Script execution uses env_clear() to prevent secret leakage
 
 ## If You're Changing...
 
