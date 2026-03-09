@@ -18,7 +18,9 @@ Binary: `x402-gateway` on port 4023.
 - Proxy strips sensitive headers and has a response header allowlist (`proxy.rs`)
 - SSRF protection: HTTPS-only targets, private IP blocking, DNS resolution check, no redirects, CRLF rejection
 - Embedded facilitator (when `FACILITATOR_PRIVATE_KEY` set) runs in-process — no HTTP round-trip
-- Soft deletes on endpoints (`active` boolean)
+- Soft deletes on endpoints (`active` boolean); `create_or_reactivate_endpoint()` re-activates soft-deleted slugs
+- Pre-flight reachability check (`check_target_reachable()` in `proxy.rs`) runs BEFORE payment settlement to prevent paying for dead targets
+- **Mutex warning**: `Database.conn` is `Mutex<Connection>` — never call `self.get_*()` while holding the lock (use the locked `conn` directly)
 - Per-endpoint analytics: `endpoint_stats` table tracks request_count, payment_count, revenue_total per slug
 - Per-endpoint Prometheus metrics: `ENDPOINT_PAYMENTS` and `ENDPOINT_REVENUE` (`IntCounterVec` with `slug` label)
 
