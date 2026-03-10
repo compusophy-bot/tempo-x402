@@ -2204,7 +2204,11 @@ impl ToolExecutor {
             } else {
                 // Include body in error for debugging
                 let body_preview = if body_truncated.len() > 300 {
-                    format!("{}...", &body_truncated[..300])
+                    let mut end = 300;
+                    while end > 0 && !body_truncated.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    format!("{}...", &body_truncated[..end])
                 } else {
                     body_truncated
                 };

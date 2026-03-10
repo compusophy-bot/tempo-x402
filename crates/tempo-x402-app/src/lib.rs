@@ -1492,7 +1492,11 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                                 _ => "goal-status--unknown",
                                             };
                                             let truncated = if desc.len() > 100 {
-                                                format!("{}...", &desc[..100])
+                                                let mut end = 100;
+                                                while end > 0 && !desc.is_char_boundary(end) {
+                                                    end -= 1;
+                                                }
+                                                format!("{}...", &desc[..end])
                                             } else {
                                                 desc
                                             };
@@ -1693,7 +1697,11 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                         let display_content = if is_expanded || content.len() <= 120 {
                                             content.clone()
                                         } else {
-                                            format!("{}...", &content[..120])
+                                            let mut end = 120;
+                                            while end > 0 && !content.is_char_boundary(end) {
+                                                end -= 1;
+                                            }
+                                            format!("{}...", &content[..end])
                                         };
                                         let is_truncatable = content.len() > 120;
                                         let content_class = if is_expanded {

@@ -4,6 +4,18 @@
 //! Most steps are mechanical (no LLM). LLM is only called for planning,
 //! code generation, and reflection.
 
+/// Truncate a string at a UTF-8 char boundary, never panicking.
+fn safe_truncate(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -200,7 +212,7 @@ impl PlanStep {
             PlanStep::ListDir { path, .. } => format!("ls {path}"),
             PlanStep::RunShell { command, .. } => {
                 let short = if command.len() > 40 {
-                    format!("{}...", &command[..40])
+                    format!("{}...", safe_truncate(command, 40))
                 } else {
                     command.clone()
                 };
@@ -211,7 +223,7 @@ impl PlanStep {
             PlanStep::CallPaidEndpoint { url, method, .. } => {
                 let m = method.as_deref().unwrap_or("GET");
                 let short = if url.len() > 40 {
-                    format!("{}...", &url[..40])
+                    format!("{}...", safe_truncate(url, 40))
                 } else {
                     url.clone()
                 };
@@ -606,7 +618,7 @@ impl<'a> PlanExecutor<'a> {
             if let Some(value) = plan_context.get(key) {
                 // Truncate large context values
                 let truncated = if value.len() > 4000 {
-                    format!("{}...(truncated)", &value[..4000])
+                    format!("{}...(truncated)", safe_truncate(value, 4000))
                 } else {
                     value.clone()
                 };
@@ -768,7 +780,7 @@ impl<'a> PlanExecutor<'a> {
         let mut context_parts = Vec::new();
         for (k, v) in plan_context {
             let truncated = if v.len() > 1000 {
-                format!("{}...", &v[..1000])
+                format!("{}...", safe_truncate(v, 1000))
             } else {
                 v.clone()
             };

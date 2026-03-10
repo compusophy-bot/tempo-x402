@@ -502,7 +502,11 @@ impl ThinkingLoop {
                 StepResult::Success(output) => {
                     if let Some(key) = step.store_key() {
                         let truncated = if output.len() > 8000 {
-                            format!("{}...(truncated)", &output[..8000])
+                            let mut end = 8000;
+                            while end > 0 && !output.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            format!("{}...(truncated)", &output[..end])
                         } else {
                             output.clone()
                         };

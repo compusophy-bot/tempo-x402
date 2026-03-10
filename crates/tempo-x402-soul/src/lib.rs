@@ -65,6 +65,7 @@ impl Soul {
         let db = self.db;
 
         let handle = tokio::spawn(async move {
+            let mut consecutive_panics: u32 = 0;
             loop {
                 alive_for_task.store(true, Ordering::Relaxed);
                 let alive_for_loop = alive_for_task.clone();
@@ -79,7 +80,26 @@ impl Soul {
                     Ok(()) => break, // clean exit (shouldn't happen — run() loops forever)
                     Err(e) if e.is_panic() => {
                         alive_for_task.store(false, Ordering::Relaxed);
-                        tracing::error!("Soul thinking loop panicked — restarting in 30s: {:?}", e);
+                        consecutive_panics += 1;
+                        tracing::error!(
+                            "Soul thinking loop panicked ({consecutive_panics}/5) — restarting in 30s: {:?}",
+                            e
+                        );
+
+                        // Crash-loop breaker: if we panic 5 times in a row, fail the
+                        // active plan so we don't loop forever on poisoned state.
+                        if consecutive_panics >= 5 {
+                            tracing::error!(
+                                "Crash loop detected ({consecutive_panics} consecutive panics) — failing active plan"
+                            );
+                            if let Ok(Some(mut plan)) = db.get_active_plan() {
+                                plan.status = crate::plan::PlanStatus::Failed;
+                                let _ = db.update_plan(&plan);
+                                tracing::warn!("Force-failed stuck plan {}", plan.id);
+                            }
+                            consecutive_panics = 0;
+                        }
+
                         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
                         // loop continues → fresh ThinkingLoop created
                     }
