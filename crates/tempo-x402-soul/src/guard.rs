@@ -13,6 +13,9 @@ const PROTECTED_PREFIXES: &[&str] = &[
     "crates/tempo-x402-soul/src/config.rs",
     "crates/tempo-x402-soul/src/tool_registry.rs",
     "crates/tempo-x402-identity/",
+    "crates/tempo-x402-node/src/routes/",
+    "crates/tempo-x402-node/src/main.rs",
+    "crates/tempo-x402-gateway/src/",
     ".github/",
 ];
 
@@ -109,8 +112,18 @@ mod tests {
     }
 
     #[test]
+    fn protects_node_routes_and_gateway() {
+        assert!(is_protected("crates/tempo-x402-node/src/routes/soul.rs"));
+        assert!(is_protected("crates/tempo-x402-node/src/routes/clone.rs"));
+        assert!(is_protected("crates/tempo-x402-node/src/main.rs"));
+        assert!(is_protected(
+            "crates/tempo-x402-gateway/src/routes/register.rs"
+        ));
+        assert!(is_protected("crates/tempo-x402-gateway/src/proxy.rs"));
+    }
+
+    #[test]
     fn allows_normal_files() {
-        assert!(!is_protected("crates/tempo-x402-server/src/main.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/thinking.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/chat.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/memory.rs"));

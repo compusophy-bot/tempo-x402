@@ -2060,7 +2060,7 @@ fn Footer() -> impl IntoView {
                 <a href="https://github.com/compusophy/tempo-x402">"tempo-x402"</a>
                 " on Tempo Moderato"
             </p>
-            <p class="footer-version">"v1.4.0"</p>
+            <p class="footer-version">"v1.6.0"</p>
         </footer>
     }
 }
