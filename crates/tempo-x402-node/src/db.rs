@@ -346,6 +346,29 @@ pub fn update_child_status(
     })
 }
 
+/// Insert or update a linked peer (manually linked, not cloned).
+/// Uses INSERT OR REPLACE to handle re-linking gracefully.
+pub fn link_peer(
+    db: &Database,
+    instance_id: &str,
+    address: &str,
+    url: &str,
+) -> Result<(), GatewayError> {
+    let now = chrono::Utc::now().timestamp();
+
+    db.with_connection(|conn| {
+        conn.execute(
+            "INSERT INTO children (instance_id, address, url, status, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, 'running', ?4, ?5) \
+             ON CONFLICT(instance_id) DO UPDATE SET \
+             address = excluded.address, url = excluded.url, \
+             status = 'running', updated_at = excluded.updated_at",
+            params![instance_id, address, url, now, now],
+        )?;
+        Ok(())
+    })
+}
+
 /// Count children from a direct rusqlite connection.
 #[allow(dead_code)]
 pub fn query_children_count(conn: &rusqlite::Connection) -> Result<u32, rusqlite::Error> {

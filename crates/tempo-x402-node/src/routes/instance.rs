@@ -227,6 +227,120 @@ pub async fn siblings(state: web::Data<NodeState>) -> HttpResponse {
     }))
 }
 
+/// POST /instance/link — manually link an independent peer by URL.
+/// Fetches the peer's /instance/info to get its instance_id and address,
+/// then inserts it into the children table so it appears in /instance/siblings.
+pub async fn link(body: web::Json<serde_json::Value>, state: web::Data<NodeState>) -> HttpResponse {
+    let peer_url = match body.get("url").and_then(|v| v.as_str()) {
+        Some(u) => u.trim_end_matches('/'),
+        None => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "missing 'url' field"
+            }));
+        }
+    };
+
+    if !is_valid_https_url(peer_url) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "url must use https"
+        }));
+    }
+
+    // Fetch the peer's /instance/info to get identity
+    let info_url = format!("{peer_url}/instance/info");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let resp = match client.get(&info_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return HttpResponse::BadGateway().json(serde_json::json!({
+                "error": format!("failed to reach peer: {e}")
+            }));
+        }
+    };
+
+    if !resp.status().is_success() {
+        return HttpResponse::BadGateway().json(serde_json::json!({
+            "error": format!("peer returned status {}", resp.status())
+        }));
+    }
+
+    let info: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            return HttpResponse::BadGateway().json(serde_json::json!({
+                "error": format!("invalid peer response: {e}")
+            }));
+        }
+    };
+
+    // Extract instance_id — try identity.instance_id first, fall back to generating one
+    let instance_id = info
+        .get("identity")
+        .and_then(|id| id.get("instance_id"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let instance_id = match instance_id {
+        Some(id) if is_valid_uuid(&id) => id,
+        _ => {
+            // No identity — use a deterministic ID from the URL
+            let hash = format!("{:x}", md5_hash(peer_url.as_bytes()));
+            format!(
+                "{}-{}-{}-{}-{}",
+                &hash[..8],
+                &hash[8..12],
+                &hash[12..16],
+                &hash[16..20],
+                &hash[20..32]
+            )
+        }
+    };
+
+    let address = info
+        .get("identity")
+        .and_then(|id| id.get("address"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    // Insert/update the peer in the children table
+    match db::link_peer(&state.gateway.db, &instance_id, address, peer_url) {
+        Ok(()) => {
+            tracing::info!(
+                instance_id = %instance_id,
+                url = %peer_url,
+                "Peer linked successfully"
+            );
+            HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "instance_id": instance_id,
+                "url": peer_url,
+                "message": "peer linked — will appear in /instance/siblings"
+            }))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to link peer");
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": "failed to store peer"
+            }))
+        }
+    }
+}
+
+/// Simple non-crypto hash for generating deterministic IDs from URLs.
+fn md5_hash(data: &[u8]) -> u128 {
+    // FNV-1a 128-bit — good enough for deterministic ID generation
+    let mut hash: u128 = 0x6c62272e07bb0142_62b821756295c58d;
+    for &byte in data {
+        hash ^= byte as u128;
+        hash = hash.wrapping_mul(0x0000000001000000_000000000000013B);
+    }
+    hash
+}
+
 /// GET /instance/peers — decentralized peer discovery via on-chain ERC-8004 registry
 #[cfg(feature = "erc8004")]
 pub async fn peers(state: web::Data<NodeState>) -> HttpResponse {
@@ -292,7 +406,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     let scope = web::scope("/instance")
         .route("/info", web::get().to(info))
         .route("/register", web::post().to(register))
-        .route("/siblings", web::get().to(siblings));
+        .route("/siblings", web::get().to(siblings))
+        .route("/link", web::post().to(link));
 
     #[cfg(feature = "erc8004")]
     let scope = scope.route("/peers", web::get().to(peers));
