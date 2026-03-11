@@ -364,7 +364,9 @@ impl ToolExecutor {
                 }
                 let result = self.call_paid_endpoint(url, method, body).await;
                 if let Ok(ref r) = result {
-                    if r.exit_code == 200 || r.exit_code == 0 {
+                    // Accept any 2xx status or exit_code 0 as success
+                    let is_success = r.exit_code == 0 || (200..300).contains(&r.exit_code);
+                    if is_success {
                         if let Some(ref db) = self.db {
                             let succeeded: u64 = db
                                 .get_state("peer_calls_succeeded")
@@ -2178,6 +2180,26 @@ impl ToolExecutor {
                         "version": version,
                         "endpoints": callable_endpoints,
                     }));
+                }
+
+                // Track successful peer discovery as coordination signal
+                if !enriched_peers.is_empty() {
+                    if let Some(ref db) = self.db {
+                        let attempted: u64 = db
+                            .get_state("peer_calls_attempted")
+                            .ok()
+                            .flatten()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0);
+                        let succeeded: u64 = db
+                            .get_state("peer_calls_succeeded")
+                            .ok()
+                            .flatten()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0);
+                        let _ = db.set_state("peer_calls_attempted", &(attempted + 1).to_string());
+                        let _ = db.set_state("peer_calls_succeeded", &(succeeded + 1).to_string());
+                    }
                 }
 
                 let output = serde_json::to_string_pretty(&serde_json::json!({

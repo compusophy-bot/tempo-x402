@@ -223,7 +223,8 @@ pub fn goal_creation_prompt(
     let peer_advice = if has_peers {
         "discover_peers + call_peer — engage with sibling agents"
     } else {
-        "You have NO peers in the network yet — do NOT create goals that require call_peer or discover_peers"
+        "No peers cached yet — use discover_peers to find siblings (it does live network calls). \
+         Once you discover peers, use call_peer to interact with them."
     };
 
     let situation_analysis = if endpoint_count > 5 && total_payments == 0 {
