@@ -1454,6 +1454,62 @@ impl SoulDatabase {
         Ok((thoughts_deleted, plans_deleted, nudges_deleted))
     }
 
+    /// Reset deploy-specific counters when the build SHA changes.
+    /// Preserves: brain weights, benchmark scores, capability profiles, lessons, peer data.
+    /// Resets: cycle counters, stagnation state, error lists, benchmark cooldowns.
+    pub fn reset_deploy_counters(&self, build_sha: &str) -> bool {
+        // Check if build changed
+        let last_build = self
+            .get_state("last_deploy_build")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        if last_build == build_sha {
+            return false; // Same build, no reset needed
+        }
+
+        tracing::info!(
+            old_build = %last_build,
+            new_build = %build_sha,
+            "New deploy detected — resetting ephemeral counters"
+        );
+
+        // Reset cycle counters
+        let _ = self.set_state("total_think_cycles", "0");
+        let _ = self.set_state("cycles_since_last_commit", "0");
+        let _ = self.set_state("recent_errors", "[]");
+        let _ = self.set_state("last_benchmark_at", "0");
+        let _ = self.set_state("last_benchmark_cycle", "0");
+
+        // Clear stagnation markers
+        let _ = self.set_state("stagnation_resets", "0");
+
+        // Record this deploy
+        let _ = self.set_state("last_deploy_build", build_sha);
+        let _ = self.set_state(
+            "last_deploy_at",
+            &chrono::Utc::now().timestamp().to_string(),
+        );
+
+        // Clean up old thoughts and completed plans to start fresh
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute("DELETE FROM thoughts", []);
+            let _ = conn.execute(
+                "DELETE FROM plans WHERE status IN ('completed', 'failed', 'abandoned')",
+                [],
+            );
+            let _ = conn.execute("DELETE FROM nudges WHERE processed = 1", []);
+            // Abandon any active goals from old deploy — they may reference old code
+            let _ = conn.execute(
+                "UPDATE goals SET status = 'abandoned' WHERE status = 'active'",
+                [],
+            );
+        }
+
+        true
+    }
+
     // ── Nudge operations ──
 
     /// Insert a nudge. Returns the generated ID.

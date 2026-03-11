@@ -517,6 +517,11 @@ async fn main() -> std::io::Result<()> {
             match x402_soul::Soul::new(soul_config) {
                 Ok(soul) => {
                     let db = soul.database().clone();
+                    // Reset ephemeral counters on new deploy (keeps brain/lessons/benchmarks)
+                    let build_sha = env!("GIT_SHA");
+                    if db.reset_deploy_counters(build_sha) {
+                        tracing::info!(build = %build_sha, "Deploy counters reset for new build");
+                    }
                     (
                         Some(db),
                         dormant,
