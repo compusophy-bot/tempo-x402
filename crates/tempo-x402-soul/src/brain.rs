@@ -534,11 +534,56 @@ pub fn load_brain(db: &SoulDatabase) -> Brain {
     }
 }
 
-/// Save brain to database.
+/// Save brain to database + periodic disk checkpoint.
 pub fn save_brain(db: &SoulDatabase, brain: &Brain) {
     let json = brain.to_json();
     if let Err(e) = db.set_state("brain_weights", &json) {
         tracing::warn!(error = %e, "Failed to save brain weights");
+    }
+
+    // Save disk checkpoint every 50 training steps for recovery & analysis
+    if brain.train_steps > 0 && brain.train_steps % 50 == 0 {
+        save_checkpoint(brain);
+    }
+}
+
+/// Save a brain checkpoint to /data/brain_checkpoints/.
+fn save_checkpoint(brain: &Brain) {
+    let dir = std::path::Path::new("/data/brain_checkpoints");
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let path = dir.join(format!("brain_step_{}.json", brain.train_steps));
+    let json = brain.to_json();
+    if let Err(e) = std::fs::write(&path, &json) {
+        tracing::warn!(error = %e, "Failed to save brain checkpoint");
+    } else {
+        tracing::info!(
+            path = %path.display(),
+            steps = brain.train_steps,
+            loss = format!("{:.4}", brain.running_loss),
+            "Brain checkpoint saved"
+        );
+        // Keep only last 10 checkpoints to avoid filling volume
+        prune_checkpoints(dir, 10);
+    }
+}
+
+/// Keep only the N most recent checkpoint files.
+fn prune_checkpoints(dir: &std::path::Path, keep: usize) {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    if entries.len() <= keep {
+        return;
+    }
+    entries.sort_by_key(|e| e.path());
+    for old in &entries[..entries.len() - keep] {
+        let _ = std::fs::remove_file(old.path());
     }
 }
 

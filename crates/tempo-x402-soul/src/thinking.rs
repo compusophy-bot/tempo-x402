@@ -253,10 +253,20 @@ impl ThinkingLoop {
                     crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
                 ) {
                     tracing::info!("Starting periodic HumanEval benchmark session");
+                    let current_cycle: u64 = self
+                        .db
+                        .get_state("total_think_cycles")
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
                     let _ = self.db.set_state(
                         "last_benchmark_at",
                         &chrono::Utc::now().timestamp().to_string(),
                     );
+                    let _ = self
+                        .db
+                        .set_state("last_benchmark_cycle", &current_cycle.to_string());
                     match crate::benchmark::run_benchmark_session(
                         llm,
                         &self.db,

@@ -842,6 +842,34 @@ async fn soul_reset(state: web::Data<NodeState>) -> HttpResponse {
     }
 }
 
+/// POST /soul/benchmark — request a benchmark run on the next cycle.
+/// Sets a flag that the thinking loop checks.
+async fn trigger_benchmark(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    // Clear cooldown so benchmark triggers on next eligible cycle
+    let _ = soul_db.set_state("last_benchmark_at", "0");
+    let _ = soul_db.set_state("last_benchmark_cycle", "0");
+
+    // Check current score
+    let current = x402_soul::benchmark::load_score(soul_db);
+    let elo = x402_soul::elo::load_rating(soul_db);
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "benchmark_requested",
+        "message": "Benchmark will run on the next cycle that is divisible by the interval (default: 100)",
+        "current_score": current.as_ref().map(|s| s.pass_at_1),
+        "current_elo": elo,
+        "problems_attempted": current.as_ref().map(|s| s.problems_attempted).unwrap_or(0),
+    }))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(soul_status))
         .route("/soul/chat", web::post().to(soul_chat))
@@ -857,5 +885,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/reset", web::post().to(soul_reset))
         .route("/soul/brain/weights", web::get().to(get_brain_weights))
         .route("/soul/brain/merge", web::post().to(merge_brain_delta))
-        .route("/soul/lessons", web::get().to(get_lessons));
+        .route("/soul/lessons", web::get().to(get_lessons))
+        .route("/soul/benchmark", web::post().to(trigger_benchmark));
 }

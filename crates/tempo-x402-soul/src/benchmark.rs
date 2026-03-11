@@ -411,6 +411,30 @@ fn update_score(db: &SoulDatabase, pass_at_1: f64, attempted: u32, passed: u32, 
     if let Ok(json) = serde_json::to_string(&score) {
         let _ = db.set_state("benchmark_score", &json);
     }
+
+    // Also save to disk for analysis
+    save_benchmark_to_disk(&score);
+}
+
+/// Save benchmark score snapshot to /data/benchmark_history/.
+fn save_benchmark_to_disk(score: &BenchmarkScore) {
+    let dir = std::path::Path::new("/data/benchmark_history");
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let filename = format!("benchmark_{}.json", score.measured_at);
+    let path = dir.join(filename);
+    if let Ok(json) = serde_json::to_string_pretty(score) {
+        if let Err(e) = std::fs::write(&path, &json) {
+            tracing::warn!(error = %e, "Failed to save benchmark to disk");
+        } else {
+            tracing::info!(
+                pass_at_1 = format!("{:.1}%", score.pass_at_1),
+                path = %path.display(),
+                "Benchmark snapshot saved to disk"
+            );
+        }
+    }
 }
 
 /// Load the current benchmark score.
@@ -473,7 +497,7 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
         return false;
     }
 
-    // Check cooldown — don't run more than once per 6 hours
+    // Check cooldown — don't run more than once per hour
     let last_benchmark: i64 = db
         .get_state("last_benchmark_at")
         .ok()
@@ -481,16 +505,24 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let now = chrono::Utc::now().timestamp();
-    if now - last_benchmark < 21600 {
-        // 6 hours
+    if now - last_benchmark < 3600 {
         return false;
     }
 
-    total_cycles % interval == 0
+    // Check if we've passed an interval boundary since last benchmark cycle
+    let last_benchmark_cycle: u64 = db
+        .get_state("last_benchmark_cycle")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    // Trigger if we've crossed an interval boundary (handles skipped cycles)
+    total_cycles / interval > last_benchmark_cycle / interval
 }
 
-/// Default: run benchmark every 100 cycles.
-pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 100;
+/// Default: run benchmark every 50 cycles.
+pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 50;
 /// Default: sample 20 problems per session (balance speed vs. statistical significance).
 pub const DEFAULT_SAMPLE_SIZE: usize = 20;
 
