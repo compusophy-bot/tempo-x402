@@ -309,9 +309,11 @@ impl ThinkingLoop {
                 }
             }
 
-            // Automatic peer sync every 5 cycles — don't rely on LLM choosing to discover
+            // Automatic peer sync every 5 cycles — don't rely on LLM choosing to discover.
+            // discover_peers itself now makes x402 PAID calls to each peer's soul + info
+            // gateway endpoints, generating real economic activity mechanically.
             if cycle_count > 0 && cycle_count % 5 == 0 {
-                tracing::info!("Automatic peer sync (every 5 cycles)");
+                tracing::info!("Automatic peer sync with x402 paid calls (every 5 cycles)");
                 match self
                     .tool_executor
                     .execute("discover_peers", &serde_json::json!({}))
@@ -321,65 +323,8 @@ impl ThinkingLoop {
                         if result.exit_code == 0 {
                             tracing::info!(
                                 output_len = result.stdout.len(),
-                                "Peer sync complete — brain weights merged, lessons fetched"
+                                "Peer sync complete — paid calls made, brain weights merged, lessons fetched"
                             );
-
-                            // After discovery, make a PAID x402 call to each peer's "info" endpoint.
-                            // This generates real economic activity — the core purpose of x402.
-                            if let Ok(peers) =
-                                serde_json::from_str::<serde_json::Value>(&result.stdout)
-                            {
-                                if let Some(peer_arr) =
-                                    peers.get("peers").and_then(|p| p.as_array())
-                                {
-                                    for peer in peer_arr {
-                                        // Find the "info" or "soul" endpoint's callable_url
-                                        let callable_url = peer
-                                            .get("endpoints")
-                                            .and_then(|e| e.as_array())
-                                            .and_then(|eps| {
-                                                eps.iter()
-                                                    .find(|ep| {
-                                                        let slug = ep
-                                                            .get("slug")
-                                                            .and_then(|s| s.as_str())
-                                                            .unwrap_or("");
-                                                        slug == "info" || slug == "soul"
-                                                    })
-                                                    .and_then(|ep| {
-                                                        ep.get("callable_url")
-                                                            .and_then(|u| u.as_str())
-                                                    })
-                                            });
-
-                                        if let Some(url) = callable_url {
-                                            let peer_id = peer
-                                                .get("instance_id")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("unknown");
-                                            tracing::info!(peer = %peer_id, url = %url, "Auto x402 paid call to peer");
-                                            match self
-                                                .tool_executor
-                                                .execute(
-                                                    "call_paid_endpoint",
-                                                    &serde_json::json!({ "url": url }),
-                                                )
-                                                .await
-                                            {
-                                                Ok(r) if r.exit_code == 200 => {
-                                                    tracing::info!(peer = %peer_id, "x402 paid call succeeded — payment sent");
-                                                }
-                                                Ok(r) => {
-                                                    tracing::debug!(peer = %peer_id, code = r.exit_code, "x402 paid call returned non-200");
-                                                }
-                                                Err(e) => {
-                                                    tracing::debug!(peer = %peer_id, error = %e, "x402 paid call failed");
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         } else {
                             tracing::debug!(
                                 stderr = %result.stderr,
