@@ -1,18 +1,18 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>HTTP 402 Payment Required</strong> for the Tempo blockchain.<br>One header. One on-chain transfer. Zero custodial risk.</p>
+  <p align="center"><strong>Autonomous agent nodes with pay-per-request APIs on the Tempo blockchain.</strong><br>Self-deploying. Self-thinking. Self-replicating.</p>
 </p>
 
 <p align="center">
   <a href="https://crates.io/crates/tempo-x402"><img src="https://img.shields.io/crates/v/tempo-x402.svg" alt="crates.io"></a>
-  <a href="https://docs.rs/tempo-x402"><img src="https://docs.rs/tempo-x402/badge.svg" alt="docs.rs"></a>
+  <a href="https://docs.rs/tempo-x402"><img src="https://img.shields.io/crates/v/tempo-x402.svg" alt="docs.rs"></a>
   <a href="https://github.com/compusophy/tempo-x402/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
 <p align="center">
   <a href="https://docs.rs/tempo-x402">Docs</a> &middot;
   <a href="https://crates.io/crates/tempo-x402">Crate</a> &middot;
-  <a href="https://x402-alpha-production.up.railway.app/health">Live Node</a> &middot;
+  <a href="https://soul-bot-production.up.railway.app">Live Node</a> &middot;
   <a href="https://github.com/compusophy/tempo-x402">Source</a>
 </p>
 
@@ -22,22 +22,31 @@
 
 ---
 
-Clients sign **EIP-712** payment authorizations, servers gate content behind **402** responses, and a facilitator settles payments on-chain via `transferFrom` &mdash; all in a single request/response cycle. The facilitator holds no user funds; it only has approval to call `transferFrom` on behalf of clients who have explicitly approved it.
+Each node bootstraps its own wallet, runs a payment gateway, thinks via an LLM-powered soul, creates and monetizes services, clones itself onto new infrastructure, and coordinates with peers &mdash; all autonomously. Payments use the **HTTP 402** protocol: clients sign **EIP-712** authorizations, and a facilitator settles on-chain via `transferFrom` in a single request/response cycle. No custody. No middlemen.
 
-Nodes are **autonomous agents** &mdash; they bootstrap their own identity, run a gateway, think via an LLM-powered soul, create services, clone themselves, and coordinate with peers.
+## What a node does
 
-## Payment flow
+- **Bootstraps identity** &mdash; generates a wallet, funds itself via faucet, registers on-chain via ERC-8004
+- **Runs a payment gateway** &mdash; endpoints are gated by price, paid per-request with pathUSD
+- **Thinks autonomously** &mdash; plan-driven execution loop powered by Gemini with neuroplastic memory
+- **Writes code** &mdash; reads, writes, edits files, runs shell commands, commits, pushes, opens PRs
+- **Creates services** &mdash; script endpoints that expose capabilities and earn revenue
+- **Clones itself** &mdash; spawns copies on Railway infrastructure via a paid `/clone` endpoint
+- **Coordinates with peers** &mdash; discovers siblings, exchanges brain weights and lessons, calls paid endpoints
+- **Evolves via fitness** &mdash; 5-component fitness score (economic, execution, evolution, coordination, introspection) with trend gradient
+
+## How payments work
 
 ```
-Client                     Server                    Facilitator               Chain
-  |  GET /resource           |                            |                      |
+Client                     Gateway                   Facilitator               Chain
+  |  GET /g/endpoint         |                            |                      |
   |------------------------->|                            |                      |
   |  402 + price/token/to    |                            |                      |
   |<-------------------------|                            |                      |
   |  [sign EIP-712]          |                            |                      |
-  |  GET /resource           |                            |                      |
+  |  GET /g/endpoint         |                            |                      |
   |  + PAYMENT-SIGNATURE     |                            |                      |
-  |------------------------->|  POST /verify-and-settle   |                      |
+  |------------------------->|  verify-and-settle         |                      |
   |                          |--------------------------->|  transferFrom()      |
   |                          |                            |--------------------->|
   |                          |         settlement result  |              tx hash |
@@ -46,19 +55,16 @@ Client                     Server                    Facilitator               C
   |<-------------------------|                            |                      |
 ```
 
-1. Client requests a protected endpoint
-2. Server responds **402** with pricing (token, amount, recipient)
-3. Client signs an **EIP-712 `PaymentAuthorization`**, retries with `PAYMENT-SIGNATURE` header
-4. Facilitator **atomically** verifies signature, checks balance/allowance/nonce, calls `transferFrom`
-5. Server returns content + transaction hash
+1. Client requests a gated endpoint &rarr; gets **402** with pricing
+2. Client signs an **EIP-712 `PaymentAuthorization`**, retries with `PAYMENT-SIGNATURE` header
+3. Facilitator atomically verifies signature, checks balance/allowance/nonce, calls `transferFrom`
+4. Gateway returns content + transaction hash
 
 ## Quick start
 
 ```bash
 cargo add tempo-x402
 ```
-
-### Make a paid request
 
 ```rust
 use alloy::signers::local::PrivateKeySigner;
@@ -70,7 +76,7 @@ async fn main() {
     let client = X402Client::new(TempoSchemeClient::new(signer));
 
     let (response, settlement) = client
-        .fetch("https://your-gateway.example.com/g/my-api/data", reqwest::Method::GET)
+        .fetch("https://soul-bot-production.up.railway.app/g/info", reqwest::Method::GET)
         .await
         .unwrap();
 
@@ -81,44 +87,15 @@ async fn main() {
 }
 ```
 
-### Monetize any API
-
-No code changes needed &mdash; the gateway proxies requests and handles payment:
-
-```bash
-# Register an endpoint
-curl -X POST https://your-gateway.example.com/register \
-  -H "Content-Type: application/json" \
-  -H "PAYMENT-SIGNATURE: <base64-payment>" \
-  -d '{"slug": "my-api", "target_url": "https://api.example.com", "price": "$0.05"}'
-
-# Clients pay through the gateway
-curl https://your-gateway.example.com/g/my-api/users/123 \
-  -H "PAYMENT-SIGNATURE: <base64-payment>"
-```
-
-Target APIs receive verification headers: `X-X402-Verified`, `X-X402-Payer`, `X-X402-Amount`, `X-X402-TxHash`.
-
 ## Workspace
-
-```
-crates/
-  tempo-x402/               Core library: types, EIP-712, TIP-20, nonce store, wallet, client SDK
-  tempo-x402-gateway/       API gateway + embedded facilitator + payment middleware
-  tempo-x402-identity/      Wallet generation, persistence, faucet, on-chain ERC-8004 identity
-  tempo-x402-soul/          Autonomous cognition: plan-driven execution, neuroplastic memory, coding agent
-  tempo-x402-node/          Self-deploying node: gateway + identity + soul + clone orchestration
-  tempo-x402-app/           Leptos WASM dashboard (not published)
-  tempo-x402-security-audit/  Security invariant tests (not published)
-```
 
 | Crate | Purpose | Install |
 |-------|---------|---------|
-| [`tempo-x402`](https://docs.rs/tempo-x402) | Core &mdash; types, EIP-712 signing, TIP-20, nonce store, HMAC, WASM wallet, client SDK | `cargo add tempo-x402` |
-| [`tempo-x402-gateway`](https://docs.rs/tempo-x402-gateway) | API gateway with embedded facilitator, proxy routing, endpoint registration | `cargo add tempo-x402-gateway` |
+| [`tempo-x402`](https://docs.rs/tempo-x402) | Core &mdash; types, EIP-712 signing, TIP-20, nonce store, WASM wallet, client SDK | `cargo add tempo-x402` |
+| [`tempo-x402-gateway`](https://docs.rs/tempo-x402-gateway) | Payment gateway with embedded facilitator, proxy routing, endpoint registration | `cargo add tempo-x402-gateway` |
 | [`tempo-x402-identity`](https://docs.rs/tempo-x402-identity) | Agent identity &mdash; wallet generation, persistence, faucet, ERC-8004 | `cargo add tempo-x402-identity` |
-| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Autonomous soul &mdash; plan-driven execution, neuroplastic memory, Gemini-powered coding agent | `cargo add tempo-x402-soul` |
-| [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node &mdash; composes gateway + identity + soul + Railway clone orchestration | `cargo add tempo-x402-node` |
+| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Autonomous soul &mdash; plan-driven execution, neural brain, Gemini-powered coding agent | `cargo add tempo-x402-soul` |
+| [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node &mdash; composes gateway + identity + soul + clone orchestration | `cargo add tempo-x402-node` |
 
 ### Feature flags
 
@@ -131,33 +108,20 @@ crates/
 | `tempo-x402-node` | `soul` (default) | Autonomous thinking loop |
 | `tempo-x402-node` | `agent` (default) | Railway clone orchestration |
 
-## Autonomous nodes
-
-Nodes are self-managing agents that:
-
-- **Bootstrap identity** &mdash; generate wallet, fund via faucet, register on-chain
-- **Run a gateway** &mdash; serve endpoints, process payments, proxy upstream APIs
-- **Think autonomously** &mdash; plan-driven execution loop powered by Gemini with neuroplastic memory
-- **Write code** &mdash; read, write, edit files, run shell commands, commit, push, open PRs
-- **Create services** &mdash; script endpoints exposing the node's capabilities
-- **Clone themselves** &mdash; spawn copies on Railway infrastructure
-- **Coordinate with peers** &mdash; discover siblings, exchange endpoint catalogs, call paid services
-- **Evolve via fitness** &mdash; 5-component fitness score (economic, execution, evolution, coordination, introspection) with trend gradient
-
-## Gateway API
+## API
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/register` | Platform fee | Register a new endpoint |
-| `GET` | `/endpoints` | Free | List all active endpoints |
-| `GET/PATCH/DELETE` | `/endpoints/:slug` | Owner | Get, update, or deactivate an endpoint |
-| `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target API |
-| `GET` | `/analytics` | Free | Per-endpoint payment stats |
+| `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target &mdash; the core payment gate |
 | `GET` | `/instance/info` | Free | Node identity, peers, fitness, endpoints |
 | `POST` | `/instance/link` | Free | Link an independent peer node |
+| `DELETE` | `/instance/peer/:id` | Bearer token | Remove a peer |
+| `GET` | `/endpoints` | Free | List all active endpoints |
+| `GET` | `/analytics` | Free | Per-endpoint payment stats |
 | `GET` | `/soul/status` | Free | Soul status, active plan, recent thoughts |
 | `POST` | `/soul/chat` | Free | Chat with the node's soul |
 | `POST` | `/soul/nudge` | Free | Send a nudge to the soul |
+| `POST` | `/clone` | Clone price | Spawn a new node instance |
 | `GET` | `/health` | Free | Health check |
 | `GET` | `/metrics` | Bearer token | Prometheus metrics |
 
@@ -171,40 +135,12 @@ Nodes are self-managing agents that:
 | **RPC** | `https://rpc.moderato.tempo.xyz` |
 | **Explorer** | `https://explore.moderato.tempo.xyz` |
 
-## Prerequisites
+## Live nodes
 
-```bash
-# Fund your wallet with testnet pathUSD
-cast rpc tempo_fundAddress 0xYOUR_ADDRESS --rpc-url https://rpc.moderato.tempo.xyz
-
-# Approve the facilitator to spend your tokens
-cargo run --bin x402-approve
-```
-
-Or programmatically:
-
-```rust
-use x402::tip20;
-tip20::approve(&provider, token, facilitator_address, amount).await?;
-```
-
-## Environment variables
-
-| Variable | Used by | Description |
-|----------|---------|-------------|
-| `EVM_ADDRESS` | gateway | Payment recipient address |
-| `EVM_PRIVATE_KEY` | client | Client wallet private key |
-| `FACILITATOR_PRIVATE_KEY` | gateway, node | Facilitator wallet key |
-| `FACILITATOR_SHARED_SECRET` | gateway | HMAC shared secret for request auth |
-| `RPC_URL` | all | Tempo RPC endpoint |
-| `GEMINI_API_KEY` | node | Gemini API key (soul is dormant without it) |
-| `SOUL_CODING_ENABLED` | node | Enable code write/edit/commit tools (`false`) |
-| `SOUL_FORK_REPO` | node | Fork repo for soul push (e.g. `user/tempo-x402`) |
-| `SOUL_UPSTREAM_REPO` | node | Upstream repo for PRs/issues |
-| `AUTO_BOOTSTRAP` | node | Generate identity + wallet on startup |
-| `RAILWAY_TOKEN` | node | Railway API token for clone orchestration |
-
-See each crate's `CLAUDE.md` for the full list.
+| Node | URL | Dashboard |
+|------|-----|-----------|
+| soul-bot | https://soul-bot-production.up.railway.app | [Dashboard](https://soul-bot-production.up.railway.app/dashboard) |
+| soul-bot-2 | https://soul-bot-2-production.up.railway.app | [Dashboard](https://soul-bot-2-production.up.railway.app/dashboard) |
 
 ## Security
 
@@ -219,16 +155,7 @@ The `tempo-x402-security-audit` crate enforces invariants on every build:
 - Parameterized SQL queries only
 - Private keys never appear in tracing output
 
-Additional hardening: EIP-2 high-s rejection, per-payer mutex locks against TOCTOU, nonces claimed before `transferFrom` (never released on failure), integer-only token arithmetic, SSRF protection with DNS validation, atomic slug reservation.
-
-## Live nodes
-
-| Node | URL |
-|------|-----|
-| x402-alpha | https://x402-alpha-production.up.railway.app |
-| soul-bot | https://soul-bot-production.up.railway.app |
-
-Health: `GET /health` &mdash; Info: `GET /instance/info`
+Additional hardening: EIP-2 high-s rejection, per-payer mutex locks against TOCTOU, nonces claimed before `transferFrom` (never released on failure), integer-only token arithmetic, atomic slug reservation.
 
 ## Development
 
