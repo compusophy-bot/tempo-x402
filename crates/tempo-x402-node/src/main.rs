@@ -169,6 +169,8 @@ async fn main() -> std::io::Result<()> {
             std::env::var("IDENTITY_PATH").unwrap_or_else(|_| "/data/identity.json".to_string());
         let id = x402_identity::bootstrap(&identity_path).expect("Failed to bootstrap identity");
         tracing::info!("Instance identity: {:#x} ({})", id.address, id.instance_id);
+        // Propagate INSTANCE_ID to env so soul config picks it up
+        std::env::set_var("INSTANCE_ID", &id.instance_id);
         Some(id)
     } else {
         tracing::info!("AUTO_BOOTSTRAP not set — running without identity");

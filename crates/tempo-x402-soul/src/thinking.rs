@@ -309,6 +309,33 @@ impl ThinkingLoop {
                 }
             }
 
+            // Automatic peer sync every 5 cycles — don't rely on LLM choosing to discover
+            if cycle_count > 0 && cycle_count % 5 == 0 {
+                tracing::info!("Automatic peer sync (every 5 cycles)");
+                match self
+                    .tool_executor
+                    .execute("discover_peers", &serde_json::json!({}))
+                    .await
+                {
+                    Ok(result) => {
+                        if result.exit_code == 0 {
+                            tracing::info!(
+                                output_len = result.stdout.len(),
+                                "Peer sync complete — brain weights merged, lessons fetched"
+                            );
+                        } else {
+                            tracing::debug!(
+                                stderr = %result.stderr,
+                                "Peer sync returned non-zero"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "Peer sync failed (non-fatal)");
+                    }
+                }
+            }
+
             let next_secs = pacer.next_interval(&snapshot, cycle_result.step_type);
 
             // Persist cycle health metrics
