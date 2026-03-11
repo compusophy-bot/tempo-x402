@@ -2229,7 +2229,7 @@ impl ToolExecutor {
                                             let workspace = self.workspace_root.to_string_lossy();
                                             solutions_imported =
                                                 crate::benchmark::import_solutions(
-                                                    db, peer_sols, workspace,
+                                                    db, peer_sols, &workspace,
                                                 )
                                                 .await;
                                         }
