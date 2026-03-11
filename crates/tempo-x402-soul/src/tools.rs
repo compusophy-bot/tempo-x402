@@ -2157,15 +2157,16 @@ impl ToolExecutor {
                             serde_json::from_str(&result.stdout).ok()
                         }
                         Ok(result) => {
-                            tracing::debug!(
+                            tracing::warn!(
                                 peer = %inst_id,
                                 code = result.exit_code,
+                                stderr = %result.stderr,
                                 "x402 paid call to peer soul returned non-200"
                             );
                             None
                         }
                         Err(e) => {
-                            tracing::debug!(peer = %inst_id, error = %e, "x402 paid call to peer soul failed");
+                            tracing::warn!(peer = %inst_id, error = %e, "x402 paid call to peer soul failed");
                             None
                         }
                     };
@@ -2224,8 +2225,16 @@ impl ToolExecutor {
                                 "x402 PAID call to peer info endpoint succeeded"
                             );
                         }
-                        _ => {
-                            tracing::debug!(peer = %inst_id, "x402 paid call to peer info skipped/failed");
+                        Ok(result) => {
+                            tracing::warn!(
+                                peer = %inst_id,
+                                code = result.exit_code,
+                                stderr = %result.stderr,
+                                "x402 paid call to peer info returned non-200"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(peer = %inst_id, error = %e, "x402 paid call to peer info failed");
                         }
                     }
 
