@@ -10,9 +10,45 @@ target/
 # Internal planning docs
 NEXT-STEPS.md
 ARCHITECTURE-REFACTOR.md
+SYSTEM_PRUNING_AUDIT.md
 
 # Railway introspection schema (local tooling artifact)
 railway_schema.json
+
+# Soul bot debug/audit artifacts
+*_audit.txt
+*_audit.json
+*_audit_report.txt
+*_audit_report.json
+*_report.txt
+*_report.md
+active_count.txt
+available_tools.txt
+connectivity_test_output.txt
+diagnostic_report.md
+discovered_peers*.json
+discovery_queue.json
+first_sibling.json
+info_test.json
+instance_info.json
+llms.txt
+map_peers.py
+market_research*.json
+market_research*.txt
+neighborhood_map.json
+network_identity.txt
+parent_instance.json
+peer_info.json
+peers_discovery.json
+probe_files.txt
+research_collector.sh
+runs.json
+safe_headers.sh
+siblings*.json
+siblings.txt
+summarize_soul.py
+target_peers.txt
+test_*.json
 
 # Local cargo config (user-specific target dirs, etc.)
 .cargo/

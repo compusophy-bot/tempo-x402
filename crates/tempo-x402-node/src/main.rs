@@ -1017,16 +1017,29 @@ async fn main() -> std::io::Result<()> {
                                     _ => false,
                                 };
                                 if stale {
-                                    tracing::info!(
-                                        instance_id = %child.instance_id,
-                                        status = %child.status,
-                                        age_secs = age_secs,
-                                        "Marking child with bad health response as failed"
-                                    );
-                                    let _ = db::mark_child_failed(
-                                        &version_check_state.gateway.db,
-                                        &child.instance_id,
-                                    );
+                                    if child.railway_service_id.is_none() {
+                                        tracing::info!(
+                                            instance_id = %child.instance_id,
+                                            status = %child.status,
+                                            age_secs = age_secs,
+                                            "Deleting ghost child (bad health + no Railway service ID)"
+                                        );
+                                        let _ = db::delete_child(
+                                            &version_check_state.gateway.db,
+                                            &child.instance_id,
+                                        );
+                                    } else {
+                                        tracing::info!(
+                                            instance_id = %child.instance_id,
+                                            status = %child.status,
+                                            age_secs = age_secs,
+                                            "Marking child with bad health response as failed"
+                                        );
+                                        let _ = db::mark_child_failed(
+                                            &version_check_state.gateway.db,
+                                            &child.instance_id,
+                                        );
+                                    }
                                 }
 
                                 continue;
@@ -1048,21 +1061,36 @@ async fn main() -> std::io::Result<()> {
                             };
 
                             if stale {
-                                tracing::info!(
-                                    instance_id = %child.instance_id,
-                                    status = %child.status,
-                                    age_secs = age_secs,
-                                    "Marking unreachable child as failed"
-                                );
-                                if let Err(mark_err) = db::mark_child_failed(
-                                    &version_check_state.gateway.db,
-                                    &child.instance_id,
-                                ) {
-                                    tracing::warn!(
+                                // If child has no Railway service ID, it can never be
+                                // redeployed — delete it entirely instead of just marking failed.
+                                if child.railway_service_id.is_none() {
+                                    tracing::info!(
                                         instance_id = %child.instance_id,
-                                        error = %mark_err,
-                                        "Failed to mark unreachable child as failed"
+                                        status = %child.status,
+                                        age_secs = age_secs,
+                                        "Deleting ghost child (unreachable + no Railway service ID)"
                                     );
+                                    let _ = db::delete_child(
+                                        &version_check_state.gateway.db,
+                                        &child.instance_id,
+                                    );
+                                } else {
+                                    tracing::info!(
+                                        instance_id = %child.instance_id,
+                                        status = %child.status,
+                                        age_secs = age_secs,
+                                        "Marking unreachable child as failed"
+                                    );
+                                    if let Err(mark_err) = db::mark_child_failed(
+                                        &version_check_state.gateway.db,
+                                        &child.instance_id,
+                                    ) {
+                                        tracing::warn!(
+                                            instance_id = %child.instance_id,
+                                            error = %mark_err,
+                                            "Failed to mark unreachable child as failed"
+                                        );
+                                    }
                                 }
                             }
 

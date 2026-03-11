@@ -221,10 +221,13 @@ pub fn goal_creation_prompt(
 
     let has_peers = !snapshot.peers.is_empty();
     let peer_advice = if has_peers {
-        "discover_peers + call_peer — engage with sibling agents"
+        "discover_peers + call_peer — engage with sibling agents via x402 PAID endpoints. \
+         Every call_peer uses the x402 payment flow (402 → sign EIP-712 → pay pathUSD). \
+         This is the CORE of what you are: an x402 payment agent. CALL YOUR PEERS' PAID ENDPOINTS."
     } else {
         "No peers cached yet — use discover_peers to find siblings (it does live network calls). \
-         Once you discover peers, use call_peer to interact with them."
+         Once you discover peers, use call_peer to interact with their PAID endpoints via x402. \
+         You have a wallet with pathUSD — USE IT to pay for peer services."
     };
 
     let situation_analysis = if endpoint_count > 5 && total_payments == 0 {
@@ -270,18 +273,24 @@ pub fn goal_creation_prompt(
     }
 
     let peer_rule = if has_peers {
-        "You can discover peer instances via `/instance/siblings` and call their paid endpoints.\n\
-         You can clone yourself using `call_peer` with the `/clone` endpoint (do NOT use curl — cloning requires x402 payment signing)"
+        "You MUST call peer paid endpoints using call_peer — this is x402, the entire point is PAID API calls.\n\
+         Every call_peer triggers the full x402 flow: GET → 402 → sign EIP-712 → pay pathUSD → get response.\n\
+         Call peers' 'info', 'soul', or 'chat' endpoints. Each call earns them revenue and costs you pathUSD.\n\
+         This economic activity is what makes you a real x402 agent, not just a script runner.\n\
+         You can clone yourself using `call_peer` with the `clone` endpoint (do NOT use curl — cloning requires x402 payment signing)"
     } else {
         "Use discover_peers to find sibling agents — it does live network calls even when no peers are cached.\n\
-         Once you find peers, use call_peer to interact with their endpoints.\n\
-         To grow the network, clone yourself via the `/clone` endpoint when you have funds"
+         Once you find peers, use call_peer to make PAID x402 calls to their endpoints.\n\
+         Every call_peer uses your wallet to pay pathUSD via EIP-712 signatures — this is what x402 IS.\n\
+         To grow the network, clone yourself via the `clone` endpoint when you have funds"
     };
 
     let good_goals = if has_peers {
-        "fix a real bug in your codebase, optimize a slow function, add a useful feature to your own code, coordinate with peers via call_peer"
+        "call peer paid endpoints (call_peer with 'info', 'soul', 'chat' slugs — generates x402 payments!), \
+         fix a real bug in your codebase, optimize a slow function, add a useful feature to your own code"
     } else {
-        "fix a real bug in your codebase, optimize a slow function, add a useful feature to your own code, use discover_peers to find and interact with sibling agents"
+        "use discover_peers then call_peer to make PAID x402 calls to sibling agents, \
+         fix a real bug in your codebase, optimize a slow function, add a useful feature to your own code"
     };
 
     let endpoint_rule = if total_payments == 0 && endpoint_count > 5 {
@@ -387,9 +396,12 @@ pub fn planning_prompt(
          Use create_script_endpoint for genuinely unique, useful HTTP endpoints.\n\
          Each endpoint must be DIFFERENT from existing ones. Max 10 total.\n\
          The script gets REQUEST_BODY, REQUEST_METHOD, QUERY_STRING as env vars. Output JSON to stdout.\n\n\
-         ## Inter-Agent Coordination\n\
-         Use `call_peer` for inter-agent calls (discovers + resolves URL + signs payment in one step).\n\
-         The x402 economy works when agents build genuinely useful things for each other.\n\n\
+         ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
+         Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
+         EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\
+         Available peer endpoint slugs: 'info' (node info), 'soul' (soul status), 'chat' (interactive chat), 'clone' (spawn new agent).\n\
+         YOU HAVE A WALLET WITH pathUSD — SPEND IT BY CALLING PEERS. This is the entire point of x402.\n\
+         The x402 economy works when agents PAY each other for services. No free rides.\n\n\
          # Task\n\
          Create a step-by-step plan to achieve this goal. Each step is one of:\n\n\
          Mechanical (no LLM needed):\n\
@@ -406,7 +418,7 @@ pub fn planning_prompt(
          - {{\"type\": \"create_github_repo\", \"name\": \"my-project\", \"description\": \"...\", \"store_as\": \"repo\"}}\n\
          - {{\"type\": \"fork_github_repo\", \"owner\": \"user\", \"repo\": \"project\", \"store_as\": \"fork\"}}\n\
          - {{\"type\": \"discover_peers\", \"store_as\": \"peers\"}}  (fetches sibling/child instances and their endpoints)\n\
-         - {{\"type\": \"call_peer\", \"slug\": \"script-peer-discovery\", \"store_as\": \"result\"}}  (RECOMMENDED for inter-agent calls — discovers peers, resolves URL, signs payment — ONE step)\n\
+         - {{\"type\": \"call_peer\", \"slug\": \"info\", \"store_as\": \"result\"}}  (**USE THIS** for x402 paid calls — discovers peers, resolves URL, signs EIP-712 payment, pays pathUSD — ONE step. Slugs: 'info', 'soul', 'chat', 'clone')\n\
          - {{\"type\": \"screenshot\", \"store_as\": \"screen\"}}  (capture VM display — requires DISPLAY)\n\
          - {{\"type\": \"screen_click\", \"x\": 100, \"y\": 200, \"store_as\": \"click\"}}  (click at screen position)\n\
          - {{\"type\": \"screen_type\", \"text\": \"hello\", \"store_as\": \"typed\"}}  (type text via keyboard)\n\
@@ -431,7 +443,10 @@ pub fn planning_prompt(
            and ANY files in crates/tempo-x402/src/ (core lib)\n\
          - Do NOT try to modify Dockerfile, railway.toml, or deployment configs\n\
          - Use only dependencies already available in the workspace\n\
-         - For inter-agent calls, ALWAYS use call_peer with just the slug. NEVER construct URLs manually.\n\n\
+         - For inter-agent calls, ALWAYS use call_peer with just the slug. NEVER construct URLs manually.\n\
+         - EVERY plan that involves peers MUST include at least one call_peer step. This is x402 — paid endpoints are the product.\n\
+         - If you have peers, include a call_peer step with slug 'info' or 'soul' — this generates real x402 payment transactions.\n\
+         - For large files (>64KB), use read_file with offset and limit parameters (e.g. offset: 0, limit: 500 for first 500 lines).\n\n\
          Respond with ONLY a JSON array of steps, no other text.",
         goal.description,
         goal.success_criteria,

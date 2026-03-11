@@ -40,8 +40,8 @@ pub struct ToolExecutor {
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
 const MAX_OUTPUT_BYTES: usize = 4096;
 
-/// Max file size for read_file (64KB — large enough for most source files).
-const MAX_READ_BYTES: usize = 65536;
+/// Max file size for read_file (256KB — large enough for even thinking.rs at 85KB).
+const MAX_READ_BYTES: usize = 262144;
 
 /// Max entries for list_directory.
 const MAX_DIR_ENTRIES: usize = 200;
