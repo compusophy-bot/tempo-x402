@@ -1482,6 +1482,41 @@ impl ThinkingLoop {
 
     /// Parse plan steps from LLM output (find JSON array).
     /// Includes normalization to handle common LLM format mistakes.
+    /// Fix common path errors the LLM makes when referencing source files.
+    fn fix_common_path_errors(path: &str) -> String {
+        let mut p = path.to_string();
+
+        // LLM writes "crates/tempo-x402/src/thinking.rs" but thinking.rs is in tempo-x402-soul
+        let soul_files = [
+            "thinking.rs",
+            "plan.rs",
+            "prompts.rs",
+            "chat.rs",
+            "memory.rs",
+            "git.rs",
+            "coding.rs",
+            "mode.rs",
+            "neuroplastic.rs",
+            "persistent_memory.rs",
+            "world_model.rs",
+            "observer.rs",
+        ];
+        for &f in &soul_files {
+            let wrong = format!("crates/tempo-x402/src/{f}");
+            if p == wrong || p.ends_with(&format!("/{wrong}")) {
+                p = format!("crates/tempo-x402-soul/src/{f}");
+                break;
+            }
+        }
+
+        // Strip leading /data/workspace/ prefix (agent's absolute path)
+        if let Some(stripped) = p.strip_prefix("/data/workspace/") {
+            p = stripped.to_string();
+        }
+
+        p
+    }
+
     /// Sanitize plan steps to remove or fix obviously broken steps.
     /// This runs at plan creation time so broken steps never count as execution failures.
     fn sanitize_plan_steps(steps: Vec<PlanStep>) -> Vec<PlanStep> {
@@ -1527,7 +1562,7 @@ impl ThinkingLoop {
                 }
                 // Remove ReadFile steps that reference non-existent plan context files
                 // (LLM generates `read siblings.json` or `read discovered_peers.json`)
-                PlanStep::ReadFile { path, .. } => {
+                PlanStep::ReadFile { path, store_as } => {
                     let bogus_files = [
                         "siblings.json",
                         "discovered_peers.json",
@@ -1546,7 +1581,69 @@ impl ThinkingLoop {
                         );
                         continue;
                     }
-                    sanitized.push(step);
+                    // Fix common path errors
+                    let fixed_path = Self::fix_common_path_errors(path);
+                    if fixed_path != *path {
+                        sanitized.push(PlanStep::ReadFile {
+                            path: fixed_path,
+                            store_as: store_as.clone(),
+                        });
+                    } else {
+                        sanitized.push(step);
+                    }
+                }
+                // Fix common path mistakes in EditCode/GenerateCode
+                // LLM often writes "crates/tempo-x402/src/thinking.rs" (wrong crate)
+                PlanStep::EditCode {
+                    file_path,
+                    description,
+                    context_keys,
+                } => {
+                    let fixed_path = Self::fix_common_path_errors(file_path);
+                    if crate::guard::is_protected(&fixed_path) {
+                        tracing::debug!(
+                            path = %fixed_path,
+                            "Sanitized out EditCode for protected file"
+                        );
+                        continue;
+                    }
+                    if fixed_path != *file_path {
+                        tracing::debug!(
+                            original = %file_path,
+                            fixed = %fixed_path,
+                            "Fixed path in EditCode step"
+                        );
+                        sanitized.push(PlanStep::EditCode {
+                            file_path: fixed_path,
+                            description: description.clone(),
+                            context_keys: context_keys.clone(),
+                        });
+                    } else {
+                        sanitized.push(step);
+                    }
+                }
+                PlanStep::GenerateCode {
+                    file_path,
+                    description,
+                    context_keys,
+                } => {
+                    let fixed_path = Self::fix_common_path_errors(file_path);
+                    if crate::guard::is_protected(&fixed_path) {
+                        tracing::debug!(
+                            path = %fixed_path,
+                            "Sanitized out GenerateCode for protected file"
+                        );
+                        continue;
+                    }
+                    if fixed_path != *file_path {
+                        sanitized.push(PlanStep::GenerateCode {
+                            file_path: fixed_path,
+                            description: description.clone(),
+                            context_keys: context_keys.clone(),
+                        });
+                    } else {
+                        sanitized.push(step);
+                    }
                 }
                 // Remove CallPaidEndpoint with localhost URLs
                 PlanStep::CallPaidEndpoint { url, .. } => {
