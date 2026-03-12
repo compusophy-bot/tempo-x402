@@ -44,11 +44,12 @@ pub struct FitnessScore {
 }
 
 /// Component weights for the fitness function.
+/// Execution is king — plans that actually work matter most.
 const W_ECONOMIC: f64 = 0.25;
-const W_EXECUTION: f64 = 0.20;
-const W_EVOLUTION: f64 = 0.25;
+const W_EXECUTION: f64 = 0.30;
+const W_EVOLUTION: f64 = 0.20;
 const W_COORDINATION: f64 = 0.15;
-const W_INTROSPECTION: f64 = 0.15;
+const W_INTROSPECTION: f64 = 0.10;
 
 /// How many historical scores to keep for trend calculation.
 const HISTORY_SIZE: usize = 50;
@@ -130,28 +131,35 @@ fn load_history(db: &SoulDatabase) -> Vec<FitnessScore> {
 }
 
 /// Economic fitness: payments efficiency.
-/// High score = endpoints are earning. Low score = lots of endpoints, no payments.
+/// High score = endpoints are earning real revenue, not just peer-sync pings.
+/// Midpoint=5: need 5 payments per endpoint for 50%. This is HARD — as it should be.
 fn compute_economic(snapshot: &NodeSnapshot) -> f64 {
     let endpoints = snapshot.endpoint_count.max(1) as f64;
     let payments = snapshot.total_payments as f64;
 
-    // Payments per endpoint, sigmoid-scaled so 1 payment/endpoint = ~0.7
+    // Payments per endpoint, sigmoid-scaled. Midpoint=5 so you need real traffic.
     let efficiency = payments / endpoints;
-    sigmoid(efficiency, 1.0)
+    sigmoid(efficiency, 5.0)
 }
 
 /// Execution fitness: plan success rate.
+/// No data = 0.15 (you haven't proven anything). Need 5+ plans for full credit.
 fn compute_execution(db: &SoulDatabase) -> f64 {
     let completed = db.count_plans_by_status("Completed").unwrap_or(0).max(0) as f64;
     let failed = db.count_plans_by_status("Failed").unwrap_or(0).max(0) as f64;
     let total = completed + failed;
     if total < 1.0 {
-        return 0.5; // no data yet — neutral
+        return 0.15; // no data — you haven't proven anything
     }
-    completed / total
+    let raw_rate = completed / total;
+    // Ramp: need at least 5 plans for full credit, otherwise blended toward 0.15
+    let confidence = (total / 5.0).min(1.0);
+    0.15 * (1.0 - confidence) + raw_rate * confidence
 }
 
 /// Evolution fitness: are you changing your code?
+/// Midpoint=10: need 10 commits per 100 cycles for 50%. That's real output.
+/// Also requires 20+ cycles to avoid rewarding fresh deploys.
 fn compute_evolution(db: &SoulDatabase) -> f64 {
     let total_cycles: f64 = db
         .get_state("total_think_cycles")
@@ -168,12 +176,18 @@ fn compute_evolution(db: &SoulDatabase) -> f64 {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.0);
 
-    // Commits per 100 cycles, sigmoid-scaled
+    // Need at least 20 cycles before evolution score is meaningful
+    if total_cycles < 20.0 {
+        return 0.1;
+    }
+
+    // Commits per 100 cycles, sigmoid-scaled. Midpoint=10 — need real output.
     let rate = (total_commits / total_cycles) * 100.0;
-    sigmoid(rate, 2.0) // ~0.7 at 2 commits per 100 cycles
+    sigmoid(rate, 10.0)
 }
 
 /// Coordination fitness: peer interaction success.
+/// Raw success rate is fair, but need minimum volume (10 calls) for full credit.
 fn compute_coordination(db: &SoulDatabase) -> f64 {
     let peer_calls: f64 = db
         .get_state("peer_calls_attempted")
@@ -189,55 +203,65 @@ fn compute_coordination(db: &SoulDatabase) -> f64 {
         .unwrap_or(0.0);
 
     if peer_calls < 1.0 {
-        return 0.3; // hasn't tried yet — low but not zero
+        return 0.1; // hasn't tried yet — almost zero
     }
     // Sanity: successes can't exceed attempts (prevent manipulation)
     let clamped = peer_successes.min(peer_calls);
-    clamped / peer_calls
+    let raw_rate = clamped / peer_calls;
+    // Volume ramp: need 10+ calls for full credit
+    let confidence = (peer_calls / 10.0).min(1.0);
+    0.1 * (1.0 - confidence) + raw_rate * confidence
 }
 
-/// Introspection fitness: do beliefs match reality?
+/// Introspection fitness: do LLM-generated beliefs match reality?
+/// Auto-beliefs are excluded — checking auto-synced data against itself is tautological.
+/// Only LLM-generated beliefs that can be verified count. Unverifiable = skipped.
 fn compute_introspection(snapshot: &NodeSnapshot, db: &SoulDatabase) -> f64 {
     let beliefs = db.get_all_active_beliefs().unwrap_or_default();
     if beliefs.is_empty() {
-        return 0.3; // no beliefs yet — low
+        return 0.1; // no beliefs — you're not thinking
     }
 
     let mut correct = 0u32;
     let mut total = 0u32;
 
     for belief in &beliefs {
-        // Check auto-beliefs against snapshot reality
-        if !belief.evidence.starts_with("auto:") {
+        // SKIP auto-beliefs — they're synced from snapshot, checking them is meaningless
+        if belief.evidence.starts_with("auto:") {
             continue;
         }
 
-        total += 1;
+        // Only count beliefs we can actually verify
         match (belief.subject.as_str(), belief.predicate.as_str()) {
             ("node", "endpoint_count") => {
+                total += 1;
                 if belief.value == snapshot.endpoint_count.to_string() {
                     correct += 1;
                 }
             }
             ("node", "total_payments") => {
+                total += 1;
                 if belief.value == snapshot.total_payments.to_string() {
                     correct += 1;
                 }
             }
             ("node", "children_count") => {
+                total += 1;
                 if belief.value == snapshot.children_count.to_string() {
                     correct += 1;
                 }
             }
             _ => {
-                // Can't verify — assume correct (benefit of the doubt)
-                correct += 1;
+                // Can't verify — skip entirely (no free points)
             }
         }
     }
 
     if total == 0 {
-        return 0.5;
+        // Has beliefs but none verifiable — give partial credit for having beliefs at all
+        let belief_count = beliefs.len() as f64;
+        // More beliefs = slightly more credit, sigmoid with midpoint 10
+        return 0.1 + 0.2 * sigmoid(belief_count, 10.0);
     }
     correct as f64 / total as f64
 }
