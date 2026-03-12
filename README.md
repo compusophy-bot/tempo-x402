@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="https://crates.io/crates/tempo-x402"><img src="https://img.shields.io/crates/v/tempo-x402.svg" alt="crates.io"></a>
-  <a href="https://docs.rs/tempo-x402"><img src="https://img.shields.io/crates/v/tempo-x402.svg" alt="docs.rs"></a>
+  <a href="https://docs.rs/tempo-x402"><img src="https://docs.rs/tempo-x402/badge.svg" alt="docs.rs"></a>
   <a href="https://github.com/compusophy/tempo-x402/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
 </p>
 
@@ -14,10 +14,6 @@
   <a href="https://crates.io/crates/tempo-x402">Crate</a> &middot;
   <a href="https://soul-bot-production.up.railway.app">Live Node</a> &middot;
   <a href="https://github.com/compusophy/tempo-x402">Source</a>
-</p>
-
-<p align="center">
-  <a href="https://railway.com/template/tempo-x402?referralCode=tempo"><img src="https://railway.com/button.svg" alt="Deploy on Railway"></a>
 </p>
 
 ---
