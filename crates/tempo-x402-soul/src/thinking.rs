@@ -475,9 +475,10 @@ impl ThinkingLoop {
 
         // ── Stagnation checks ──
 
-        // Circuit breaker 1: global stagnation — 30+ cycles without a commit
+        // Circuit breaker 1: global stagnation — 50+ cycles without a commit or plan completion
+        // (raised from 30 — agents doing peer calls + research are productive even without commits)
         let cycles_since_commit = self.get_cycles_since_last_commit();
-        if cycles_since_commit > 30 {
+        if cycles_since_commit > 50 {
             tracing::warn!(
                 cycles_since_commit,
                 "Global stagnation — abandoning all goals"
@@ -1324,6 +1325,10 @@ impl ThinkingLoop {
         plan.status = PlanStatus::Completed;
         self.db.update_plan(plan)?;
         let _ = self.db.set_state("active_plan_id", "");
+
+        // Plan completion is progress — reset stagnation counter
+        // (agents doing peer calls + research are productive without commits)
+        self.reset_commit_counter();
 
         // Record structured outcome for feedback loop
         feedback::record_outcome(&self.db, plan, &goal.description, None);
