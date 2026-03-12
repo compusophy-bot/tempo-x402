@@ -599,28 +599,45 @@ impl ToolExecutor {
             self.workspace_root.join(path)
         };
 
-        // Canonicalize what exists; for new files, canonicalize the parent
+        // Canonicalize what exists; for new files, walk up to find the nearest
+        // existing ancestor and resolve relative to it.
         let resolved = if candidate.exists() {
             candidate
                 .canonicalize()
                 .map_err(|e| format!("failed to resolve path: {e}"))?
         } else {
-            let parent = candidate
-                .parent()
-                .ok_or_else(|| "invalid path: no parent directory".to_string())?;
-            if !parent.exists() {
-                return Err(format!(
-                    "parent directory does not exist: {}",
-                    parent.display()
-                ));
-            }
-            let canon_parent = parent
-                .canonicalize()
-                .map_err(|e| format!("failed to resolve parent: {e}"))?;
             let filename = candidate
                 .file_name()
                 .ok_or_else(|| "invalid path: no filename".to_string())?;
-            canon_parent.join(filename)
+
+            // Walk up to find the nearest existing ancestor for canonicalization.
+            // This allows writing to not-yet-created directories (write_file creates them).
+            let mut ancestor = candidate.parent().map(PathBuf::from);
+            let mut tail_segments: Vec<std::ffi::OsString> = vec![filename.to_os_string()];
+            while let Some(ref a) = ancestor {
+                if a.exists() {
+                    break;
+                }
+                if let Some(seg) = a.file_name() {
+                    tail_segments.push(seg.to_os_string());
+                }
+                ancestor = a.parent().map(PathBuf::from);
+            }
+
+            let base = match ancestor {
+                Some(a) if a.exists() => a
+                    .canonicalize()
+                    .map_err(|e| format!("failed to resolve ancestor: {e}"))?,
+                _ => self.workspace_root.clone(),
+            };
+
+            // Rebuild the path from the canonicalized base + non-existent segments
+            tail_segments.reverse();
+            let mut result = base;
+            for seg in tail_segments {
+                result = result.join(seg);
+            }
+            result
         };
 
         Ok(resolved)

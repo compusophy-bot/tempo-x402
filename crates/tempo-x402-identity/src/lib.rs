@@ -75,6 +75,11 @@ pub struct InstanceIdentity {
     /// ERC-8004 agent token ID (if minted on-chain).
     #[serde(default)]
     pub agent_token_id: Option<String>,
+    /// Separate facilitator private key (0x-prefixed). Each node gets its own
+    /// so that on-chain tx nonces don't collide across nodes.
+    /// Generated on first bootstrap, persisted in identity.json.
+    #[serde(skip_serializing, default)]
+    pub facilitator_private_key: Option<String>,
 }
 
 /// On-disk format that includes the private key for persistence.
@@ -89,6 +94,9 @@ struct PersistedIdentity {
     /// ERC-8004 agent token ID (if minted).
     #[serde(default)]
     agent_token_id: Option<String>,
+    /// Per-node facilitator private key (generated on first bootstrap).
+    #[serde(default)]
+    facilitator_private_key: Option<String>,
 }
 
 impl From<&InstanceIdentity> for PersistedIdentity {
@@ -101,6 +109,7 @@ impl From<&InstanceIdentity> for PersistedIdentity {
             parent_address: id.parent_address.map(|a| format!("{:#x}", a)),
             created_at: id.created_at.to_rfc3339(),
             agent_token_id: id.agent_token_id.clone(),
+            facilitator_private_key: id.facilitator_private_key.clone(),
         }
     }
 }
@@ -132,6 +141,7 @@ impl TryFrom<PersistedIdentity> for InstanceIdentity {
             parent_address,
             created_at,
             agent_token_id: p.agent_token_id,
+            facilitator_private_key: p.facilitator_private_key,
         })
     }
 }
@@ -161,7 +171,7 @@ pub enum IdentityError {
 pub fn bootstrap(identity_path: &str) -> Result<InstanceIdentity, IdentityError> {
     let path = Path::new(identity_path);
 
-    let identity = if path.exists() {
+    let mut identity = if path.exists() {
         tracing::info!("Loading existing identity from {}", identity_path);
         let data = std::fs::read_to_string(path)?;
         let persisted: PersistedIdentity = serde_json::from_str(&data)
@@ -194,6 +204,12 @@ pub fn bootstrap(identity_path: &str) -> Result<InstanceIdentity, IdentityError>
             .ok()
             .and_then(|s| s.parse::<Address>().ok());
 
+        // Generate a separate facilitator key so each node has its own on-chain
+        // nonce space — prevents tx nonce collisions when multiple nodes settle
+        // payments concurrently.
+        let fac_signer = PrivateKeySigner::random();
+        let facilitator_private_key = format!("0x{}", alloy::hex::encode(fac_signer.to_bytes()));
+
         let identity = InstanceIdentity {
             private_key,
             address,
@@ -202,6 +218,7 @@ pub fn bootstrap(identity_path: &str) -> Result<InstanceIdentity, IdentityError>
             parent_address,
             created_at: Utc::now(),
             agent_token_id: None,
+            facilitator_private_key: Some(facilitator_private_key),
         };
 
         // Ensure parent directory exists
@@ -226,6 +243,21 @@ pub fn bootstrap(identity_path: &str) -> Result<InstanceIdentity, IdentityError>
         identity
     };
 
+    // Migrate: generate facilitator key if existing identity lacks one
+    if identity.facilitator_private_key.is_none() {
+        tracing::info!("Generating separate facilitator key for existing identity");
+        let fac_signer = PrivateKeySigner::random();
+        identity.facilitator_private_key =
+            Some(format!("0x{}", alloy::hex::encode(fac_signer.to_bytes())));
+
+        // Re-persist with the new facilitator key
+        let persisted = PersistedIdentity::from(&identity);
+        let json = serde_json::to_string_pretty(&persisted)
+            .map_err(|e| IdentityError::ParseError(format!("serialize failed: {e}")))?;
+        std::fs::write(path, json)?;
+        tracing::info!("Identity updated with separate facilitator key");
+    }
+
     // Inject env vars for downstream config consumers
     inject_env_vars(&identity);
 
@@ -244,10 +276,14 @@ fn inject_env_vars(identity: &InstanceIdentity) {
         tracing::debug!("Injected EVM_ADDRESS={}", address_str);
     }
 
-    if env::var("FACILITATOR_PRIVATE_KEY").is_err() {
-        env::set_var("FACILITATOR_PRIVATE_KEY", &identity.private_key);
-        tracing::debug!("Injected FACILITATOR_PRIVATE_KEY");
-    }
+    // Always inject the per-node facilitator key (overrides any shared env var).
+    // Each node MUST have its own facilitator key to avoid on-chain tx nonce collisions.
+    let fac_key = identity
+        .facilitator_private_key
+        .as_deref()
+        .unwrap_or(&identity.private_key);
+    env::set_var("FACILITATOR_PRIVATE_KEY", fac_key);
+    tracing::debug!("Injected FACILITATOR_PRIVATE_KEY (per-node)");
 
     // The node's wallet key is also used as the client signing key for x402 payments.
     // Without this, `call_paid_endpoint` and `register_endpoint` tools fail.
@@ -257,13 +293,10 @@ fn inject_env_vars(identity: &InstanceIdentity) {
     }
 
     if env::var("FACILITATOR_SHARED_SECRET").is_err() {
-        // Generate a deterministic-but-unique HMAC secret from the private key.
+        // Generate a deterministic-but-unique HMAC secret from the facilitator key.
         // This is safe because the secret only needs to be shared between the
         // gateway and its embedded facilitator (same process).
-        let secret = x402::hmac::compute_hmac(
-            identity.private_key.as_bytes(),
-            b"x402-bootstrap-hmac-secret",
-        );
+        let secret = x402::hmac::compute_hmac(fac_key.as_bytes(), b"x402-bootstrap-hmac-secret");
         env::set_var("FACILITATOR_SHARED_SECRET", &secret);
         tracing::debug!("Injected FACILITATOR_SHARED_SECRET (auto-generated)");
     }
