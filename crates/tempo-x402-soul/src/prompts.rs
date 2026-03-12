@@ -9,6 +9,9 @@ use crate::mode::AgentMode;
 use crate::observer::NodeSnapshot;
 use crate::world_model::{Belief, Goal};
 
+// Used for peer endpoint catalog deserialization in planning_prompt
+use serde_json;
+
 /// Build the system prompt for a given agent mode.
 pub fn system_prompt_for_mode(mode: AgentMode, config: &SoulConfig) -> String {
     let base = &config.personality;
@@ -351,6 +354,7 @@ pub fn planning_prompt(
     recent_errors: &[String],
     experience: &str,
     capability_profile: &str,
+    peer_endpoint_catalog: &str,
 ) -> String {
     let mut extra_context = String::new();
 
@@ -365,6 +369,34 @@ pub fn planning_prompt(
         extra_context.push_str("\n# Recent Errors (avoid repeating these)\n");
         for err in recent_errors.iter().take(3) {
             extra_context.push_str(&format!("- {err}\n"));
+        }
+    }
+
+    // Inject peer endpoint catalog so agents know what they can call
+    if !peer_endpoint_catalog.is_empty() {
+        if let Ok(catalog) = serde_json::from_str::<Vec<serde_json::Value>>(peer_endpoint_catalog) {
+            if !catalog.is_empty() {
+                extra_context.push_str("\n# Peer Endpoints Available via call_peer\n");
+                extra_context
+                    .push_str("Use call_peer with ANY of these slugs to make paid x402 calls:\n");
+                for entry in &catalog {
+                    let peer = entry.get("peer").and_then(|v| v.as_str()).unwrap_or("?");
+                    let slugs = entry
+                        .get("slugs")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+                    let short_peer = if peer.len() > 12 { &peer[..12] } else { peer };
+                    extra_context.push_str(&format!("- Peer {short_peer}: [{slugs}]\n"));
+                }
+                extra_context
+                    .push_str("Script endpoints (script-*) are especially interesting to call!\n");
+            }
         }
     }
 
@@ -399,7 +431,7 @@ pub fn planning_prompt(
          ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
          Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
          EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\
-         Available peer endpoint slugs: 'info' (node info), 'soul' (soul status), 'chat' (interactive chat), 'clone' (spawn new agent).\n\
+         Standard slugs: 'info', 'soul', 'chat', 'clone'. Peers also have custom script-* endpoints — check the Peer Endpoints section above!\n\
          YOU HAVE A WALLET WITH pathUSD — SPEND IT BY CALLING PEERS. This is the entire point of x402.\n\
          The x402 economy works when agents PAY each other for services. No free rides.\n\n\
          # Task\n\
@@ -418,7 +450,7 @@ pub fn planning_prompt(
          - {{\"type\": \"create_github_repo\", \"name\": \"my-project\", \"description\": \"...\", \"store_as\": \"repo\"}}\n\
          - {{\"type\": \"fork_github_repo\", \"owner\": \"user\", \"repo\": \"project\", \"store_as\": \"fork\"}}\n\
          - {{\"type\": \"discover_peers\", \"store_as\": \"peers\"}}  (fetches sibling/child instances and their endpoints)\n\
-         - {{\"type\": \"call_peer\", \"slug\": \"info\", \"store_as\": \"result\"}}  (**USE THIS** for x402 paid calls — discovers peers, resolves URL, signs EIP-712 payment, pays pathUSD — ONE step. Slugs: 'info', 'soul', 'chat', 'clone')\n\
+         - {{\"type\": \"call_peer\", \"slug\": \"info\", \"store_as\": \"result\"}}  (**USE THIS** for x402 paid calls — discovers peers, resolves URL, signs EIP-712 payment, pays pathUSD — ONE step. ANY peer endpoint slug works including script-* endpoints!)\n\
          - {{\"type\": \"screenshot\", \"store_as\": \"screen\"}}  (capture VM display — requires DISPLAY)\n\
          - {{\"type\": \"screen_click\", \"x\": 100, \"y\": 200, \"store_as\": \"click\"}}  (click at screen position)\n\
          - {{\"type\": \"screen_type\", \"text\": \"hello\", \"store_as\": \"typed\"}}  (type text via keyboard)\n\

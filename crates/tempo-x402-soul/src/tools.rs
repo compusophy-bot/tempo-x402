@@ -2415,6 +2415,36 @@ impl ToolExecutor {
                             .unwrap_or(0);
                         let _ = db.set_state("peer_calls_attempted", &(attempted + 1).to_string());
                         let _ = db.set_state("peer_calls_succeeded", &(succeeded + 1).to_string());
+
+                        // Persist peer endpoint catalog for prompt injection
+                        // This lets the planning prompt tell agents about ALL available peer endpoints
+                        let mut catalog: Vec<serde_json::Value> = Vec::new();
+                        for peer in &enriched_peers {
+                            let peer_id = peer
+                                .get("instance_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let peer_eps = peer
+                                .get("endpoints")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let slugs: Vec<String> = peer_eps
+                                .iter()
+                                .filter_map(|ep| {
+                                    ep.get("slug").and_then(|s| s.as_str()).map(String::from)
+                                })
+                                .collect();
+                            if !slugs.is_empty() {
+                                catalog.push(serde_json::json!({
+                                    "peer": peer_id,
+                                    "slugs": slugs,
+                                }));
+                            }
+                        }
+                        if let Ok(json) = serde_json::to_string(&catalog) {
+                            let _ = db.set_state("peer_endpoint_catalog", &json);
+                        }
                     }
                 }
 

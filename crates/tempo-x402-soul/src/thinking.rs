@@ -947,6 +947,12 @@ impl ThinkingLoop {
             format!("{own_experience}\n\n{peer_lessons}")
         };
         let cap_guidance = capability::capability_guidance(&self.db);
+        let peer_catalog = self
+            .db
+            .get_state("peer_endpoint_catalog")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         let prompt = prompts::planning_prompt(
             goal,
             &workspace_listing,
@@ -954,6 +960,7 @@ impl ThinkingLoop {
             &recent_errors,
             &experience,
             &cap_guidance,
+            &peer_catalog,
         );
         let system =
             "You are a software engineering planner. Output ONLY a JSON array of plan steps.";
