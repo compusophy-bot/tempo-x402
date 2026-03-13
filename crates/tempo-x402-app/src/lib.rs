@@ -575,35 +575,16 @@ fn InstancePanel() -> impl IntoView {
                                     }}
                                 </button>
 
-                                <button
-                                    class="btn clone-btn"
-                                    style="margin-left: 8px;"
-                                    disabled=move || !clone_available || clone_loading.get()
-                                    on:click=move |_| {
-                                        if !clone_available { return; }
-                                        set_clone_loading.set(true);
-                                        set_clone_result.set(None);
-                                        spawn_local(async move {
-                                            let result = api::clone_self().await;
-                                            set_clone_result.set(Some(result));
-                                            set_clone_loading.set(false);
-                                        });
-                                    }
-                                >
-                                    {move || if clone_loading.get() {
-                                        "Cloning...".to_string()
-                                    } else {
-                                        "Self-Clone (free)".to_string()
-                                    }}
-                                </button>
-
                                 {move || {
                                     if !clone_available {
                                         Some(view! {
                                             <p class="hint">"Cloning not configured on this instance"</p>
                                         })
                                     } else {
-                                        None
+                                        let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+                                        (wallet.get().mode == WalletMode::Disconnected).then(|| view! {
+                                            <p class="hint">"Connect wallet to clone"</p>
+                                        })
                                     }
                                 }}
 
@@ -1343,35 +1324,16 @@ fn DashboardPage() -> impl IntoView {
                                 }}
                             </button>
 
-                            <button
-                                class="btn clone-btn"
-                                style="margin-left: 8px;"
-                                disabled=move || !clone_available || clone_loading.get()
-                                on:click=move |_| {
-                                    if !clone_available { return; }
-                                    set_clone_loading.set(true);
-                                    set_clone_result.set(None);
-                                    spawn_local(async move {
-                                        let result = api::clone_self().await;
-                                        set_clone_result.set(Some(result));
-                                        set_clone_loading.set(false);
-                                    });
-                                }
-                            >
-                                {move || if clone_loading.get() {
-                                    "Cloning...".to_string()
-                                } else {
-                                    "Self-Clone (free)".to_string()
-                                }}
-                            </button>
-
                             {move || {
                                 if !clone_available {
                                     Some(view! {
                                         <p class="hint">"Cloning not configured on this instance"</p>
                                     })
                                 } else {
-                                    None
+                                    let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+                                    (wallet.get().mode == WalletMode::Disconnected).then(|| view! {
+                                        <p class="hint">"Connect wallet to clone"</p>
+                                    })
                                 }
                             }}
 

@@ -622,25 +622,6 @@ pub async fn clone_instance(wallet: &WalletState) -> Result<CloneResponse, Strin
         .map_err(|e| format!("Failed to parse clone response: {}", e))
 }
 
-/// Internal self-clone — no wallet/payment needed. Calls POST /clone/self.
-pub async fn clone_self() -> Result<CloneResponse, String> {
-    let url = format!("{}/clone/self", GATEWAY_URL);
-
-    let resp = Request::post(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Clone request failed: {}", e))?;
-
-    if !resp.ok() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Clone failed ({}): {}", resp.status(), body));
-    }
-
-    resp.json::<CloneResponse>()
-        .await
-        .map_err(|e| format!("Failed to parse clone response: {}", e))
-}
-
 /// Set up a wallet for x402 payments (fund via faucet + approve facilitator).
 ///
 /// Called automatically when connecting a demo or embedded wallet.
