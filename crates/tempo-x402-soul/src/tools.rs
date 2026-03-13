@@ -1464,9 +1464,7 @@ impl ToolExecutor {
             .first()
             .ok_or_else(|| "402 response 'accepts' array is empty".to_string())?;
 
-        let requirements: x402::wallet::PaymentRequirements =
-            serde_json::from_value(req_value.clone())
-                .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
+        let requirements = parse_payment_requirements(req_value)?;
 
         // Step 3: Sign payment
         let signer = x402::wallet::WalletSigner::new(&private_key)
@@ -2595,9 +2593,7 @@ impl ToolExecutor {
             .first()
             .ok_or_else(|| "402 response 'accepts' array is empty".to_string())?;
 
-        let requirements: x402::wallet::PaymentRequirements =
-            serde_json::from_value(req_value.clone())
-                .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
+        let requirements = parse_payment_requirements(req_value)?;
 
         // Step 2.5: Auto-approve the target's facilitator if needed.
         // For embedded facilitators, pay_to == facilitator address.
@@ -2985,6 +2981,30 @@ impl ToolExecutor {
             duration_ms: start.elapsed().as_millis() as u64,
         })
     }
+}
+
+/// Parse a PaymentRequirements JSON value into the wallet-compatible struct.
+/// Tries wallet format (camelCase) first, falls back to server format (snake_case + Address).
+fn parse_payment_requirements(
+    value: &serde_json::Value,
+) -> Result<x402::wallet::PaymentRequirements, String> {
+    // Try wallet format first (camelCase fields, String types)
+    if let Ok(r) = serde_json::from_value::<x402::wallet::PaymentRequirements>(value.clone()) {
+        return Ok(r);
+    }
+    // Fall back to server format (snake_case fields, Address types) and convert
+    let server_req: x402::payment::PaymentRequirements = serde_json::from_value(value.clone())
+        .map_err(|e| format!("failed to parse PaymentRequirements: {e}"))?;
+    Ok(x402::wallet::PaymentRequirements {
+        scheme: server_req.scheme,
+        network: server_req.network,
+        price: server_req.price,
+        asset: format!("{}", server_req.asset),
+        amount: server_req.amount,
+        pay_to: format!("{}", server_req.pay_to),
+        max_timeout_seconds: server_req.max_timeout_seconds,
+        description: server_req.description,
+    })
 }
 
 /// Return the update_memory tool declaration (available in Observe, Chat, Code).

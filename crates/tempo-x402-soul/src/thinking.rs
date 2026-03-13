@@ -1928,6 +1928,28 @@ impl ThinkingLoop {
                     } else if action_lower.starts_with("grep ") || action_lower.starts_with("rg ") {
                         step.insert("type".to_string(), serde_json::json!("run_shell"));
                         step.insert("command".to_string(), serde_json::json!(action_str));
+                    } else if action_lower.starts_with("read_file")
+                        || action_lower.starts_with("read file")
+                    {
+                        // LLM used "read_file /path" as action — convert to read_file step
+                        let path = action_str.split_once(' ').map(|x| x.1).unwrap_or(".");
+                        step.insert("type".to_string(), serde_json::json!("read_file"));
+                        step.insert("path".to_string(), serde_json::json!(path));
+                    } else if action_lower.starts_with("search_code")
+                        || action_lower.starts_with("search code")
+                        || action_lower.starts_with("search_files")
+                    {
+                        // LLM used "search_code pattern" as action — convert to search_code step
+                        let pattern = action_str.split_once(' ').map(|x| x.1).unwrap_or("*");
+                        step.insert("type".to_string(), serde_json::json!("search_code"));
+                        step.insert("pattern".to_string(), serde_json::json!(pattern));
+                        step.insert("directory".to_string(), serde_json::json!("."));
+                    } else if action_lower.starts_with("list_dir")
+                        || action_lower.starts_with("list dir")
+                    {
+                        let path = action_str.split_once(' ').map(|x| x.1).unwrap_or(".");
+                        step.insert("type".to_string(), serde_json::json!("list_dir"));
+                        step.insert("path".to_string(), serde_json::json!(path));
                     } else {
                         // Default: treat as shell command
                         step.insert("type".to_string(), serde_json::json!("run_shell"));
