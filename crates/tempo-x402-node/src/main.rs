@@ -1211,10 +1211,9 @@ async fn main() -> std::io::Result<()> {
                         }
                     }
 
-                    // ── Build hash check & auto-redeploy ────────────────────
-                    // Compare build hashes (git SHA) for exact match. Fall back
-                    // to semver if the child doesn't report a build hash yet
-                    // (old image without the `build` field).
+                    // ── Build hash check (log-only, no auto-redeploy) ─────────
+                    // Auto-redeploy disabled: cloning is manual-only via the
+                    // paid /clone/self endpoint on the frontend.
                     let up_to_date =
                         if !child_build.is_empty() && child_build != "dev" && parent_build != "dev"
                         {
@@ -1233,14 +1232,14 @@ async fn main() -> std::io::Result<()> {
                         continue;
                     }
 
-                    // Skip redeploy if already deploying (prevents duplicate queued deploys)
-                    if child.status == "deploying" {
-                        tracing::debug!(
+                    // Ghost child cleanup: no Railway service ID means orphaned
+                    if child.railway_service_id.is_none() {
+                        tracing::warn!(
                             instance_id = %child.instance_id,
-                            child_build = %child_build,
-                            parent_build = %parent_build,
-                            "Child build mismatch but already deploying — skipping"
+                            "Deleting ghost child: no Railway service ID"
                         );
+                        let _ =
+                            db::delete_child(&version_check_state.gateway.db, &child.instance_id);
                         continue;
                     }
 
@@ -1250,70 +1249,8 @@ async fn main() -> std::io::Result<()> {
                         child_build = %child_build,
                         parent_version = %parent_version,
                         parent_build = %parent_build,
-                        "Child build mismatch — triggering redeploy"
+                        "Child build mismatch detected (auto-redeploy disabled)"
                     );
-
-                    let service_id = match child.railway_service_id.as_ref() {
-                        Some(id) => id,
-                        None => {
-                            // Ghost child: no Railway service ID means this child
-                            // was orphaned (service deleted externally). Delete it
-                            // from the DB so it stops spamming the health probe.
-                            tracing::warn!(
-                                instance_id = %child.instance_id,
-                                "Deleting ghost child: no Railway service ID"
-                            );
-                            let _ = db::delete_child(
-                                &version_check_state.gateway.db,
-                                &child.instance_id,
-                            );
-                            continue;
-                        }
-                    };
-
-                    match agent
-                        .update_and_redeploy_clone(service_id, &child.instance_id)
-                        .await
-                    {
-                        Ok(_) => {
-                            if let Err(e) = db::update_child_status(
-                                &version_check_state.gateway.db,
-                                &child.instance_id,
-                                "deploying",
-                            ) {
-                                tracing::warn!(
-                                    instance_id = %child.instance_id,
-                                    error = %e,
-                                    "Failed to update status after auto-redeploy"
-                                );
-                            }
-                            tracing::info!(
-                                instance_id = %child.instance_id,
-                                "Auto-redeploy triggered"
-                            );
-                        }
-                        Err(e) => {
-                            let err_str = format!("{e}");
-                            // If Railway says the service doesn't exist, mark child as failed
-                            if err_str.contains("not found") || err_str.contains("Not Found") {
-                                tracing::warn!(
-                                    instance_id = %child.instance_id,
-                                    error = %e,
-                                    "Service not found on Railway — marking child as failed"
-                                );
-                                let _ = db::mark_child_failed(
-                                    &version_check_state.gateway.db,
-                                    &child.instance_id,
-                                );
-                            } else {
-                                tracing::warn!(
-                                    instance_id = %child.instance_id,
-                                    error = %e,
-                                    "Auto-redeploy failed (non-fatal)"
-                                );
-                            }
-                        }
-                    }
                 }
 
                 tracing::info!("Health probe cycle complete");
