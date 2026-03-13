@@ -1,5 +1,15 @@
-# Stage 1: Build everything (SPA + binaries) in one stage to share cache invalidation
-FROM rust:1.89-bookworm AS builder
+# Stage 1: cargo-chef — plan dependency build from Cargo manifests only
+FROM rust:1.89-bookworm AS chef
+RUN cargo install cargo-chef
+WORKDIR /app
+
+# Stage 2: Prepare recipe (captures dependency graph without source code)
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 3: Cook dependencies (cached unless Cargo.toml/Cargo.lock change)
+FROM chef AS builder
 
 ARG GIT_SHA=dev
 ENV GIT_SHA=${GIT_SHA}
@@ -19,7 +29,12 @@ RUN curl -sSL --retry 5 --retry-delay 5 \
         -C /root/.trunk/tools/wasm-bindgen-${WASM_BINDGEN_VERSION}/ && \
     rm /tmp/wb.tar.gz
 
-WORKDIR /app
+# Cook: build all dependencies (this layer is cached when only source changes)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path recipe.json
+
+# Now copy actual source and build
 COPY . .
 
 # Build the SPA (Trunk compiles Leptos to WASM)
@@ -28,7 +43,7 @@ RUN cd crates/tempo-x402-app && trunk build --release
 # Build the gateway and node binaries
 RUN cargo build --release --package tempo-x402-gateway --package tempo-x402-node
 
-# Stage 2: Runtime
+# Stage 4: Runtime
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
@@ -73,4 +88,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 #   docker run --read-only --tmpfs /tmp -v gateway-data:/data x402-gateway
 
 ENTRYPOINT ["/entrypoint.sh"]
-
