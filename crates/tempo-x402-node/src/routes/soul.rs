@@ -907,7 +907,7 @@ async fn trigger_benchmark(state: web::Data<NodeState>) -> HttpResponse {
 
     HttpResponse::Ok().json(serde_json::json!({
         "status": "benchmark_requested",
-        "message": "Benchmark will run on the next cycle that is divisible by the interval (default: 100)",
+        "message": "Benchmark will run on the next cycle that is divisible by the interval (default: 50)",
         "current_score": current.as_ref().map(|s| s.pass_at_1),
         "current_elo": elo,
         "problems_attempted": current.as_ref().map(|s| s.problems_attempted).unwrap_or(0),

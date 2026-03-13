@@ -2227,6 +2227,73 @@ a.node-address:hover { text-decoration: underline; }
 .benchmark-ref--equal { color: var(--accent); }
 .benchmark-ref-model { opacity: 0.8; }
 .benchmark-ref-score { font-weight: 600; }
+.benchmark-panel--waiting { border-left-color: var(--text-secondary); }
+.benchmark-panel--waiting h3 { color: var(--text-secondary); }
+.benchmark-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--sp-2);
+}
+.benchmark-trend {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.benchmark-collective {
+    margin: var(--sp-3) 0;
+    padding: var(--sp-3);
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: var(--radius);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+}
+.benchmark-collective-label {
+    font-size: 0.75rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--sp-1);
+}
+.benchmark-collective-score {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+}
+.benchmark-collective-pass {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.benchmark-collective-detail {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+.benchmark-history {
+    margin: var(--sp-3) 0;
+}
+.benchmark-history-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--sp-1);
+}
+.benchmark-history-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 40px;
+    padding: 2px 0;
+}
+.benchmark-history-bar {
+    flex: 1;
+    min-width: 4px;
+    border-radius: 2px 2px 0 0;
+    transition: height 0.3s ease;
+}
+.benchmark-history-bar--high { background: var(--success, #4ade80); }
+.benchmark-history-bar--mid { background: var(--accent); }
+.benchmark-history-bar--low { background: var(--warning, #f59e0b); }
 
 /* ── Neural brain panel ── */
 .brain-panel {

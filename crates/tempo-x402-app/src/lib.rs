@@ -2054,6 +2054,39 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                     .and_then(|v| v.as_array())
                                     .cloned()
                                     .unwrap_or_default();
+                                // Score history for trend
+                                let history = b.get("history")
+                                    .and_then(|v| v.as_array())
+                                    .cloned()
+                                    .unwrap_or_default();
+                                let trend_str = if history.len() >= 2 {
+                                    let prev = history[history.len() - 2].get("pass_at_1")
+                                        .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    let diff = pass_at_1 - prev;
+                                    if diff > 0.5 {
+                                        format!("\u{25B2} +{:.1}%", diff)
+                                    } else if diff < -0.5 {
+                                        format!("\u{25BC} {:.1}%", diff)
+                                    } else {
+                                        "\u{25C6} stable".to_string()
+                                    }
+                                } else {
+                                    "first run".to_string()
+                                };
+                                // Collective intelligence
+                                let collective = b.get("collective");
+                                let collective_pass = collective
+                                    .and_then(|c| c.get("pass_at_1"))
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0);
+                                let collective_solved = collective
+                                    .and_then(|c| c.get("unique_solved"))
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let collective_total = collective
+                                    .and_then(|c| c.get("total_problems"))
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(164);
                                 Some(view! {
                                     <div class="benchmark-panel">
                                         <h3>"HumanEval Benchmark"</h3>
@@ -2062,14 +2095,66 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                                 {format!("{:.1}%", pass_at_1)}
                                             </span>
                                             <span class="benchmark-label">"pass@1"</span>
+                                        </div>
+                                        <div class="benchmark-meta">
                                             <span class="benchmark-elo">{elo_display}</span>
+                                            <span class="benchmark-trend">{trend_str}</span>
                                         </div>
                                         <div class="benchmark-stats">
-                                            {format!("{}/{} problems solved", passed_b, attempted)}
+                                            {format!("{}/{} problems solved (this agent)", passed_b, attempted)}
                                         </div>
+                                        // Collective intelligence
+                                        {if collective_solved > 0 || peer_count > 0 {
+                                            Some(view! {
+                                                <div class="benchmark-collective">
+                                                    <div class="benchmark-collective-label">"Collective Intelligence (swarm)"</div>
+                                                    <div class="benchmark-collective-score">
+                                                        <span class="benchmark-collective-pass">
+                                                            {format!("{:.1}%", collective_pass)}
+                                                        </span>
+                                                        <span class="benchmark-collective-detail">
+                                                            {format!("{}/{} unique problems solved across all agents", collective_solved, collective_total)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            })
+                                        } else {
+                                            None
+                                        }}
+                                        // Score history
+                                        {if history.len() >= 2 {
+                                            Some(view! {
+                                                <div class="benchmark-history">
+                                                    <div class="benchmark-history-label">"Score History"</div>
+                                                    <div class="benchmark-history-bars">
+                                                        {history.iter().map(|h| {
+                                                            let score = h.get("pass_at_1")
+                                                                .and_then(|v| v.as_f64())
+                                                                .unwrap_or(0.0);
+                                                            let bar_class = if score >= 80.0 {
+                                                                "benchmark-history-bar benchmark-history-bar--high"
+                                                            } else if score >= 50.0 {
+                                                                "benchmark-history-bar benchmark-history-bar--mid"
+                                                            } else {
+                                                                "benchmark-history-bar benchmark-history-bar--low"
+                                                            };
+                                                            view! {
+                                                                <div class={bar_class}
+                                                                    style=format!("height: {}%", score.max(2.0))
+                                                                    title=format!("{:.1}%", score)>
+                                                                </div>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                </div>
+                                            })
+                                        } else {
+                                            None
+                                        }}
+                                        // Reference models
                                         <div class="benchmark-refs">
                                             <div class="benchmark-refs-label">"vs. published baselines"</div>
-                                            {refs.iter().take(5).map(|r| {
+                                            {refs.iter().map(|r| {
                                                 let model = r.get("model")
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("?")
@@ -2097,7 +2182,13 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                                     </div>
                                 }.into_view())
                             } else {
-                                None
+                                Some(view! {
+                                    <div class="benchmark-panel benchmark-panel--waiting">
+                                        <h3>"HumanEval Benchmark"</h3>
+                                        <p class="soul-muted">"Waiting for first benchmark run (triggers every 50 cycles)"</p>
+                                        <p class="soul-muted">{format!("Current cycle: {}", total_cycles)}</p>
+                                    </div>
+                                }.into_view())
                             }
                         }
 

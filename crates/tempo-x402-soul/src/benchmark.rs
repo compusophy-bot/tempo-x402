@@ -85,75 +85,96 @@ pub const REFERENCE_SCORES: &[(&str, f64)] = &[
     ("CodeLlama 34B", 48.8),
 ];
 
-/// HuggingFace API endpoint for the HumanEval dataset.
-const HUMANEVAL_DATASET_URL: &str =
-    "https://datasets-server.huggingface.co/rows?dataset=openai_humaneval&config=openai_humaneval&split=test&offset=0&length=164";
+/// HuggingFace datasets API base URL.
+/// Dataset was renamed from `openai_humaneval` to `openai/openai_humaneval`.
+/// API limits length to 100 rows per request, so we paginate.
+const HUMANEVAL_DATASET_BASE: &str =
+    "https://datasets-server.huggingface.co/rows?dataset=openai/openai_humaneval&config=openai_humaneval&split=test";
 
-/// Fetch HumanEval problems from HuggingFace.
+/// Fetch HumanEval problems from HuggingFace (paginated, max 100 per request).
 pub async fn fetch_problems() -> Result<Vec<HumanEvalProblem>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    let resp = client
-        .get(HUMANEVAL_DATASET_URL)
-        .header("User-Agent", "tempo-x402-soul/1.6")
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch HumanEval dataset: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("HuggingFace API returned {}", resp.status()));
-    }
-
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse HumanEval response: {e}"))?;
-
-    let rows = body
-        .get("rows")
-        .and_then(|v| v.as_array())
-        .ok_or("Missing 'rows' in HumanEval response")?;
-
     let mut problems = Vec::new();
-    for row in rows {
-        let row_data = row.get("row").unwrap_or(row);
-        let task_id = row_data
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let prompt = row_data
-            .get("prompt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let canonical_solution = row_data
-            .get("canonical_solution")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let test = row_data
-            .get("test")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let entry_point = row_data
-            .get("entry_point")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+    let mut offset = 0u64;
+    let page_size = 100u64;
 
-        if !task_id.is_empty() && !prompt.is_empty() && !test.is_empty() {
-            problems.push(HumanEvalProblem {
-                task_id,
-                prompt,
-                canonical_solution,
-                test,
-                entry_point,
-            });
+    loop {
+        let url = format!(
+            "{}&offset={}&length={}",
+            HUMANEVAL_DATASET_BASE, offset, page_size
+        );
+        let resp = client
+            .get(&url)
+            .header("User-Agent", "tempo-x402-soul/1.8")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch HumanEval dataset: {e}"))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("HuggingFace API returned {}", resp.status()));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse HumanEval response: {e}"))?;
+
+        let rows = body
+            .get("rows")
+            .and_then(|v| v.as_array())
+            .ok_or("Missing 'rows' in HumanEval response")?;
+
+        if rows.is_empty() {
+            break;
+        }
+
+        for row in rows {
+            let row_data = row.get("row").unwrap_or(row);
+            let task_id = row_data
+                .get("task_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let prompt = row_data
+                .get("prompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let canonical_solution = row_data
+                .get("canonical_solution")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let test = row_data
+                .get("test")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let entry_point = row_data
+                .get("entry_point")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if !task_id.is_empty() && !prompt.is_empty() && !test.is_empty() {
+                problems.push(HumanEvalProblem {
+                    task_id,
+                    prompt,
+                    canonical_solution,
+                    test,
+                    entry_point,
+                });
+            }
+        }
+
+        offset += page_size;
+        // HumanEval has 164 problems — stop after we have them all
+        if offset >= 200 {
+            break;
         }
     }
 
