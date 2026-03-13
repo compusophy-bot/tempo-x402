@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>Autonomous agent nodes with pay-per-request APIs on the Tempo blockchain.</strong><br>Self-deploying. Self-thinking. Self-replicating.</p>
+  <p align="center"><strong>Collective intelligence through self-replicating autonomous agents — paid per request via HTTP 402 on Tempo blockchain</strong></p>
 </p>
 
 <p align="center">
