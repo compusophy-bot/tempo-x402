@@ -90,6 +90,7 @@ struct CycleHealth {
     last_cycle_entered_code: bool,
     total_code_entries: u64,
     cycles_since_last_commit: u64,
+    completed_plans_count: u64,
     failed_plans_count: u64,
     goals_active: u64,
 }
@@ -122,6 +123,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
                     "last_cycle_entered_code": false,
                     "total_code_entries": 0,
                     "cycles_since_last_commit": 0,
+                    "completed_plans_count": 0,
                     "failed_plans_count": 0,
                     "goals_active": 0
                 },
@@ -188,6 +190,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         .flatten()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    let completed_plans_count: u64 = soul_db.count_plans_by_status("completed").unwrap_or(0);
     let failed_plans_count: u64 = soul_db.count_plans_by_status("failed").unwrap_or(0);
     let goals_active: u64 = soul_db
         .get_active_goals()
@@ -323,6 +326,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             last_cycle_entered_code,
             total_code_entries,
             cycles_since_last_commit,
+            completed_plans_count,
             failed_plans_count,
             goals_active,
         },
@@ -1043,6 +1047,9 @@ async fn soul_diagnostics(state: web::Data<NodeState>) -> HttpResponse {
             })
         });
 
+    // Volume usage — check /data directory size
+    let volume_usage = get_volume_usage();
+
     HttpResponse::Ok().json(serde_json::json!({
         "overview": {
             "total_outcomes": total_outcomes,
@@ -1066,7 +1073,156 @@ async fn soul_diagnostics(state: web::Data<NodeState>) -> HttpResponse {
         "goal_health": goal_health,
         "capability_bottleneck": bottleneck,
         "recent_errors": recent_errors.iter().take(5).collect::<Vec<_>>(),
+        "volume_usage": volume_usage,
     }))
+}
+
+/// Get volume usage breakdown for /data directory.
+fn get_volume_usage() -> serde_json::Value {
+    let paths = [
+        ("/data", "total"),
+        ("/data/workspace/target", "cargo_target"),
+        ("/data/workspace/.git", "git_objects"),
+        ("/data/soul.db", "soul_db"),
+        ("/data/soul.db-wal", "soul_db_wal"),
+        ("/data/gateway.db", "gateway_db"),
+        ("/data/gateway.db-wal", "gateway_db_wal"),
+        ("/data/brain_checkpoints", "brain_checkpoints"),
+        ("/data/benchmark_history", "benchmark_history"),
+        ("/data/workspace", "workspace"),
+    ];
+
+    let mut usage = serde_json::Map::new();
+    for (path, label) in &paths {
+        let size = dir_size(path);
+        if size > 0 {
+            usage.insert(label.to_string(), serde_json::json!(format_bytes(size)));
+        }
+    }
+    serde_json::Value::Object(usage)
+}
+
+/// Recursively compute directory/file size in bytes.
+fn dir_size(path: &str) -> u64 {
+    let p = std::path::Path::new(path);
+    if !p.exists() {
+        return 0;
+    }
+    if p.is_file() {
+        return p.metadata().map(|m| m.len()).unwrap_or(0);
+    }
+    // For directories, use du -sb for efficiency (avoids Rust recursion overhead)
+    match std::process::Command::new("du")
+        .args(["-sb", path])
+        .output()
+    {
+        Ok(output) => {
+            let s = String::from_utf8_lossy(&output.stdout);
+            s.split_whitespace()
+                .next()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0)
+        }
+        Err(_) => 0,
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// POST /soul/cleanup — force cleanup of disk-hungry artifacts.
+/// Removes cargo target/, runs git gc, VACUUM on DBs, prunes old data.
+async fn soul_cleanup(state: web::Data<NodeState>) -> HttpResponse {
+    let mut cleaned = serde_json::Map::new();
+
+    // 1. Remove cargo target/
+    let target_dir = "/data/workspace/target";
+    if std::path::Path::new(target_dir).exists() {
+        let size_before = dir_size(target_dir);
+        let _ = std::fs::remove_dir_all(target_dir);
+        cleaned.insert(
+            "cargo_target_freed".to_string(),
+            serde_json::json!(format_bytes(size_before)),
+        );
+    }
+
+    // 2. Git gc aggressive
+    let _ = std::process::Command::new("git")
+        .args(["gc", "--aggressive", "--prune=now"])
+        .current_dir("/data/workspace")
+        .output();
+    cleaned.insert("git_gc".to_string(), serde_json::json!("done"));
+
+    // 3. Soul DB cleanup
+    if let Some(db) = &state.soul_db {
+        let _ = db.prune_old_data();
+        let _ = db.wal_checkpoint();
+        cleaned.insert("soul_db_pruned".to_string(), serde_json::json!(true));
+    }
+
+    // 4. Gateway DB WAL checkpoint + VACUUM via sqlite3 CLI
+    let _ = std::process::Command::new("sqlite3")
+        .args([
+            "/data/gateway.db",
+            "PRAGMA wal_checkpoint(TRUNCATE); VACUUM;",
+        ])
+        .output();
+    cleaned.insert("gateway_db_vacuumed".to_string(), serde_json::json!(true));
+
+    // 5. Remove old brain checkpoints (keep last 3)
+    cleanup_old_files("/data/brain_checkpoints", 3);
+    cleaned.insert(
+        "brain_checkpoints_pruned".to_string(),
+        serde_json::json!(true),
+    );
+
+    // 6. Remove old benchmark history (keep last 5)
+    cleanup_old_files("/data/benchmark_history", 5);
+    cleaned.insert(
+        "benchmark_history_pruned".to_string(),
+        serde_json::json!(true),
+    );
+
+    // Report new usage
+    let after = get_volume_usage();
+    cleaned.insert("volume_after".to_string(), after);
+
+    HttpResponse::Ok().json(serde_json::Value::Object(cleaned))
+}
+
+/// Keep only the N most recent files in a directory (by modification time).
+fn cleanup_old_files(dir: &str, keep: usize) {
+    let p = std::path::Path::new(dir);
+    if !p.is_dir() {
+        return;
+    }
+    let mut entries: Vec<(std::time::SystemTime, std::path::PathBuf)> = match std::fs::read_dir(p) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter_map(|e| {
+                let mtime = e.metadata().ok()?.modified().ok()?;
+                Some((mtime, e.path()))
+            })
+            .collect(),
+        Err(_) => return,
+    };
+    entries.sort_by(|a, b| b.0.cmp(&a.0)); // newest first
+    for (_mtime, path) in entries.into_iter().skip(keep) {
+        if path.is_dir() {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// GET /soul/open-prs — list this agent's open pull requests.
@@ -1202,5 +1358,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::get().to(get_benchmark_solutions),
         )
         .route("/soul/open-prs", web::get().to(open_prs))
-        .route("/soul/diagnostics", web::get().to(soul_diagnostics));
+        .route("/soul/diagnostics", web::get().to(soul_diagnostics))
+        .route("/soul/cleanup", web::post().to(soul_cleanup));
 }

@@ -1391,6 +1391,20 @@ impl SoulDatabase {
             [],
         );
 
+        // 11. Cap benchmark_runs at 200 — each stores generated_solution + error_output
+        let _ = conn.execute(
+            "DELETE FROM benchmark_runs WHERE id IN (
+                SELECT id FROM benchmark_runs ORDER BY created_at DESC LIMIT -1 OFFSET 200
+            )",
+            [],
+        );
+
+        // 12. VACUUM to reclaim disk space after deletions
+        // Only run occasionally (check if we deleted anything substantial)
+        if thoughts_pruned + goals_pruned + plans_pruned + mutations_pruned > 10 {
+            let _ = conn.execute_batch("VACUUM;");
+        }
+
         Ok(PruneStats {
             thoughts: thoughts_pruned,
             goals: goals_pruned,

@@ -2381,6 +2381,22 @@ impl ThinkingLoop {
                 }
                 Err(e) => tracing::warn!(error = %e, "Housekeeping: pruning failed"),
             }
+
+            // Clean up cargo build artifacts — target/ can be 2-4 GB
+            // Only cleaned after commits normally, but if a plan fails mid-way
+            // the target/ directory persists between cycles
+            let target_dir = format!("{}/target", self.config.workspace_root);
+            if std::path::Path::new(&target_dir).exists() {
+                tracing::info!("Housekeeping: cleaning workspace target/ to reclaim disk space");
+                let _ = std::fs::remove_dir_all(&target_dir);
+            }
+
+            // Clean up git garbage — pack loose objects to reduce .git/ size
+            let workspace = &self.config.workspace_root;
+            let _ = std::process::Command::new("git")
+                .args(["gc", "--auto", "--quiet"])
+                .current_dir(workspace)
+                .output();
         }
 
         // Every 40 cycles: simple consolidation (no LLM — save tokens for coding)

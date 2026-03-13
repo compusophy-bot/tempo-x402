@@ -1517,24 +1517,31 @@ a.node-address:hover { text-decoration: underline; }
     font-style: italic;
 }
 
-/* ===== FAILED PLANS WARNING ===== */
-.soul-failed-plans-warning {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
+/* ===== PLAN OUTCOME SUMMARY ===== */
+.soul-plans-summary {
     padding: var(--sp-3) var(--sp-4);
-    background: var(--warning-bg);
-    border: 1px solid rgba(234, 179, 8, 0.25);
     border-radius: var(--radius);
-    color: var(--warning);
     font-size: 0.85rem;
     font-weight: 600;
     margin-top: var(--sp-3);
 }
 
-.soul-failed-plans-warning-icon {
-    font-size: 1.1rem;
-    flex-shrink: 0;
+.soul-plans-summary--ok {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    color: var(--success);
+}
+
+.soul-plans-summary--warn {
+    background: var(--warning-bg);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: var(--warning);
+}
+
+.soul-plans-summary--danger {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: var(--error);
 }
 
 /* ===== WALLET MANAGEMENT ===== */

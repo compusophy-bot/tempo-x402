@@ -1533,6 +1533,10 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                     .and_then(|h| h.get("cycles_since_last_commit"))
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
+                let completed_plans = cycle_health
+                    .and_then(|h| h.get("completed_plans_count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
                 let failed_plans = cycle_health
                     .and_then(|h| h.get("failed_plans_count"))
                     .and_then(|v| v.as_u64())
@@ -1648,12 +1652,20 @@ fn SoulPanel(status: ReadSignal<Option<serde_json::Value>>) -> impl IntoView {
                             None
                         }}
 
-                        // Failed plans warning
-                        {if failed_plans > 0 {
+                        // Plan outcome summary
+                        {if completed_plans > 0 || failed_plans > 0 {
+                            let total = completed_plans + failed_plans;
+                            let rate = if total > 0 { completed_plans * 100 / total } else { 0 };
+                            let class = if rate >= 50 {
+                                "soul-plans-summary soul-plans-summary--ok"
+                            } else if completed_plans > 0 {
+                                "soul-plans-summary soul-plans-summary--warn"
+                            } else {
+                                "soul-plans-summary soul-plans-summary--danger"
+                            };
                             Some(view! {
-                                <div class="soul-failed-plans-warning">
-                                    <span class="soul-failed-plans-warning-icon">{"\u{26A0}"}</span>
-                                    {format!("{} failed plan{}", failed_plans, if failed_plans == 1 { "" } else { "s" })}
+                                <div class={class}>
+                                    {format!("{} completed / {} failed ({}% success)", completed_plans, failed_plans, rate)}
                                 </div>
                             })
                         } else {
