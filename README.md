@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://docs.rs/tempo-x402">Docs</a> &middot;
-  <a href="https://crates.io/crates/tempo-x402">Crate</a> &middot;
+  <a href="https://crates.io/crates/tempo-x402">Crates</a> &middot;
   <a href="https://soul-bot-production.up.railway.app">Live Node</a> &middot;
   <a href="https://github.com/compusophy/tempo-x402">Source</a>
 </p>

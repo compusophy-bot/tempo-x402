@@ -85,10 +85,10 @@ pub fn App() -> impl IntoView {
                 <Routes>
                     <Route path="/" view=HomePage />
                     <Route path="/dashboard" view=DashboardPage />
-                    <Route path="/chat" view=ChatPage />
                     <Route path="/*any" view=NotFound />
                 </Routes>
                 <Footer />
+                <ChatWidget />
             </main>
         </Router>
     }
@@ -128,12 +128,8 @@ fn Header() -> impl IntoView {
                                 class=if path == "/dashboard" { "active" } else { "" }
                                 on:click=move |_| set_mobile_open.set(false)
                             >"Dashboard"</a>
-                            <a
-                                href="/chat"
-                                class=if path == "/chat" { "active" } else { "" }
-                                on:click=move |_| set_mobile_open.set(false)
-                            >"Chat"</a>
                             <a href="https://docs.rs/tempo-x402" target="_blank">"Docs"</a>
+                            <a href="https://crates.io/crates/tempo-x402" target="_blank">"Crates"</a>
                             <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
                         }
                     }}
@@ -2330,16 +2326,16 @@ struct ChatDisplayMessage {
     hemisphere: Option<String>,
 }
 
-/// Interactive soul chat page
+/// Floating chat widget — bottom-right FAB that expands into a chat panel
 #[component]
-fn ChatPage() -> impl IntoView {
+fn ChatWidget() -> impl IntoView {
+    let (open, set_open) = create_signal(false);
     let (messages, set_messages) = create_signal(Vec::<ChatDisplayMessage>::new());
     let (input, set_input) = create_signal(String::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal(None::<String>);
     let (session_id, set_session_id) = create_signal(None::<String>);
     let (pending_plan, set_pending_plan) = create_signal(None::<serde_json::Value>);
-    // Auto-scroll ref
     let messages_ref = create_node_ref::<html::Div>();
 
     let scroll_to_bottom = move || {
@@ -2476,44 +2472,42 @@ fn ChatPage() -> impl IntoView {
         }
     };
 
+    let toggle_chat = move |_: web_sys::MouseEvent| set_open.update(|v| *v = !*v);
+
     view! {
-        <div class="chat-page">
-            <div class="chat-header">
-                <h1>"Soul Chat"</h1>
-                <div class="chat-header-controls">
-                    <button class="chat-clear-btn" on:click=clear_chat>"New Chat"</button>
-                </div>
-            </div>
+        <div class="chat-widget">
+            <button class="chat-fab" on:click=toggle_chat title="Chat with Soul">
+                {move || if open.get() { "\u{2715}" } else { "\u{1F4AC}" }}
+            </button>
 
-            <Show when=move || pending_plan.get().is_some() fallback=|| ()>
-                <div class="plan-approval-bar">
-                    <div class="plan-approval-info">
-                        <span class="plan-approval-badge">"PLAN AWAITING APPROVAL"</span>
-                        <span class="plan-approval-desc">
-                            {move || pending_plan.get()
-                                .and_then(|p| p.get("goal_description")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string()))
-                                .unwrap_or_else(|| "Unknown goal".to_string())
-                            }
-                        </span>
-                        <span class="plan-approval-steps">
-                            {move || pending_plan.get()
-                                .and_then(|p| p.get("total_steps")
-                                    .and_then(|v| v.as_u64()))
-                                .map(|n| format!("({n} steps)"))
-                                .unwrap_or_default()
-                            }
-                        </span>
-                    </div>
-                    <div class="plan-approval-actions">
-                        <button class="btn btn-approve" on:click=approve_handler>"Approve"</button>
-                        <button class="btn btn-reject" on:click=reject_handler>"Reject"</button>
-                    </div>
+            <Show when=move || open.get() fallback=|| ()>
+            <div class="chat-panel">
+                <div class="chat-panel-header">
+                    <span>"Soul Chat"</span>
+                    <button class="chat-clear-btn" on:click=clear_chat>"New"</button>
                 </div>
-            </Show>
 
-            <div class="chat-messages" node_ref=messages_ref>
+                <Show when=move || pending_plan.get().is_some() fallback=|| ()>
+                    <div class="plan-approval-bar plan-approval-bar--widget">
+                        <div class="plan-approval-info">
+                            <span class="plan-approval-badge">"PLAN AWAITING APPROVAL"</span>
+                            <span class="plan-approval-desc">
+                                {move || pending_plan.get()
+                                    .and_then(|p| p.get("goal_description")
+                                        .and_then(|v| v.as_str())
+                                        .map(|s| s.to_string()))
+                                    .unwrap_or_else(|| "Unknown goal".to_string())
+                                }
+                            </span>
+                        </div>
+                        <div class="plan-approval-actions">
+                            <button class="btn btn-approve btn--sm" on:click=approve_handler>"Approve"</button>
+                            <button class="btn btn-reject btn--sm" on:click=reject_handler>"Reject"</button>
+                        </div>
+                    </div>
+                </Show>
+
+                <div class="chat-messages" node_ref=messages_ref>
                 <For
                     each=move || {
                         let msgs = messages.get();
@@ -2610,24 +2604,26 @@ fn ChatPage() -> impl IntoView {
                 </Show>
             </div>
 
-            <div class="chat-input-bar">
-                <input
-                    type="text"
-                    class="chat-input"
-                    placeholder="Ask the soul something..."
-                    prop:value=move || input.get()
-                    on:input=move |ev| set_input.set(event_target_value(&ev))
-                    on:keydown=on_keydown
-                    disabled=move || loading.get()
-                />
-                <button
-                    class="btn btn-primary"
-                    on:click=on_click
-                    disabled=move || loading.get() || input.get().trim().is_empty()
-                >
-                    {move || if loading.get() { "Sending..." } else { "Send" }}
-                </button>
+                <div class="chat-input-bar">
+                    <input
+                        type="text"
+                        class="chat-input"
+                        placeholder="Ask the soul something..."
+                        prop:value=move || input.get()
+                        on:input=move |ev| set_input.set(event_target_value(&ev))
+                        on:keydown=on_keydown
+                        disabled=move || loading.get()
+                    />
+                    <button
+                        class="btn btn-primary btn--sm"
+                        on:click=on_click
+                        disabled=move || loading.get() || input.get().trim().is_empty()
+                    >
+                        {move || if loading.get() { "..." } else { "Send" }}
+                    </button>
+                </div>
             </div>
+            </Show>
         </div>
     }
 }
