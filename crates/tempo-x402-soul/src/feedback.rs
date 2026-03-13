@@ -134,7 +134,25 @@ pub fn classify_error(error: &str) -> ErrorCategory {
         || e.contains("unexpected token")
     {
         ErrorCategory::LlmParseError
-    } else if e.contains("command") || e.contains("exit code") || e.contains("shell") {
+    } else if e.contains("command")
+        || e.contains("exit code")
+        || e.contains("shell")
+        || e.contains("permission denied")
+    {
+        ErrorCategory::ShellError
+    } else if e.contains("429")
+        || e.contains("rate limit")
+        || e.contains("resource_exhausted")
+        || e.contains("too many requests")
+    {
+        ErrorCategory::NetworkError
+    } else if e.contains("replan")
+        || e.contains("failed")
+        || e.contains("error")
+        || e.contains("could not")
+    {
+        // Catch-all for error messages that don't match specific patterns
+        // but clearly indicate failure — better than "unknown"
         ErrorCategory::ShellError
     } else {
         ErrorCategory::Unknown

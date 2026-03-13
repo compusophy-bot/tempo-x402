@@ -910,6 +910,165 @@ async fn trigger_benchmark(state: web::Data<NodeState>) -> HttpResponse {
     }))
 }
 
+/// GET /soul/diagnostics — deep observability into failure patterns and stagnation risk.
+/// This is the "why is execution at 15%" endpoint.
+async fn soul_diagnostics(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    // Error distribution across all recent outcomes
+    let outcomes = soul_db.get_recent_plan_outcomes(50).unwrap_or_default();
+    let total_outcomes = outcomes.len();
+    let completed = outcomes.iter().filter(|o| o.status == "completed").count();
+    let failed = outcomes.iter().filter(|o| o.status == "failed").count();
+
+    let mut error_distribution: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    let mut step_failures: std::collections::HashMap<String, (u32, u32)> =
+        std::collections::HashMap::new(); // (success, fail)
+
+    for o in &outcomes {
+        if let Some(ref cat) = o.error_category {
+            *error_distribution
+                .entry(cat.as_str().to_string())
+                .or_insert(0) += 1;
+        }
+        for s in &o.steps_succeeded {
+            let key = s.split(':').next().unwrap_or(s).trim().to_string();
+            step_failures.entry(key).or_insert((0, 0)).0 += 1;
+        }
+        for s in &o.steps_failed {
+            let key = s.split(':').next().unwrap_or(s).trim().to_string();
+            step_failures.entry(key).or_insert((0, 0)).1 += 1;
+        }
+    }
+
+    // Sort error distribution by count
+    let mut error_dist_sorted: Vec<(String, u32)> = error_distribution.into_iter().collect();
+    error_dist_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Step failure rates
+    let mut step_rates: Vec<serde_json::Value> = step_failures
+        .into_iter()
+        .map(|(step, (succ, fail))| {
+            let total = succ + fail;
+            let rate = if total > 0 {
+                succ as f64 / total as f64
+            } else {
+                0.0
+            };
+            serde_json::json!({
+                "step_type": step,
+                "successes": succ,
+                "failures": fail,
+                "success_rate": format!("{:.1}%", rate * 100.0),
+            })
+        })
+        .collect();
+    step_rates.sort_by(|a, b| {
+        let a_fail = a.get("failures").and_then(|v| v.as_u64()).unwrap_or(0);
+        let b_fail = b.get("failures").and_then(|v| v.as_u64()).unwrap_or(0);
+        b_fail.cmp(&a_fail)
+    });
+
+    // Stagnation risk
+    let cycles_since_commit: u64 = soul_db
+        .get_state("cycles_since_last_commit")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let stagnation_threshold: u64 = 50;
+    let stagnation_risk = if cycles_since_commit > 40 {
+        "CRITICAL"
+    } else if cycles_since_commit > 25 {
+        "HIGH"
+    } else if cycles_since_commit > 10 {
+        "MODERATE"
+    } else {
+        "LOW"
+    };
+
+    // Replan effectiveness
+    let replanned: Vec<&x402_soul::feedback::PlanOutcome> =
+        outcomes.iter().filter(|o| o.replan_count > 0).collect();
+    let replan_succeeded = replanned.iter().filter(|o| o.status == "completed").count();
+    let replan_total = replanned.len();
+
+    // Recent errors (stored in soul_state)
+    let recent_errors: Vec<String> = soul_db
+        .get_state("recent_errors")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+        .unwrap_or_default();
+
+    // Active goals with retry info
+    let goals = soul_db.get_active_goals().unwrap_or_default();
+    let goal_health: Vec<serde_json::Value> = goals
+        .iter()
+        .map(|g| {
+            serde_json::json!({
+                "description": g.description.chars().take(80).collect::<String>(),
+                "retry_count": g.retry_count,
+                "max_retries": 2,
+                "at_risk": g.retry_count >= 1,
+                "priority": g.priority,
+            })
+        })
+        .collect();
+
+    // Capability bottleneck
+    let profile = x402_soul::capability::compute_profile(soul_db);
+    let bottleneck: Option<serde_json::Value> = profile
+        .capabilities
+        .iter()
+        .filter(|c| c.attempts >= 3)
+        .min_by(|a, b| {
+            a.success_rate
+                .partial_cmp(&b.success_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|c| {
+            serde_json::json!({
+                "capability": c.display_name,
+                "success_rate": format!("{:.1}%", c.success_rate * 100.0),
+                "attempts": c.attempts,
+                "successes": c.successes,
+            })
+        });
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "overview": {
+            "total_outcomes": total_outcomes,
+            "completed": completed,
+            "failed": failed,
+            "success_rate": if total_outcomes > 0 { format!("{:.1}%", completed as f64 / total_outcomes as f64 * 100.0) } else { "N/A".to_string() },
+        },
+        "error_distribution": error_dist_sorted.iter().map(|(k, v)| serde_json::json!({"category": k, "count": v})).collect::<Vec<_>>(),
+        "step_failure_rates": step_rates,
+        "stagnation": {
+            "cycles_since_commit": cycles_since_commit,
+            "threshold": stagnation_threshold,
+            "risk_level": stagnation_risk,
+            "cycles_until_reset": stagnation_threshold.saturating_sub(cycles_since_commit),
+        },
+        "replan_effectiveness": {
+            "total_replanned": replan_total,
+            "succeeded_after_replan": replan_succeeded,
+            "effectiveness": if replan_total > 0 { format!("{:.1}%", replan_succeeded as f64 / replan_total as f64 * 100.0) } else { "N/A".to_string() },
+        },
+        "goal_health": goal_health,
+        "capability_bottleneck": bottleneck,
+        "recent_errors": recent_errors.iter().take(5).collect::<Vec<_>>(),
+    }))
+}
+
 /// GET /soul/open-prs — list this agent's open pull requests.
 /// Exposed so peer agents can discover PRs that need review (academic peer review).
 async fn open_prs(state: web::Data<NodeState>) -> HttpResponse {
@@ -1042,5 +1201,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             "/soul/benchmark/solutions",
             web::get().to(get_benchmark_solutions),
         )
-        .route("/soul/open-prs", web::get().to(open_prs));
+        .route("/soul/open-prs", web::get().to(open_prs))
+        .route("/soul/diagnostics", web::get().to(soul_diagnostics));
 }

@@ -476,9 +476,17 @@ impl ThinkingLoop {
         // ── Stagnation checks ──
 
         // Circuit breaker 1: global stagnation — 50+ cycles without a commit or plan completion
-        // (raised from 30 — agents doing peer calls + research are productive even without commits)
+        // Also count completed plans and peer reviews as "progress" — not just commits.
+        // Agents doing peer review, coordination, and research are productive even without commits.
         let cycles_since_commit = self.get_cycles_since_last_commit();
-        if cycles_since_commit > 50 {
+        let has_recent_completions = {
+            let recent_outcomes = self.db.get_recent_plan_outcomes(5).unwrap_or_default();
+            recent_outcomes.iter().any(|o| {
+                o.status == "completed" && o.created_at > chrono::Utc::now().timestamp() - 3600
+            })
+        };
+        let effective_stagnation_threshold = if has_recent_completions { 80 } else { 50 };
+        if cycles_since_commit > effective_stagnation_threshold {
             tracing::warn!(
                 cycles_since_commit,
                 "Global stagnation — abandoning all goals"
