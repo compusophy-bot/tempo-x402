@@ -1384,13 +1384,19 @@ impl ThinkingLoop {
         step_desc: &str,
         error: &str,
     ) -> Result<CycleResult, SoulError> {
-        // Track error and increment goal retry count
+        // Track error (goal retry only increments when plan fully fails, not per step)
         self.append_recent_error(error);
-        let _ = self.db.increment_goal_retry(&plan.goal_id);
 
         // Short-circuit: some errors are unsolvable — replanning won't help
+        let error_lower = error.to_lowercase();
         let unsolvable = error.contains("Peers found: 0")
-            || error.contains("unable to auto-detect email address");
+            || error.contains("unable to auto-detect email address")
+            || error_lower.contains("rate limit")
+            || error_lower.contains("429")
+            || error_lower.contains("resource_exhausted")
+            || error_lower.contains("too many requests")
+            || error_lower.contains("protected")
+            || error_lower.contains("guard");
         if unsolvable {
             tracing::warn!(
                 plan_id = %plan.id,
@@ -1405,6 +1411,9 @@ impl ThinkingLoop {
             plan.status = PlanStatus::Failed;
             self.db.update_plan(plan)?;
             let _ = self.db.set_state("active_plan_id", "");
+
+            // Only increment goal retry when entire plan fails (not per step)
+            let _ = self.db.increment_goal_retry(&plan.goal_id);
 
             // Record structured outcome for feedback loop
             let goal_for_outcome = self
@@ -1489,6 +1498,8 @@ impl ThinkingLoop {
                 plan.status = PlanStatus::Failed;
                 self.db.update_plan(plan)?;
                 let _ = self.db.set_state("active_plan_id", "");
+                // Increment goal retry — plan fully failed
+                let _ = self.db.increment_goal_retry(&plan.goal_id);
                 // Record outcome so agents learn from replan failures
                 let goal_desc = self
                     .db

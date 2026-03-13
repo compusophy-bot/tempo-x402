@@ -88,7 +88,10 @@ impl ErrorCategory {
 pub fn classify_error(error: &str) -> ErrorCategory {
     let e = error.to_lowercase();
 
-    if e.contains("cargo check")
+    // Goal-level abandonment — not a specific error, but a retry exhaustion
+    if e.contains("abandoned") || e.contains("goal failed") && e.contains("times") {
+        ErrorCategory::Unsolvable
+    } else if e.contains("cargo check")
         || e.contains("compile")
         || e.contains("cannot find")
         || e.contains("unresolved import")
@@ -452,6 +455,10 @@ mod tests {
         assert_eq!(
             classify_error("something random happened"),
             ErrorCategory::Unknown
+        );
+        assert_eq!(
+            classify_error("Goal failed 2 times — abandoned"),
+            ErrorCategory::Unsolvable
         );
     }
 

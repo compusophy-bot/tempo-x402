@@ -607,11 +607,27 @@ pub fn replan_prompt(goal: &Goal, failed_step_desc: &str, error: &str) -> String
          {}\n\n\
          # Error\n\
          {}\n\n\
+         # Available Step Types\n\
+         - read_file: {{\"path\": \"...\", \"store_as\": \"...\"}}\n\
+         - search_code: {{\"pattern\": \"...\", \"path\": \"...\", \"store_as\": \"...\"}}\n\
+         - list_dir: {{\"path\": \"...\", \"store_as\": \"...\"}}\n\
+         - run_shell: {{\"command\": \"...\", \"store_as\": \"...\"}}\n\
+         - generate_code: {{\"instruction\": \"...\", \"context_keys\": [...], \"store_as\": \"...\"}}\n\
+         - edit_code: {{\"instruction\": \"...\", \"context_keys\": [...], \"store_as\": \"...\"}}\n\
+         - cargo_check: {{\"store_as\": \"...\"}}\n\
+         - commit: {{\"message\": \"...\"}}\n\
+         - think: {{\"question\": \"...\", \"context_keys\": [...], \"store_as\": \"...\"}}\n\
+         - check_self: {{\"store_as\": \"...\"}}\n\n\
          # Task\n\
-         The step above failed. Adjust the remaining plan.\n\
-         Respond with ONLY a JSON array of replacement steps (same format as planning).\n\
-         You may need to add investigation steps before retrying.\n\
-         Max 20 steps.",
+         The step above failed. Create a NEW plan from this point forward.\n\
+         IMPORTANT: Do NOT just retry the same step. Investigate the root cause first.\n\
+         Common fixes:\n\
+         - If file_not_found: use list_dir or search_code to find the correct path first\n\
+         - If compile error: read the file first, then edit with the specific fix\n\
+         - If shell error: check if the command/tool exists with run_shell\n\
+         - If network error: consider skipping the network step or using a different approach\n\
+         Respond with ONLY a JSON array of replacement steps.\n\
+         Max 15 steps. Prefer shorter plans that are more likely to succeed.",
         goal.description, failed_step_desc, error,
     )
 }
