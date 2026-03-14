@@ -609,36 +609,64 @@ impl<'a> PlanExecutor<'a> {
                 let url = match callable_url {
                     Some(u) => u,
                     None => {
-                        // Build diagnostic info
-                        let peer_count = peers
+                        // For built-in slugs (info, soul, chat, clone, etc.), construct URL
+                        // from the first peer's URL — every node has these endpoints
+                        let builtin_slugs = [
+                            "info",
+                            "soul",
+                            "chat",
+                            "clone",
+                            "chat-sessions",
+                            "session-messages",
+                            "pending-plan",
+                            "nudges",
+                        ];
+                        let first_peer_url = peers
                             .get("peers")
                             .and_then(|p| p.as_array())
-                            .map(|a| a.len())
-                            .unwrap_or(0);
-                        let available_slugs: Vec<String> = peers
-                            .get("peers")
-                            .and_then(|p| p.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .flat_map(|peer| {
-                                        peer.get("endpoints")
-                                            .and_then(|e| e.as_array())
-                                            .into_iter()
-                                            .flatten()
-                                            .filter_map(|ep| {
-                                                ep.get("slug")
-                                                    .and_then(|s| s.as_str())
-                                                    .map(String::from)
-                                            })
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        return StepResult::Failed(format!(
-                            "endpoint '{slug}' not found. Peers found: {peer_count}. \
-                             Available slugs: [{}]",
-                            available_slugs.join(", ")
-                        ));
+                            .and_then(|arr| arr.first())
+                            .and_then(|peer| peer.get("url").and_then(|u| u.as_str()));
+
+                        if builtin_slugs.contains(&slug.as_str()) {
+                            if let Some(peer_url) = first_peer_url {
+                                format!("{}/g/{}", peer_url.trim_end_matches('/'), slug)
+                            } else {
+                                return StepResult::Failed(format!(
+                                    "no peers found to call built-in endpoint '{slug}'"
+                                ));
+                            }
+                        } else {
+                            // Build diagnostic info
+                            let peer_count = peers
+                                .get("peers")
+                                .and_then(|p| p.as_array())
+                                .map(|a| a.len())
+                                .unwrap_or(0);
+                            let available_slugs: Vec<String> = peers
+                                .get("peers")
+                                .and_then(|p| p.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .flat_map(|peer| {
+                                            peer.get("endpoints")
+                                                .and_then(|e| e.as_array())
+                                                .into_iter()
+                                                .flatten()
+                                                .filter_map(|ep| {
+                                                    ep.get("slug")
+                                                        .and_then(|s| s.as_str())
+                                                        .map(String::from)
+                                                })
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            return StepResult::Failed(format!(
+                                "endpoint '{slug}' not found. Peers found: {peer_count}. \
+                                 Available slugs: [{}]",
+                                available_slugs.join(", ")
+                            ));
+                        }
                     }
                 };
 
