@@ -246,13 +246,13 @@ impl ThinkingLoop {
                 "Fitness score"
             );
 
-            // Run HumanEval benchmark periodically (every 100 cycles)
+            // Run Exercism Rust benchmark periodically (every 100 cycles)
             if let Some(llm) = &self.llm {
                 if crate::benchmark::should_run_benchmark(
                     &self.db,
                     crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
                 ) {
-                    tracing::info!("Starting periodic HumanEval benchmark session");
+                    tracing::info!("Starting periodic Exercism Rust benchmark session");
                     let current_cycle: u64 = self
                         .db
                         .get_state("total_think_cycles")
@@ -280,11 +280,11 @@ impl ThinkingLoop {
                             tracing::info!(
                                 pass_at_1 = format!("{:.1}%", pass_at_1),
                                 elo = crate::elo::rating_display(&self.db),
-                                "HumanEval benchmark complete"
+                                "Exercism Rust benchmark complete"
                             );
                         }
                         Err(e) => {
-                            tracing::warn!(error = %e, "HumanEval benchmark failed");
+                            tracing::warn!(error = %e, "Exercism Rust benchmark failed");
                         }
                     }
                 }
@@ -955,6 +955,7 @@ impl ThinkingLoop {
             format!("{own_experience}\n\n{peer_lessons}")
         };
         let cap_guidance = capability::capability_guidance(&self.db);
+        let role_guide = capability::role_guidance(&self.db);
         let peer_catalog = self
             .db
             .get_state("peer_endpoint_catalog")
@@ -976,6 +977,7 @@ impl ThinkingLoop {
             &cap_guidance,
             &peer_catalog,
             &peer_prs,
+            &role_guide,
         );
         let system =
             "You are a software engineering planner. Output ONLY a JSON array of plan steps.";
@@ -1232,6 +1234,7 @@ impl ThinkingLoop {
             }
             s
         };
+        let role_guide = capability::role_guidance(&self.db);
         let peer_prs = self
             .db
             .get_state("peer_open_prs")
@@ -1251,6 +1254,7 @@ impl ThinkingLoop {
             &experience,
             &cap_with_benchmark,
             &peer_prs,
+            &role_guide,
         );
         let system = "You are an autonomous agent. Output ONLY a JSON array of goal operations.";
 

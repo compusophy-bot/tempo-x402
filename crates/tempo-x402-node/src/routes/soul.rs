@@ -38,12 +38,15 @@ struct SoulStatus {
     /// Recent plan outcomes — feedback loop data.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     plan_outcomes: Vec<serde_json::Value>,
-    /// HumanEval benchmark score + ELO rating.
+    /// Exercism Rust benchmark score + ELO rating.
     #[serde(skip_serializing_if = "Option::is_none")]
     benchmark: Option<serde_json::Value>,
     /// Neural brain status — parameters, training steps, loss.
     #[serde(skip_serializing_if = "Option::is_none")]
     brain: Option<serde_json::Value>,
+    /// Emergent agent role — computed from capability profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -377,6 +380,10 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             } else {
                 None
             }
+        },
+        role: {
+            let role = x402_soul::capability::compute_role(soul_db);
+            serde_json::to_value(&role).ok()
         },
     })
 }
@@ -862,7 +869,7 @@ async fn soul_reset(state: web::Data<NodeState>) -> HttpResponse {
     }
 }
 
-/// GET /soul/benchmark/solutions — export verified HumanEval solutions for peer sharing.
+/// GET /soul/benchmark/solutions — export verified solutions for peer sharing.
 async fn get_benchmark_solutions(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,

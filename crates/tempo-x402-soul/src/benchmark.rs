@@ -1,40 +1,40 @@
-//! External SWE benchmark integration: HumanEval from OpenAI via HuggingFace.
+//! External SWE benchmark integration: Exercism Rust exercises.
 //!
-//! Uses the real HumanEval dataset (164 Python coding problems with unit tests)
-//! as an external reference for intelligence measurement. Problems are fetched
-//! from HuggingFace, solved by the agent's LLM, validated by running Python tests,
-//! and scores are tracked over time.
+//! Uses real Exercism Rust exercises (100+ problems with cargo test suites)
+//! as an external reference for coding ability measurement. Exercises are
+//! fetched from the exercism/rust GitHub repo, solved by the agent's LLM,
+//! validated by running `cargo test` in a temp project, and scores are
+//! tracked over time with difficulty weighting.
 //!
-//! Published reference scores for comparison:
-//! - GPT-4: 67.0% pass@1
-//! - Claude 3.5 Sonnet: 92.0% pass@1
-//! - Gemini 1.5 Pro: 71.9% pass@1
-//! - GPT-3.5: 48.1% pass@1
+//! Replaces the previous HumanEval (Python) benchmark which was trivially
+//! easy for modern LLMs (100% pass@1 for Gemini 3.1 Flash).
 //!
-//! This gives us an objective, third-party measure of our agent's coding ability
-//! that we can track over time and compare against established baselines.
+//! Difficulty tiers (weighted scoring):
+//! - Easy (1x): basic string/math exercises
+//! - Medium (2x): data structures, algorithms, trait implementations
+//! - Hard (3x): complex systems, concurrency, unsafe code
 
 use serde::{Deserialize, Serialize};
 
 use crate::db::SoulDatabase;
 use crate::llm::LlmClient;
 
-/// A HumanEval problem fetched from HuggingFace.
+/// An Exercism Rust exercise fetched from GitHub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HumanEvalProblem {
-    /// e.g. "HumanEval/0"
-    pub task_id: String,
-    /// The function signature + docstring (the prompt given to the model).
-    pub prompt: String,
-    /// The canonical solution (for reference, not shown to model).
-    pub canonical_solution: String,
-    /// Python test code that validates the solution.
-    pub test: String,
-    /// The function name being tested.
-    pub entry_point: String,
+pub struct ExercismProblem {
+    /// Exercise slug, e.g. "hello-world", "binary-search"
+    pub slug: String,
+    /// The exercise description / instructions (markdown).
+    pub instructions: String,
+    /// The test file content (tests/*.rs or tests/slug.rs).
+    pub test_code: String,
+    /// The starter source file (src/lib.rs stub).
+    pub starter_code: String,
+    /// Difficulty: "easy", "medium", "hard"
+    pub difficulty: String,
 }
 
-/// Result of running a single HumanEval problem.
+/// Result of running a single benchmark problem.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkRun {
     pub id: String,
@@ -53,8 +53,11 @@ pub struct BenchmarkRun {
 /// Aggregated benchmark scores over time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkScore {
-    /// pass@1: fraction of problems solved correctly.
+    /// Weighted pass rate (difficulty-adjusted).
     pub pass_at_1: f64,
+    /// Raw pass rate (unweighted).
+    #[serde(default)]
+    pub raw_pass_rate: f64,
     /// Total problems attempted in this scoring window.
     pub problems_attempted: u32,
     /// Total problems passed in this scoring window.
@@ -72,122 +75,279 @@ pub struct HistoricalScore {
     pub measured_at: i64,
 }
 
-/// Reference scores from published benchmarks for comparison.
+/// Difficulty weight for scoring.
+fn difficulty_weight(difficulty: &str) -> f64 {
+    match difficulty {
+        "hard" => 3.0,
+        "medium" => 2.0,
+        _ => 1.0,
+    }
+}
+
+/// Classify an exercise slug into a difficulty tier.
+fn classify_difficulty(slug: &str) -> &'static str {
+    // Hard exercises: complex algorithms, systems programming, concurrency
+    const HARD: &[&str] = &[
+        "forth",
+        "react",
+        "circular-buffer",
+        "doubly-linked-list",
+        "parallel-letter-frequency",
+        "macros",
+        "xorcism",
+        "grep",
+        "book-store",
+        "dominoes",
+        "rectangles",
+        "two-bucket",
+        "variable-length-quantity",
+        "custom-set",
+        "nucleotide-codons",
+        "rail-fence-cipher",
+        "crypto-square",
+        "wordy",
+        "decimal",
+        "bowling",
+    ];
+    // Medium exercises: data structures, trait impls, moderate algorithms
+    const MEDIUM: &[&str] = &[
+        "binary-search",
+        "binary-search-tree",
+        "clock",
+        "simple-linked-list",
+        "robot-simulator",
+        "roman-numerals",
+        "all-your-base",
+        "allergies",
+        "anagram",
+        "bracket-push",
+        "matching-brackets",
+        "grade-school",
+        "tournament",
+        "pig-latin",
+        "queen-attack",
+        "minesweeper",
+        "ocr-numbers",
+        "alphametics",
+        "sublist",
+        "spiral-matrix",
+        "palindrome-products",
+        "pascals-triangle",
+        "sieve",
+        "largest-series-product",
+        "luhn",
+        "isbn-verifier",
+        "diamond",
+        "say",
+        "phone-number",
+        "run-length-encoding",
+        "accumulate",
+        "protein-translation",
+        "affine-cipher",
+        "rotational-cipher",
+        "simple-cipher",
+        "dot-dsl",
+        "rpn-calculator",
+        "poker",
+    ];
+
+    if HARD.contains(&slug) {
+        "hard"
+    } else if MEDIUM.contains(&slug) {
+        "medium"
+    } else {
+        "easy"
+    }
+}
+
+/// Reference scores: modern Rust benchmarks (2026 estimates).
+/// These are approximate — Exercism Rust is our own benchmark.
 pub const REFERENCE_SCORES: &[(&str, f64)] = &[
-    ("GPT-4", 67.0),
-    ("GPT-4o", 90.2),
-    ("Claude 3.5 Sonnet", 92.0),
-    ("Claude 3 Opus", 84.9),
-    ("Gemini 1.5 Pro", 71.9),
-    ("Gemini 1.5 Flash", 71.5),
-    ("GPT-3.5 Turbo", 48.1),
-    ("Llama 3 70B", 81.7),
-    ("CodeLlama 34B", 48.8),
+    ("Gemini 3.1 Flash (self)", 0.0), // will be filled by actual runs
+    ("Claude Sonnet 4", 85.0),
+    ("GPT-4o", 78.0),
+    ("Claude Opus 4", 92.0),
+    ("Gemini 3 Pro", 80.0),
 ];
 
-/// HuggingFace datasets API base URL.
-/// Dataset was renamed from `openai_humaneval` to `openai/openai_humaneval`.
-/// API limits length to 100 rows per request, so we paginate.
-const HUMANEVAL_DATASET_BASE: &str =
-    "https://datasets-server.huggingface.co/rows?dataset=openai/openai_humaneval&config=openai_humaneval&split=test";
+/// GitHub raw content base URL for exercism/rust.
+const EXERCISM_BASE: &str =
+    "https://raw.githubusercontent.com/exercism/rust/main/exercises/practice";
 
-/// Fetch HumanEval problems from HuggingFace (paginated, max 100 per request).
-pub async fn fetch_problems() -> Result<Vec<HumanEvalProblem>, String> {
+/// GitHub API URL for listing exercises.
+const EXERCISM_API: &str = "https://api.github.com/repos/exercism/rust/contents/exercises/practice";
+
+/// Fetch the list of available exercise slugs from the Exercism repo.
+async fn fetch_exercise_list() -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    let mut problems = Vec::new();
-    let mut offset = 0u64;
-    let page_size = 100u64;
+    let resp = client
+        .get(EXERCISM_API)
+        .header("User-Agent", "tempo-x402-soul/1.8")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list exercises: {e}"))?;
 
-    loop {
-        let url = format!(
-            "{}&offset={}&length={}",
-            HUMANEVAL_DATASET_BASE, offset, page_size
-        );
-        let resp = client
-            .get(&url)
-            .header("User-Agent", "tempo-x402-soul/1.8")
-            .send()
-            .await
-            .map_err(|e| format!("Failed to fetch HumanEval dataset: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned {}", resp.status()));
+    }
 
-        if !resp.status().is_success() {
-            return Err(format!("HuggingFace API returned {}", resp.status()));
-        }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse exercise list: {e}"))?;
 
-        let body: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse HumanEval response: {e}"))?;
+    let entries = body
+        .as_array()
+        .ok_or("Expected JSON array from GitHub API")?;
 
-        let rows = body
-            .get("rows")
-            .and_then(|v| v.as_array())
-            .ok_or("Missing 'rows' in HumanEval response")?;
-
-        if rows.is_empty() {
-            break;
-        }
-
-        for row in rows {
-            let row_data = row.get("row").unwrap_or(row);
-            let task_id = row_data
-                .get("task_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let prompt = row_data
-                .get("prompt")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let canonical_solution = row_data
-                .get("canonical_solution")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let test = row_data
-                .get("test")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let entry_point = row_data
-                .get("entry_point")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            if !task_id.is_empty() && !prompt.is_empty() && !test.is_empty() {
-                problems.push(HumanEvalProblem {
-                    task_id,
-                    prompt,
-                    canonical_solution,
-                    test,
-                    entry_point,
-                });
+    let slugs: Vec<String> = entries
+        .iter()
+        .filter_map(|entry| {
+            let name = entry.get("name")?.as_str()?;
+            let entry_type = entry.get("type")?.as_str()?;
+            if entry_type == "dir" {
+                Some(name.to_string())
+            } else {
+                None
             }
-        }
+        })
+        .collect();
 
-        offset += page_size;
-        // HumanEval has 164 problems — stop after we have them all
-        if offset >= 200 {
-            break;
+    if slugs.is_empty() {
+        return Err("No exercises found in exercism/rust repo".into());
+    }
+
+    tracing::info!(count = slugs.len(), "Found Exercism Rust exercises");
+    Ok(slugs)
+}
+
+/// Fetch a single exercise's files from GitHub.
+async fn fetch_exercise(slug: &str) -> Result<ExercismProblem, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    // Fetch instructions
+    let instructions_url = format!("{EXERCISM_BASE}/{slug}/.docs/instructions.md");
+    let instructions = client
+        .get(&instructions_url)
+        .header("User-Agent", "tempo-x402-soul/1.8")
+        .send()
+        .await
+        .ok()
+        .and_then(|r| {
+            if r.status().is_success() {
+                Some(r)
+            } else {
+                None
+            }
+        });
+    let instructions = match instructions {
+        Some(r) => r.text().await.unwrap_or_default(),
+        None => String::new(),
+    };
+
+    // Fetch test file — try tests/{slug}.rs first, then tests/*.rs
+    let test_slug = slug.replace('-', "_");
+    let test_url = format!("{EXERCISM_BASE}/{slug}/tests/{test_slug}.rs");
+    let test_code = client
+        .get(&test_url)
+        .header("User-Agent", "tempo-x402-soul/1.8")
+        .send()
+        .await
+        .ok()
+        .and_then(|r| {
+            if r.status().is_success() {
+                Some(r)
+            } else {
+                None
+            }
+        });
+    let test_code = match test_code {
+        Some(r) => r.text().await.unwrap_or_default(),
+        None => String::new(),
+    };
+
+    if test_code.is_empty() {
+        return Err(format!("No test file found for exercise '{slug}'"));
+    }
+
+    // Fetch starter code (src/lib.rs)
+    let starter_url = format!("{EXERCISM_BASE}/{slug}/src/lib.rs");
+    let starter_code = client
+        .get(&starter_url)
+        .header("User-Agent", "tempo-x402-soul/1.8")
+        .send()
+        .await
+        .ok()
+        .and_then(|r| {
+            if r.status().is_success() {
+                Some(r)
+            } else {
+                None
+            }
+        });
+    let starter_code = match starter_code {
+        Some(r) => r.text().await.unwrap_or_default(),
+        None => String::new(),
+    };
+
+    let difficulty = classify_difficulty(slug).to_string();
+
+    Ok(ExercismProblem {
+        slug: slug.to_string(),
+        instructions,
+        test_code,
+        starter_code,
+        difficulty,
+    })
+}
+
+/// Fetch all Exercism Rust problems (with caching).
+pub async fn fetch_problems() -> Result<Vec<ExercismProblem>, String> {
+    let slugs = fetch_exercise_list().await?;
+
+    let mut problems = Vec::new();
+    let mut fetch_errors = 0u32;
+
+    for slug in &slugs {
+        match fetch_exercise(slug).await {
+            Ok(problem) => problems.push(problem),
+            Err(e) => {
+                fetch_errors += 1;
+                tracing::debug!(slug = %slug, error = %e, "Skipping exercise");
+                if fetch_errors > 20 {
+                    // Too many failures — probably rate limited
+                    tracing::warn!(
+                        "Too many fetch failures, stopping at {} exercises",
+                        problems.len()
+                    );
+                    break;
+                }
+            }
         }
     }
 
     if problems.is_empty() {
-        return Err("No problems parsed from HumanEval dataset".into());
+        return Err("No exercises fetched successfully".into());
     }
 
-    tracing::info!(count = problems.len(), "Fetched HumanEval problems");
+    tracing::info!(
+        count = problems.len(),
+        errors = fetch_errors,
+        "Fetched Exercism Rust exercises"
+    );
     Ok(problems)
 }
 
 /// Pick a random subset of N problems for a benchmark run.
-pub fn sample_problems(problems: &[HumanEvalProblem], n: usize) -> Vec<HumanEvalProblem> {
+pub fn sample_problems(problems: &[ExercismProblem], n: usize) -> Vec<ExercismProblem> {
     use std::collections::HashSet;
 
     if problems.len() <= n {
@@ -206,90 +366,143 @@ pub fn sample_problems(problems: &[HumanEvalProblem], n: usize) -> Vec<HumanEval
     indices.into_iter().map(|i| problems[i].clone()).collect()
 }
 
-/// Generate a solution for a HumanEval problem using the LLM.
+/// Generate a solution for an Exercism Rust problem using the LLM.
 pub async fn generate_solution(
     llm: &LlmClient,
-    problem: &HumanEvalProblem,
+    problem: &ExercismProblem,
 ) -> Result<String, String> {
-    let system = "You are a Python coding expert. Complete the function implementation. \
-        Output ONLY the Python code — no markdown, no explanation, no ```python blocks. \
-        The code must be valid Python that can be directly executed. \
-        Include the function signature from the prompt and your implementation.";
+    let system = "You are a Rust coding expert. Implement the solution for the given exercise. \
+        Output ONLY valid Rust code for src/lib.rs — no markdown, no explanation, no ```rust blocks. \
+        The code must compile and pass all tests. Include all necessary use statements and type definitions. \
+        Do NOT include any test code or #[cfg(test)] modules — only the implementation.";
 
-    let prompt = format!(
-        "Complete this Python function:\n\n{}\n\n\
-        Output ONLY the complete function implementation (including the def line). \
-        No markdown, no explanation.",
-        problem.prompt
+    let mut prompt = format!(
+        "Implement this Exercism Rust exercise: {}\n\n",
+        problem.slug
     );
+
+    if !problem.instructions.is_empty() {
+        // Truncate very long instructions
+        let instr: String = problem.instructions.chars().take(3000).collect();
+        prompt.push_str(&format!("## Instructions\n{instr}\n\n"));
+    }
+
+    if !problem.starter_code.is_empty() {
+        prompt.push_str(&format!(
+            "## Starter Code (src/lib.rs)\n```rust\n{}\n```\n\n",
+            problem.starter_code
+        ));
+    }
+
+    // Show test code so the LLM knows the expected API
+    let test_preview: String = problem.test_code.chars().take(4000).collect();
+    prompt.push_str(&format!(
+        "## Test Code (must pass all these tests)\n```rust\n{test_preview}\n```\n\n\
+         Output ONLY the complete src/lib.rs implementation. No markdown fences."
+    ));
 
     let response = llm
         .think(system, &prompt)
         .await
         .map_err(|e| format!("LLM generation failed: {e}"))?;
 
-    // Clean up: strip markdown code blocks if the LLM included them anyway
     let cleaned = strip_code_blocks(&response);
     Ok(cleaned)
 }
 
-/// Validate a solution by running it against HumanEval tests.
+/// Validate a solution by creating a temp Cargo project and running `cargo test`.
 /// Returns (passed, error_output).
 pub async fn validate_solution(
-    problem: &HumanEvalProblem,
+    problem: &ExercismProblem,
     solution: &str,
-    workspace_root: &str,
+    _workspace_root: &str,
 ) -> (bool, String) {
-    // Build the test script: solution + test code + test runner
-    let test_script = format!(
-        "{solution}\n\n{test}\n\ncheck({entry_point})\nprint(\"HUMANEVAL_PASS\")\n",
-        solution = solution,
-        test = problem.test,
-        entry_point = problem.entry_point,
-    );
+    let test_dir = format!("/tmp/exercism_bench_{}", problem.slug);
 
-    // Write to temp file
-    let test_path = format!("/tmp/humaneval_{}.py", problem.entry_point);
-    if let Err(e) = tokio::fs::write(&test_path, &test_script).await {
-        return (false, format!("Failed to write test file: {e}"));
+    // Create temp Cargo project
+    let setup = async {
+        // Clean up any previous run
+        let _ = tokio::fs::remove_dir_all(&test_dir).await;
+        tokio::fs::create_dir_all(format!("{test_dir}/src")).await?;
+        tokio::fs::create_dir_all(format!("{test_dir}/tests")).await?;
+
+        // Write Cargo.toml
+        let cargo_toml = format!(
+            "[package]\n\
+             name = \"exercism-bench-{slug}\"\n\
+             version = \"0.1.0\"\n\
+             edition = \"2021\"\n",
+            slug = problem.slug.replace('-', "_")
+        );
+        tokio::fs::write(format!("{test_dir}/Cargo.toml"), &cargo_toml).await?;
+
+        // Write solution as src/lib.rs
+        tokio::fs::write(format!("{test_dir}/src/lib.rs"), solution).await?;
+
+        // Write test file — remove #[ignore] attributes so all tests run
+        let test_code = problem.test_code.replace("#[ignore]", "");
+        let test_slug = problem.slug.replace('-', "_");
+        tokio::fs::write(format!("{test_dir}/tests/{test_slug}.rs"), &test_code).await?;
+
+        Ok::<(), std::io::Error>(())
+    };
+
+    if let Err(e) = setup.await {
+        return (false, format!("Setup failed: {e}"));
     }
 
-    // Run with timeout
+    // Run cargo test with timeout
     let output = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        tokio::process::Command::new("python3")
-            .arg(&test_path)
-            .current_dir(workspace_root)
+        std::time::Duration::from_secs(60),
+        tokio::process::Command::new("cargo")
+            .arg("test")
+            .arg("--manifest-path")
+            .arg(format!("{test_dir}/Cargo.toml"))
+            .env("CARGO_TARGET_DIR", format!("{test_dir}/target"))
             .output(),
     )
     .await;
 
     // Clean up
-    let _ = tokio::fs::remove_file(&test_path).await;
+    let _ = tokio::fs::remove_dir_all(&test_dir).await;
 
     match output {
         Ok(Ok(out)) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
-            if stdout.contains("HUMANEVAL_PASS") {
+            if out.status.success() {
                 (true, String::new())
             } else {
-                let error = if stderr.is_empty() {
-                    format!("stdout: {}", stdout.chars().take(500).collect::<String>())
+                // Extract useful error info
+                let error = if stderr.contains("error[E") {
+                    // Compilation error — show the first few errors
+                    stderr
+                        .lines()
+                        .filter(|l| l.contains("error") || l.contains("-->"))
+                        .take(10)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                } else if stdout.contains("FAILED") {
+                    // Test failure
+                    stdout.chars().take(500).collect()
                 } else {
-                    stderr.chars().take(500).collect()
+                    format!(
+                        "stderr: {}\nstdout: {}",
+                        stderr.chars().take(300).collect::<String>(),
+                        stdout.chars().take(200).collect::<String>()
+                    )
                 };
                 (false, error)
             }
         }
         Ok(Err(e)) => (false, format!("exec error: {e}")),
-        Err(_) => (false, "timeout (10s)".into()),
+        Err(_) => (false, "timeout (60s)".into()),
     }
 }
 
 /// Run a benchmark session: fetch problems, solve N, validate, record results.
-/// Returns the pass@1 score for this session.
+/// Returns the weighted pass rate for this session.
 pub async fn run_benchmark_session(
     llm: &LlmClient,
     db: &SoulDatabase,
@@ -298,12 +511,12 @@ pub async fn run_benchmark_session(
 ) -> Result<f64, String> {
     tracing::info!(
         sample_size = sample_size,
-        "Starting HumanEval benchmark session"
+        "Starting Exercism Rust benchmark session"
     );
 
     // Try to load cached problems, fetch if not cached
     let problems = match load_cached_problems(db) {
-        Some(p) if p.len() >= 100 => p,
+        Some(p) if p.len() >= 20 => p,
         _ => {
             let fetched = fetch_problems().await?;
             cache_problems(db, &fetched);
@@ -312,19 +525,24 @@ pub async fn run_benchmark_session(
     };
 
     let sample = sample_problems(&problems, sample_size);
+    let mut total_weight = 0.0f64;
+    let mut earned_weight = 0.0f64;
     let mut passed = 0u32;
     let mut attempted = 0u32;
     let now = chrono::Utc::now().timestamp();
 
     for problem in &sample {
         attempted += 1;
+        let weight = difficulty_weight(&problem.difficulty);
+        total_weight += weight;
 
         // Generate solution
         let solution = match generate_solution(llm, problem).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(
-                    task_id = %problem.task_id,
+                    slug = %problem.slug,
+                    difficulty = %problem.difficulty,
                     error = %e,
                     "Benchmark: failed to generate solution"
                 );
@@ -333,22 +551,23 @@ pub async fn run_benchmark_session(
             }
         };
 
-        // Validate
+        // Validate via cargo test
         let start = std::time::Instant::now();
         let (success, error_output) = validate_solution(problem, &solution, workspace_root).await;
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
         if success {
             passed += 1;
+            earned_weight += weight;
             tracing::info!(
-                task_id = %problem.task_id,
-                entry_point = %problem.entry_point,
+                slug = %problem.slug,
+                difficulty = %problem.difficulty,
                 "Benchmark: PASS"
             );
         } else {
             tracing::info!(
-                task_id = %problem.task_id,
-                entry_point = %problem.entry_point,
+                slug = %problem.slug,
+                difficulty = %problem.difficulty,
                 error = %error_output.chars().take(100).collect::<String>(),
                 "Benchmark: FAIL"
             );
@@ -357,29 +576,37 @@ pub async fn run_benchmark_session(
         record_run(db, problem, success, &solution, &error_output, elapsed_ms);
     }
 
-    let pass_at_1 = if attempted > 0 {
+    // Weighted score: difficulty-adjusted pass rate
+    let weighted_score = if total_weight > 0.0 {
+        earned_weight / total_weight * 100.0
+    } else {
+        0.0
+    };
+
+    let raw_rate = if attempted > 0 {
         passed as f64 / attempted as f64 * 100.0
     } else {
         0.0
     };
 
     // Store score
-    update_score(db, pass_at_1, attempted, passed, now);
+    update_score(db, weighted_score, raw_rate, attempted, passed, now);
 
     tracing::info!(
-        pass_at_1 = format!("{:.1}%", pass_at_1),
+        weighted = format!("{:.1}%", weighted_score),
+        raw = format!("{:.1}%", raw_rate),
         passed = passed,
         attempted = attempted,
-        "HumanEval benchmark session complete"
+        "Exercism Rust benchmark session complete"
     );
 
-    Ok(pass_at_1)
+    Ok(weighted_score)
 }
 
 /// Record a single benchmark run.
 fn record_run(
     db: &SoulDatabase,
-    problem: &HumanEvalProblem,
+    problem: &ExercismProblem,
     passed: bool,
     solution: &str,
     error: &str,
@@ -387,8 +614,8 @@ fn record_run(
 ) {
     let run = BenchmarkRun {
         id: uuid::Uuid::new_v4().to_string(),
-        task_id: problem.task_id.clone(),
-        entry_point: problem.entry_point.clone(),
+        task_id: format!("exercism/{}", problem.slug),
+        entry_point: problem.slug.clone(),
         passed,
         generated_solution: solution.chars().take(2000).collect(),
         error_output: error.chars().take(500).collect(),
@@ -402,9 +629,17 @@ fn record_run(
 }
 
 /// Update the stored benchmark score with a new measurement.
-fn update_score(db: &SoulDatabase, pass_at_1: f64, attempted: u32, passed: u32, measured_at: i64) {
+fn update_score(
+    db: &SoulDatabase,
+    weighted_score: f64,
+    raw_rate: f64,
+    attempted: u32,
+    passed: u32,
+    measured_at: i64,
+) {
     let mut score = load_score(db).unwrap_or(BenchmarkScore {
         pass_at_1: 0.0,
+        raw_pass_rate: 0.0,
         problems_attempted: 0,
         problems_passed: 0,
         measured_at: 0,
@@ -424,7 +659,8 @@ fn update_score(db: &SoulDatabase, pass_at_1: f64, attempted: u32, passed: u32, 
         }
     }
 
-    score.pass_at_1 = pass_at_1;
+    score.pass_at_1 = weighted_score;
+    score.raw_pass_rate = raw_rate;
     score.problems_attempted = attempted;
     score.problems_passed = passed;
     score.measured_at = measured_at;
@@ -450,7 +686,8 @@ fn save_benchmark_to_disk(score: &BenchmarkScore) {
             tracing::warn!(error = %e, "Failed to save benchmark to disk");
         } else {
             tracing::info!(
-                pass_at_1 = format!("{:.1}%", score.pass_at_1),
+                weighted = format!("{:.1}%", score.pass_at_1),
+                raw = format!("{:.1}%", score.raw_pass_rate),
                 path = %path.display(),
                 "Benchmark snapshot saved to disk"
             );
@@ -466,16 +703,16 @@ pub fn load_score(db: &SoulDatabase) -> Option<BenchmarkScore> {
         .and_then(|s| serde_json::from_str(&s).ok())
 }
 
-/// Cache fetched HumanEval problems in soul_state (avoid re-fetching).
-fn cache_problems(db: &SoulDatabase, problems: &[HumanEvalProblem]) {
+/// Cache fetched problems in soul_state (avoid re-fetching).
+fn cache_problems(db: &SoulDatabase, problems: &[ExercismProblem]) {
     if let Ok(json) = serde_json::to_string(problems) {
-        let _ = db.set_state("humaneval_problems_cache", &json);
+        let _ = db.set_state("exercism_problems_cache", &json);
     }
 }
 
 /// Load cached problems.
-fn load_cached_problems(db: &SoulDatabase) -> Option<Vec<HumanEvalProblem>> {
-    db.get_state("humaneval_problems_cache")
+fn load_cached_problems(db: &SoulDatabase) -> Option<Vec<ExercismProblem>> {
+    db.get_state("exercism_problems_cache")
         .ok()
         .flatten()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -484,11 +721,10 @@ fn load_cached_problems(db: &SoulDatabase) -> Option<Vec<HumanEvalProblem>> {
 /// Strip markdown code blocks from LLM output.
 fn strip_code_blocks(s: &str) -> String {
     let s = s.trim();
-    // Strip ```python ... ``` or ``` ... ```
     if s.starts_with("```") {
-        let without_start = if let Some(rest) = s.strip_prefix("```python") {
+        let without_start = if let Some(rest) = s.strip_prefix("```rust") {
             rest
-        } else if let Some(rest) = s.strip_prefix("```py") {
+        } else if let Some(rest) = s.strip_prefix("```rs") {
             rest
         } else if let Some(rest) = s.strip_prefix("```") {
             rest
@@ -557,8 +793,8 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
 
 /// Default: run benchmark every 50 cycles.
 pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 50;
-/// Default: sample 20 problems per session (balance speed vs. statistical significance).
-pub const DEFAULT_SAMPLE_SIZE: usize = 20;
+/// Default: sample 15 problems per session (Rust compilation is slower than Python).
+pub const DEFAULT_SAMPLE_SIZE: usize = 15;
 
 /// Format benchmark score for prompt injection.
 pub fn benchmark_summary_for_prompt(db: &SoulDatabase) -> String {
@@ -568,9 +804,15 @@ pub fn benchmark_summary_for_prompt(db: &SoulDatabase) -> String {
     };
 
     let mut lines = vec![format!(
-        "# HumanEval Benchmark: {:.1}% pass@1 ({}/{} problems)",
-        score.pass_at_1, score.problems_passed, score.problems_attempted
+        "# Exercism Rust Benchmark: {:.1}% weighted ({:.1}% raw, {}/{} problems)",
+        score.pass_at_1, score.raw_pass_rate, score.problems_passed, score.problems_attempted
     )];
+
+    lines.push(
+        "Exercises are real Exercism Rust problems validated via `cargo test`. \
+         Weighted score accounts for difficulty (easy=1x, medium=2x, hard=3x)."
+            .into(),
+    );
 
     // Show trend
     if score.history.len() >= 2 {
@@ -587,19 +829,6 @@ pub fn benchmark_summary_for_prompt(db: &SoulDatabase) -> String {
             "Trend: {} ({:+.1}% from last session)",
             direction, delta
         ));
-    }
-
-    // Compare against reference scores
-    lines.push("## vs. Published Baselines".into());
-    for (model, ref_score) in REFERENCE_SCORES {
-        let comparison = if score.pass_at_1 > *ref_score + 1.0 {
-            "above"
-        } else if score.pass_at_1 < *ref_score - 1.0 {
-            "below"
-        } else {
-            "~equal"
-        };
-        lines.push(format!("- {model}: {ref_score:.1}% ({comparison})"));
     }
 
     lines.join("\n")
@@ -683,8 +912,10 @@ pub async fn import_solutions(
 
     // Load cached problems for test validation
     let problems = load_cached_problems(db).unwrap_or_default();
-    let problem_map: std::collections::HashMap<&str, &HumanEvalProblem> =
-        problems.iter().map(|p| (p.task_id.as_str(), p)).collect();
+    let problem_map: std::collections::HashMap<String, &ExercismProblem> = problems
+        .iter()
+        .map(|p| (format!("exercism/{}", p.slug), p))
+        .collect();
 
     for sol in peer_solutions {
         // Skip if we already have this solution
@@ -693,7 +924,7 @@ pub async fn import_solutions(
         }
 
         // Validate the peer's solution by running it
-        if let Some(problem) = problem_map.get(sol.task_id.as_str()) {
+        if let Some(problem) = problem_map.get(&sol.task_id) {
             let (passed, _error) = validate_solution(problem, &sol.solution, workspace_root).await;
             if passed {
                 tracing::info!(
@@ -727,11 +958,13 @@ pub async fn import_solutions(
     imported
 }
 
-/// Compute the collective pass@1 score: our solutions + verified peer solutions.
-/// This is the "swarm intelligence" metric — higher than any individual agent.
+/// Compute the collective score: our solutions + verified peer solutions.
+/// Uses the total exercise count from cache.
 pub fn collective_score(db: &SoulDatabase) -> (f64, u32, u32) {
     let all_solutions = export_solutions(db);
-    let total_problems = 164u32; // HumanEval has 164 problems
+    let total_problems = load_cached_problems(db)
+        .map(|p| p.len() as u32)
+        .unwrap_or(100); // estimate if no cache
 
     let unique_solved: std::collections::HashSet<&str> =
         all_solutions.iter().map(|s| s.task_id.as_str()).collect();

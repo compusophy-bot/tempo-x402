@@ -88,6 +88,7 @@ pub fn goal_creation_prompt(
     experience: &str,
     capability_profile: &str,
     peer_open_prs: &str,
+    role_guidance: &str,
 ) -> String {
     let mut sections = Vec::new();
 
@@ -334,6 +335,11 @@ pub fn goal_creation_prompt(
          Priority: 1 (low) to 5 (critical). Be specific."
     ));
 
+    // Inject role guidance (emergent specialization)
+    if !role_guidance.is_empty() {
+        sections.push(role_guidance.to_string());
+    }
+
     // Inject experience and capability profile for the feedback loop
     if !experience.is_empty() {
         sections.push(experience.to_string());
@@ -390,6 +396,7 @@ pub fn planning_prompt(
     capability_profile: &str,
     peer_endpoint_catalog: &str,
     peer_open_prs: &str,
+    role_guidance: &str,
 ) -> String {
     let mut extra_context = String::new();
 
@@ -451,6 +458,11 @@ pub fn planning_prompt(
         }
     }
 
+    let role_section = if !role_guidance.is_empty() {
+        format!("\n\n{role_guidance}\n\n")
+    } else {
+        String::new()
+    };
     let experience_section = if !experience.is_empty() {
         format!("\n\n{experience}\n\n")
     } else {
@@ -468,7 +480,7 @@ pub fn planning_prompt(
          Success criteria: {}\n\
          Progress so far: {}\n\n\
          # Workspace\n\
-         {}{}{}{}\n\n\
+         {}{}{}{}{}\n\n\
          # Approaches\n\n\
          ## Code: Read and Improve Your Codebase (PRIMARY)\n\
          - read_file to study how you work (thinking loop, peer discovery, payment flow, etc.)\n\
@@ -544,6 +556,7 @@ pub fn planning_prompt(
         },
         workspace_listing,
         extra_context,
+        role_section,
         experience_section,
         capability_section,
     )

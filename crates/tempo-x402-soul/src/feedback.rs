@@ -396,7 +396,7 @@ pub fn collect_peer_lessons(db: &SoulDatabase) -> String {
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
             if pass > 0.0 {
-                lines.push(format!("  HumanEval: {pass:.1}%"));
+                lines.push(format!("  Exercism Rust: {pass:.1}%"));
             }
         }
 

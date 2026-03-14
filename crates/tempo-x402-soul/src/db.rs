@@ -349,7 +349,7 @@ impl SoulDatabase {
         }
 
         if version < 8 {
-            // v8: HumanEval benchmark runs
+            // v8: benchmark runs (originally HumanEval, now Exercism Rust)
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS benchmark_runs (
                     id TEXT PRIMARY KEY,
@@ -2054,7 +2054,7 @@ impl SoulDatabase {
         Ok(events)
     }
 
-    // ── Benchmark run operations (HumanEval) ──
+    // ── Benchmark run operations (Exercism Rust) ──
 
     /// Insert a benchmark run.
     pub fn insert_benchmark_run(

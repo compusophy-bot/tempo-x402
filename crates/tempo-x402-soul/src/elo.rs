@@ -1,4 +1,4 @@
-//! ELO-like intelligence rating derived from HumanEval benchmark scores.
+//! ELO-like intelligence rating derived from Exercism Rust benchmark scores.
 //!
 //! Maps pass@1 percentages to an ELO-style rating for intuitive tracking.
 //! Higher rating = smarter agent. Tracks changes over time.

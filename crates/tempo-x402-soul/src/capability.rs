@@ -289,6 +289,185 @@ pub fn capability_guidance(db: &SoulDatabase) -> String {
     lines.join("\n")
 }
 
+// ── Emergent Agent Specialization ────────────────────────────────────
+
+/// Role labels that emerge from capability profiles.
+/// These are NOT configured — they are computed from actual performance data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoleLabel {
+    /// High code generation + compilation success. Primary coder.
+    Solver,
+    /// High peer review + code accepted rates. Quality gatekeeper.
+    Reviewer,
+    /// High endpoint creation + shell execution. Infrastructure builder.
+    Builder,
+    /// High peer call + git ops success. Network coordinator.
+    Coordinator,
+    /// No strong specialization yet. Jack of all trades.
+    Generalist,
+}
+
+impl RoleLabel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Solver => "solver",
+            Self::Reviewer => "reviewer",
+            Self::Builder => "builder",
+            Self::Coordinator => "coordinator",
+            Self::Generalist => "generalist",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Solver => "You excel at writing code that compiles and passes tests. \
+                Prioritize coding tasks: fix bugs, implement features, optimize algorithms.",
+            Self::Reviewer => "You excel at reviewing code and maintaining quality standards. \
+                Prioritize review tasks: review peer PRs, analyze code quality, suggest improvements.",
+            Self::Builder => "You excel at creating endpoints and running infrastructure. \
+                Prioritize building tasks: create useful endpoints, set up services, manage deployments.",
+            Self::Coordinator => "You excel at network coordination and peer interaction. \
+                Prioritize coordination: call peer endpoints, discover peers, manage PRs, facilitate collaboration.",
+            Self::Generalist => "You have balanced capabilities across all areas. \
+                Take on whatever task has the highest priority — you can handle anything.",
+        }
+    }
+}
+
+/// An agent's emergent role, computed from its capability profile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentRole {
+    /// The primary role label.
+    pub primary: RoleLabel,
+    /// Confidence in this role assignment (0.0-1.0).
+    /// Higher means the agent is clearly specialized; lower means it's still a generalist.
+    pub confidence: f64,
+    /// The capability weights that determined this role.
+    /// Maps capability group name to its average success rate.
+    pub capability_weights: std::collections::HashMap<String, f64>,
+}
+
+/// Compute the agent's emergent role from its capability profile.
+///
+/// The role is determined by grouping capabilities into role-relevant clusters
+/// and finding which cluster the agent performs best at (relative to its average).
+///
+/// Requires at least 10 total events to avoid noisy early classifications.
+pub fn compute_role(db: &SoulDatabase) -> AgentRole {
+    let profile = compute_profile(db);
+
+    // Need enough data to be meaningful
+    let total_attempts: u32 = profile.capabilities.iter().map(|s| s.attempts).sum();
+    if total_attempts < 10 {
+        return AgentRole {
+            primary: RoleLabel::Generalist,
+            confidence: 0.0,
+            capability_weights: std::collections::HashMap::new(),
+        };
+    }
+
+    // Group capabilities into role clusters with weighted averages
+    let solver_caps = &["code_gen", "code_compile", "test_pass", "file_write"];
+    let reviewer_caps = &["peer_review", "code_accepted", "code_search", "file_read"];
+    let builder_caps = &["endpoint_create", "shell_exec", "file_write"];
+    let coordinator_caps = &["peer_call", "git_ops", "plan_complete"];
+
+    let avg = |caps: &[&str]| -> f64 {
+        let scores: Vec<f64> = profile
+            .capabilities
+            .iter()
+            .filter(|s| caps.contains(&s.capability.as_str()) && s.attempts >= 2)
+            .map(|s| s.success_rate)
+            .collect();
+        if scores.is_empty() {
+            return 0.0;
+        }
+        scores.iter().sum::<f64>() / scores.len() as f64
+    };
+
+    let solver_score = avg(solver_caps);
+    let reviewer_score = avg(reviewer_caps);
+    let builder_score = avg(builder_caps);
+    let coordinator_score = avg(coordinator_caps);
+
+    let mut weights = std::collections::HashMap::new();
+    weights.insert("solver".to_string(), solver_score);
+    weights.insert("reviewer".to_string(), reviewer_score);
+    weights.insert("builder".to_string(), builder_score);
+    weights.insert("coordinator".to_string(), coordinator_score);
+
+    // Find the highest-scoring role
+    let scores = [
+        (RoleLabel::Solver, solver_score),
+        (RoleLabel::Reviewer, reviewer_score),
+        (RoleLabel::Builder, builder_score),
+        (RoleLabel::Coordinator, coordinator_score),
+    ];
+
+    let overall_avg = profile.overall_success_rate;
+
+    // Find best role
+    let (best_role, best_score) = scores
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(r, s)| (r.clone(), *s))
+        .unwrap_or((RoleLabel::Generalist, 0.0));
+
+    // Confidence: how much better is the best role vs overall average?
+    // If the best role is >15% above average, high confidence.
+    // If it's within 5% of average, stay generalist.
+    let advantage = best_score - overall_avg;
+    let confidence = (advantage * 5.0).clamp(0.0, 1.0); // 20% advantage = 100% confidence
+
+    let primary = if confidence < 0.25 || total_attempts < 20 {
+        RoleLabel::Generalist
+    } else {
+        best_role
+    };
+
+    AgentRole {
+        primary,
+        confidence,
+        capability_weights: weights,
+    }
+}
+
+/// Format agent role for inclusion in prompts.
+pub fn role_guidance(db: &SoulDatabase) -> String {
+    let role = compute_role(db);
+
+    if role.primary == RoleLabel::Generalist && role.confidence < 0.1 {
+        return String::new(); // Not enough data yet
+    }
+
+    let mut lines = vec![format!(
+        "# Your Emergent Role: {} (confidence: {:.0}%)",
+        role.primary.as_str().to_uppercase(),
+        role.confidence * 100.0
+    )];
+
+    lines.push(role.primary.description().to_string());
+
+    if !role.capability_weights.is_empty() {
+        lines.push("## Role Scores".to_string());
+        let mut sorted: Vec<_> = role.capability_weights.iter().collect();
+        sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (name, score) in &sorted {
+            let bar = if **score >= 0.8 {
+                "+++"
+            } else if **score >= 0.5 {
+                "++"
+            } else {
+                "+"
+            };
+            lines.push(format!("- {bar} {name}: {:.0}%", score * 100.0));
+        }
+    }
+
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
