@@ -1818,6 +1818,23 @@ impl ThinkingLoop {
                 // Remove ReadFile steps that reference non-existent plan context files
                 // (LLM generates `read siblings.json` or `read discovered_peers.json`)
                 PlanStep::ReadFile { path, store_as } => {
+                    // Convert read_file on directories to list_dir
+                    if path == "."
+                        || path == ".."
+                        || path.ends_with('/')
+                        || path == "crates"
+                        || path == "src"
+                    {
+                        tracing::debug!(
+                            path = %path,
+                            "Converted ReadFile on directory to ListDir"
+                        );
+                        sanitized.push(PlanStep::ListDir {
+                            path: path.clone(),
+                            store_as: store_as.clone(),
+                        });
+                        continue;
+                    }
                     let bogus_files = [
                         "siblings.json",
                         "discovered_peers.json",

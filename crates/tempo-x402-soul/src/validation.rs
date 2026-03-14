@@ -107,6 +107,9 @@ pub fn validate_plan(
     // ── Rule 8: Minimum plan quality ──
     check_plan_quality(steps, &mut violations);
 
+    // ── Rule 9: Block plans for goals with excessive failure chains ──
+    check_failure_chain_saturation(db, goal_description, &mut violations);
+
     ValidationResult {
         valid: violations.iter().all(|v| v.severity != Severity::Hard),
         violations,
@@ -446,6 +449,64 @@ fn check_plan_quality(steps: &[PlanStep], violations: &mut Vec<PlanViolation>) {
     }
 }
 
+/// Rule 9: If a goal already has 3+ unresolved failure chains, reject new plans.
+/// This prevents infinite loops where the same goal keeps generating failing plans.
+fn check_failure_chain_saturation(
+    db: &SoulDatabase,
+    goal_description: &str,
+    violations: &mut Vec<PlanViolation>,
+) {
+    let chains_json = db
+        .get_state("failure_chains")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let chains: Vec<FailureChain> = serde_json::from_str(&chains_json).unwrap_or_default();
+
+    // Count unresolved chains for this goal (partial match)
+    let goal_lower = goal_description.to_lowercase();
+    let matching_chains: Vec<&FailureChain> = chains
+        .iter()
+        .filter(|c| {
+            !c.resolved && {
+                let chain_goal = c.goal_description.to_lowercase();
+                // Jaccard similarity check
+                let goal_words: std::collections::HashSet<&str> =
+                    goal_lower.split_whitespace().collect();
+                let chain_words: std::collections::HashSet<&str> =
+                    chain_goal.split_whitespace().collect();
+                let intersection = goal_words.intersection(&chain_words).count();
+                let union = goal_words.len() + chain_words.len() - intersection;
+                union > 0 && (intersection as f64 / union as f64) > 0.4
+            }
+        })
+        .collect();
+
+    if matching_chains.len() >= 5 {
+        // Collect the distinct error patterns
+        let mut error_patterns: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for chain in &matching_chains {
+            error_patterns.insert(format!(
+                "{}: {}",
+                chain.step_type,
+                chain.error_snippet.chars().take(50).collect::<String>()
+            ));
+        }
+
+        violations.push(PlanViolation {
+            rule: "failure-chain-saturated",
+            severity: Severity::Hard,
+            detail: format!(
+                "This goal has {} unresolved failure chains. Errors: {}. This goal should be abandoned — try a completely different objective instead.",
+                matching_chains.len(),
+                error_patterns.into_iter().take(3).collect::<Vec<_>>().join("; "),
+            ),
+            step_index: None,
+        });
+    }
+}
+
 // ── Durable Rules System ──────────────────────────────────────────────
 
 /// A durable behavioral rule enforced mechanically.
@@ -553,19 +614,23 @@ pub fn brain_gate_step(
     step: &PlanStep,
     prediction: &crate::brain::BrainPrediction,
 ) -> (bool, Option<String>) {
-    // Only gate when the brain has enough training data to be reliable
+    // Only gate when the brain has enough training data to be reliable.
+    // 100 steps is too low — brain needs substantial experience before we trust it
+    // to block execution. Small nets overfit quickly with limited data.
     let brain = crate::brain::load_brain(db);
-    if brain.train_steps < 100 {
+    if brain.train_steps < 5000 {
         return (true, None);
     }
 
     // Hard gate: if brain predicts <10% success AND error confidence is high,
-    // skip the step entirely
-    if prediction.success_prob < 0.10 && prediction.error_confidence > 0.6 {
+    // skip the step entirely. Cap confidence at 95% — a 50K-param net should
+    // never be 100% certain about anything.
+    let capped_confidence = prediction.error_confidence.min(0.95);
+    if prediction.success_prob < 0.10 && capped_confidence > 0.8 {
         let reason = format!(
             "Brain predicts {:.0}% success with {:.0}% confidence in {:?} error. Skipping step '{}' — replan with a different approach.",
             prediction.success_prob * 100.0,
-            prediction.error_confidence * 100.0,
+            capped_confidence * 100.0,
             prediction.likely_error,
             step.summary(),
         );
@@ -574,7 +639,7 @@ pub fn brain_gate_step(
 
     // Soft gate: if brain predicts <25% success, log a warning but proceed
     // (the warning is visible in logs for human review)
-    if prediction.success_prob < 0.25 {
+    if prediction.success_prob < 0.20 {
         let reason = format!(
             "Brain warns: {:.0}% success probability for '{}'. Likely error: {:?}.",
             prediction.success_prob * 100.0,
