@@ -410,6 +410,10 @@ pub async fn generate_solution(
     Ok(cleaned)
 }
 
+/// Shared target directory for all benchmark compilations.
+/// Deps compile once, then each exercise only recompiles its own lib + tests.
+const BENCHMARK_TARGET_DIR: &str = "/tmp/exercism_bench_target";
+
 /// Validate a solution by creating a temp Cargo project and running `cargo test`.
 /// Returns (passed, error_output).
 pub async fn validate_solution(
@@ -421,7 +425,7 @@ pub async fn validate_solution(
 
     // Create temp Cargo project
     let setup = async {
-        // Clean up any previous run
+        // Clean up any previous run of THIS exercise (not the shared target)
         let _ = tokio::fs::remove_dir_all(&test_dir).await;
         tokio::fs::create_dir_all(format!("{test_dir}/src")).await?;
         tokio::fs::create_dir_all(format!("{test_dir}/tests")).await?;
@@ -451,19 +455,19 @@ pub async fn validate_solution(
         return (false, format!("Setup failed: {e}"));
     }
 
-    // Run cargo test with timeout
+    // Run cargo test with shared target dir (deps compile once across all exercises)
     let output = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
+        std::time::Duration::from_secs(120),
         tokio::process::Command::new("cargo")
             .arg("test")
             .arg("--manifest-path")
             .arg(format!("{test_dir}/Cargo.toml"))
-            .env("CARGO_TARGET_DIR", format!("{test_dir}/target"))
+            .env("CARGO_TARGET_DIR", BENCHMARK_TARGET_DIR)
             .output(),
     )
     .await;
 
-    // Clean up
+    // Clean up exercise dir (keep shared target for next exercise)
     let _ = tokio::fs::remove_dir_all(&test_dir).await;
 
     match output {
@@ -497,7 +501,7 @@ pub async fn validate_solution(
             }
         }
         Ok(Err(e)) => (false, format!("exec error: {e}")),
-        Err(_) => (false, "timeout (60s)".into()),
+        Err(_) => (false, "timeout (120s)".into()),
     }
 }
 
@@ -591,6 +595,9 @@ pub async fn run_benchmark_session(
 
     // Store score
     update_score(db, weighted_score, raw_rate, attempted, passed, now);
+
+    // Clean up shared target dir to reclaim disk space
+    let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
 
     tracing::info!(
         weighted = format!("{:.1}%", weighted_score),
@@ -791,10 +798,10 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
     total_cycles / interval > last_benchmark_cycle / interval
 }
 
-/// Default: run benchmark every 50 cycles.
-pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 50;
-/// Default: sample 15 problems per session (Rust compilation is slower than Python).
-pub const DEFAULT_SAMPLE_SIZE: usize = 15;
+/// Default: run benchmark every 100 cycles (Rust benchmarks are expensive).
+pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 100;
+/// Default: sample 10 problems per session (Rust compilation is much slower than Python exec).
+pub const DEFAULT_SAMPLE_SIZE: usize = 10;
 
 /// Format benchmark score for prompt injection.
 pub fn benchmark_summary_for_prompt(db: &SoulDatabase) -> String {
