@@ -1758,7 +1758,27 @@ impl ThinkingLoop {
             match &step {
                 // Remove shell commands that reference undefined shell variables
                 // (LLM generates `echo "$soul_response"` thinking plan context is shell vars)
-                PlanStep::RunShell { command, .. } => {
+                PlanStep::RunShell { command, store_as } => {
+                    // Strip redundant tool-name prefix from command
+                    // LLM sometimes generates {"type":"run_shell","command":"run_shell curl ..."}
+                    let command = if command.starts_with("run_shell ")
+                        || command.starts_with("execute_shell ")
+                    {
+                        let stripped = command.split_once(' ').map(|x| x.1).unwrap_or(command);
+                        tracing::debug!(
+                            original = %command,
+                            fixed = %stripped,
+                            "Stripped tool-name prefix from RunShell command"
+                        );
+                        stripped
+                    } else if command == "run_shell" || command == "execute_shell" {
+                        // Bare tool name with no actual command — skip
+                        tracing::debug!("Sanitized out bare run_shell/execute_shell command");
+                        continue;
+                    } else {
+                        command.as_str()
+                    };
+
                     // Skip commands that are purely writing shell-variable placeholders to files
                     // e.g., `echo "$response" > file.json` or `echo '$info_call_result' > file`
                     let has_placeholder_var = command.contains("$soul_response")
@@ -1789,7 +1809,11 @@ impl ThinkingLoop {
                         continue;
                     }
 
-                    sanitized.push(step);
+                    // If command was modified (prefix stripped), push corrected step
+                    sanitized.push(PlanStep::RunShell {
+                        command: command.to_string(),
+                        store_as: store_as.clone(),
+                    });
                 }
                 // Remove ReadFile steps that reference non-existent plan context files
                 // (LLM generates `read siblings.json` or `read discovered_peers.json`)
@@ -2140,6 +2164,73 @@ impl ThinkingLoop {
                         let path = action_str.split_once(' ').map(|x| x.1).unwrap_or(".");
                         step.insert("type".to_string(), serde_json::json!("list_dir"));
                         step.insert("path".to_string(), serde_json::json!(path));
+                    } else if action_lower.starts_with("call_peer")
+                        || action_lower.starts_with("call peer")
+                    {
+                        // LLM used "call_peer soul" as action — convert to call_peer step
+                        let slug = action_str
+                            .split_once(' ')
+                            .map(|x| x.1.trim())
+                            .unwrap_or("info");
+                        step.insert("type".to_string(), serde_json::json!("call_peer"));
+                        step.insert("slug".to_string(), serde_json::json!(slug));
+                    } else if action_lower.starts_with("discover_peers")
+                        || action_lower.starts_with("discover peers")
+                    {
+                        step.insert("type".to_string(), serde_json::json!("discover_peers"));
+                    } else if action_lower.starts_with("check_self")
+                        || action_lower.starts_with("check self")
+                    {
+                        let endpoint = action_str
+                            .split_once(' ')
+                            .map(|x| x.1.trim())
+                            .unwrap_or("health");
+                        step.insert("type".to_string(), serde_json::json!("check_self"));
+                        step.insert("endpoint".to_string(), serde_json::json!(endpoint));
+                    } else if action_lower.starts_with("commit") {
+                        let message = action_str
+                            .split_once(' ')
+                            .map(|x| x.1.trim())
+                            .unwrap_or("auto-commit");
+                        step.insert("type".to_string(), serde_json::json!("commit"));
+                        step.insert("message".to_string(), serde_json::json!(message));
+                    } else if action_lower.starts_with("cargo_check")
+                        || action_lower.starts_with("cargo check")
+                    {
+                        step.insert("type".to_string(), serde_json::json!("cargo_check"));
+                    } else if action_lower.starts_with("clone_self")
+                        || action_lower.starts_with("clone self")
+                    {
+                        step.insert("type".to_string(), serde_json::json!("clone_self"));
+                    } else if action_lower.starts_with("spawn_specialist")
+                        || action_lower.starts_with("spawn specialist")
+                    {
+                        let spec = action_str
+                            .split_once(' ')
+                            .map(|x| x.1.trim())
+                            .unwrap_or("generalist");
+                        step.insert("type".to_string(), serde_json::json!("spawn_specialist"));
+                        step.insert("specialization".to_string(), serde_json::json!(spec));
+                    } else if action_lower.starts_with("delegate_task")
+                        || action_lower.starts_with("delegate task")
+                    {
+                        let desc = action_str.split_once(' ').map(|x| x.1.trim()).unwrap_or("");
+                        step.insert("type".to_string(), serde_json::json!("delegate_task"));
+                        step.insert("task_description".to_string(), serde_json::json!(desc));
+                        step.insert("target".to_string(), serde_json::json!(""));
+                    } else if action_lower.starts_with("run_shell")
+                        || action_lower.starts_with("execute_shell")
+                    {
+                        // LLM used "run_shell curl ..." or "execute_shell ls" as action —
+                        // strip the tool name prefix and keep just the actual command
+                        let actual_cmd =
+                            action_str.split_once(' ').map(|x| x.1.trim()).unwrap_or("");
+                        if actual_cmd.is_empty() {
+                            // Bare "run_shell" with no actual command — skip entirely
+                            return None;
+                        }
+                        step.insert("type".to_string(), serde_json::json!("run_shell"));
+                        step.insert("command".to_string(), serde_json::json!(actual_cmd));
                     } else if action_lower.starts_with("think") {
                         // LLM used "think: ..." or "think about ..." as action
                         let question = action_str
