@@ -381,7 +381,7 @@ fn check_capability_feasibility(
             .find(|s| s.capability == cap.as_str())
         {
             // Only flag if we have enough data to be confident
-            if cap_stat.total >= 10 && cap_stat.success_rate < 0.2 {
+            if cap_stat.attempts >= 10 && cap_stat.success_rate < 0.2 {
                 violations.push(PlanViolation {
                     rule: "low-capability",
                     severity: Severity::Soft,
@@ -390,7 +390,7 @@ fn check_capability_feasibility(
                         step.summary(),
                         cap_stat.capability,
                         cap_stat.success_rate * 100.0,
-                        cap_stat.total,
+                        cap_stat.attempts,
                     ),
                     step_index: Some(i),
                 });
