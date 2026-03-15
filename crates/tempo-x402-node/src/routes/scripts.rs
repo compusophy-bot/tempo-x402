@@ -92,6 +92,11 @@ pub async fn handle_script(
                 &price_usd,
                 &price_amount,
                 Some(&format!("Script endpoint: /x/{slug}")),
+                state
+                    .gateway
+                    .facilitator
+                    .as_ref()
+                    .map(|f| f.facilitator.facilitator_address()),
             );
 
             let settle = match require_payment(
