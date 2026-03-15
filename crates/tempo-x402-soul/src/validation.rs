@@ -692,7 +692,7 @@ pub fn record_failure_chain(
     goal_desc: &str,
     step: &PlanStep,
     error: &str,
-    replan_count: u32,
+    _replan_count: u32,
 ) {
     let chain = FailureChain {
         goal_description: goal_desc.chars().take(100).collect(),

@@ -761,12 +761,12 @@ pub fn brain_summary(db: &SoulDatabase) -> String {
 
     // Add top error patterns
     let error_counts = db
-        .top_event_codes_since(chrono::Utc::now().timestamp() - 86400, 5)
+        .top_event_codes_since("error", chrono::Utc::now().timestamp() - 86400, 5)
         .unwrap_or_default();
     if !error_counts.is_empty() {
         lines.push("\nTop error patterns (last 24h):".to_string());
-        for (code, count) in &error_counts {
-            lines.push(format!("- {code}: {count} occurrences"));
+        for ec in &error_counts {
+            lines.push(format!("- {}: {} occurrences", ec.code, ec.count));
         }
     }
 

@@ -2431,7 +2431,7 @@ impl ToolExecutor {
 
                     // Extract brain weights from paid soul response and merge
                     if let Some(ref db) = self.db {
-                        if let Some(ref soul_data) = paid_soul_data {
+                        if let Some(ref _soul_data) = paid_soul_data {
                             // The soul status includes brain info (train_steps, parameters)
                             // For full weight merging, we still need the weights endpoint
                             // but now we also track the paid call for coordination fitness
