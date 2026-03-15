@@ -625,16 +625,17 @@ pub fn brain_gate_step(
         return (true, None);
     }
 
-    // Never brain-gate basic mechanical operations — these are fundamental
-    // and the brain can get poisoned by path errors (e.g. `ls ./src` fails,
-    // then brain blocks all `ls` operations). Only gate risky operations.
+    // The brain with ~50K params gets poisoned easily — it learns from failure
+    // data and starts blocking everything. Only allow brain gating for truly
+    // risky operations (commit, push, deploy). Everything else should execute
+    // and fail naturally — the replan mechanism handles failures fine.
     let step_summary = step.summary();
-    let is_safe_op = step_summary.starts_with("ls ")
-        || step_summary.starts_with("read ")
-        || step_summary.starts_with("search ")
-        || step_summary == "discover peers"
-        || step_summary.starts_with("check ");
-    if is_safe_op {
+    let is_risky_op = step_summary.starts_with("commit")
+        || step_summary.contains("push")
+        || step_summary.contains("deploy")
+        || step_summary.contains("delete")
+        || step_summary.contains("force");
+    if !is_risky_op {
         return (true, None);
     }
 
