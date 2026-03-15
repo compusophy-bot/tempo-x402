@@ -68,6 +68,9 @@ struct PlanInfo {
     goal_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     steps: Option<Vec<String>>,
+    /// Accumulated step results (store_as keys from completed steps)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Serialize)]
@@ -250,6 +253,11 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
     // Fetch active plan
     let active_plan = soul_db.get_active_plan().ok().flatten().map(|p| {
         let current_step_type = p.steps.get(p.current_step).map(|s| s.summary());
+        let ctx = if p.context.is_empty() {
+            None
+        } else {
+            Some(p.context.clone())
+        };
         PlanInfo {
             id: p.id,
             goal_id: p.goal_id,
@@ -260,6 +268,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             current_step_type,
             goal_description: None,
             steps: None,
+            context: ctx,
         }
     });
 
@@ -281,6 +290,7 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             current_step_type: None,
             goal_description: goal_desc,
             steps: Some(step_summaries),
+            context: None,
         }
     });
 
