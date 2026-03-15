@@ -1665,7 +1665,7 @@ impl ThinkingLoop {
             // Extract and store durable behavioral rules from this failure
             if let Ok(recent) = self.db.get_recent_plan_outcomes(1) {
                 if let Some(outcome) = recent.first() {
-                    let new_rules = validation::extract_durable_rules(outcome);
+                    let new_rules = validation::extract_durable_rules(outcome, &self.db);
                     if !new_rules.is_empty() {
                         validation::merge_durable_rules(&self.db, &new_rules);
                         tracing::info!(

@@ -526,10 +526,10 @@ pub struct DurableRule {
     pub created_at: i64,
 }
 
-/// Extract durable rules from a plan outcome.
+/// Extract durable rules from a plan outcome and failure chain history.
 /// Called after reflection on failed plans. Looks for patterns that should
 /// become permanent behavioral rules.
-pub fn extract_durable_rules(outcome: &PlanOutcome) -> Vec<DurableRule> {
+pub fn extract_durable_rules(outcome: &PlanOutcome, db: &SoulDatabase) -> Vec<DurableRule> {
     let mut rules = Vec::new();
     let now = chrono::Utc::now().timestamp();
 
@@ -561,9 +561,77 @@ pub fn extract_durable_rules(outcome: &PlanOutcome) -> Vec<DurableRule> {
         }
     }
 
-    // Rule: if the same error category has happened 3+ times for similar goals,
-    // create a rule blocking that approach
-    // (This is checked separately in merge_durable_rules)
+    // Rule: if the same step_type has failed 3+ times, block it
+    let chains: Vec<FailureChain> = db
+        .get_state("failure_chains")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // Group unresolved failures by a normalized step key
+    let mut step_fail_counts: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    for chain in &chains {
+        if chain.resolved {
+            continue;
+        }
+        // Normalize: take first word of step_type (e.g. "ls -R" → "ls", "shell: foo" → "shell:")
+        let key = chain
+            .step_type
+            .split_whitespace()
+            .next()
+            .unwrap_or(&chain.step_type)
+            .to_lowercase();
+        *step_fail_counts.entry(key).or_insert(0) += 1;
+    }
+
+    for (step_key, count) in &step_fail_counts {
+        if *count >= 3 {
+            let rule_name = format!("block-step-{}", step_key.replace('/', "-"));
+            rules.push(DurableRule {
+                name: rule_name,
+                check_type: "step_type_blocked".to_string(),
+                pattern: step_key.clone(),
+                reason: format!(
+                    "Step type '{}' has failed {} times without resolution. Avoid this approach.",
+                    step_key, count
+                ),
+                trigger_count: 0,
+                created_at: now,
+            });
+        }
+    }
+
+    // Rule: if the same error on the same file has happened 3+ times, block that file+error combo
+    let mut file_error_counts: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    for chain in &chains {
+        if chain.resolved {
+            continue;
+        }
+        if let Some(ref path) = chain.file_path {
+            let key = format!("{}:{}", path, chain.error_category);
+            *file_error_counts.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    for (key, count) in &file_error_counts {
+        if *count >= 3 {
+            let rule_name = format!("block-file-error-{}", key.replace(['/', ':'], "-"));
+            rules.push(DurableRule {
+                name: rule_name,
+                check_type: "file_blocked".to_string(),
+                pattern: key.split(':').next().unwrap_or(key).to_string(),
+                reason: format!(
+                    "File+error combo '{}' has failed {} times. Stop retrying.",
+                    key, count
+                ),
+                trigger_count: 0,
+                created_at: now,
+            });
+        }
+    }
 
     rules
 }

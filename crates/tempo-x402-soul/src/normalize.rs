@@ -110,6 +110,15 @@ pub fn sanitize_plan_steps(steps: Vec<PlanStep>) -> Vec<PlanStep> {
             // Remove ReadFile steps that reference non-existent plan context files
             // (LLM generates `read siblings.json` or `read discovered_peers.json`)
             PlanStep::ReadFile { path, store_as } => {
+                // Detect shell syntax that was misclassified as ReadFile
+                // (e.g. "read <<EOF > file.py" → path would be "<<EOF ...")
+                if path.contains("<<") || path.contains(">>") || path.starts_with('<') {
+                    tracing::debug!(
+                        path = %path,
+                        "Sanitized out ReadFile with shell heredoc/redirect syntax"
+                    );
+                    continue;
+                }
                 // Convert read_file on directories to list_dir
                 if path == "."
                     || path == ".."
@@ -461,12 +470,17 @@ pub fn normalize_plan_json(json_str: &str) -> String {
                     }
                 } else if action_lower.starts_with("cat ") || action_lower.starts_with("read ") {
                     let path = action_str.split_once(' ').map(|x| x.1).unwrap_or("");
-                    if path.ends_with('/') || (!path.contains('.') && !path.is_empty()) {
+                    // Detect shell syntax: heredocs (<<), redirects (>), pipes (|)
+                    if path.contains("<<") || path.contains('>') || path.contains('|') {
+                        step.insert("type".to_string(), serde_json::json!("run_shell"));
+                        step.insert("command".to_string(), serde_json::json!(action_str));
+                    } else if path.ends_with('/') || (!path.contains('.') && !path.is_empty()) {
                         step.insert("type".to_string(), serde_json::json!("list_dir"));
+                        step.insert("path".to_string(), serde_json::json!(path));
                     } else {
                         step.insert("type".to_string(), serde_json::json!("read_file"));
+                        step.insert("path".to_string(), serde_json::json!(path));
                     }
-                    step.insert("path".to_string(), serde_json::json!(path));
                 } else if action_lower.starts_with("grep ") || action_lower.starts_with("rg ") {
                     step.insert("type".to_string(), serde_json::json!("run_shell"));
                     step.insert("command".to_string(), serde_json::json!(action_str));
@@ -548,12 +562,20 @@ pub fn normalize_plan_json(json_str: &str) -> String {
                     step.insert("target".to_string(), serde_json::json!(""));
                 } else if action_lower.starts_with("run_shell")
                     || action_lower.starts_with("execute_shell")
+                    || action_lower.starts_with("shell:")
+                    || action_lower.starts_with("shell ")
                 {
-                    // LLM used "run_shell curl ..." or "execute_shell ls" as action —
+                    // LLM used "run_shell curl ...", "execute_shell ls", or "shell: cmd" as action —
                     // strip the tool name prefix and keep just the actual command
-                    let actual_cmd = action_str.split_once(' ').map(|x| x.1.trim()).unwrap_or("");
+                    let actual_cmd = if action_lower.starts_with("shell:") {
+                        action_str.strip_prefix("shell:").unwrap_or("").trim()
+                    } else if action_lower.starts_with("shell ") {
+                        action_str.strip_prefix("shell ").unwrap_or("").trim()
+                    } else {
+                        action_str.split_once(' ').map(|x| x.1.trim()).unwrap_or("")
+                    };
                     if actual_cmd.is_empty() {
-                        // Bare "run_shell" with no actual command — skip entirely
+                        // Bare tool name with no actual command — skip entirely
                         return None;
                     }
                     step.insert("type".to_string(), serde_json::json!("run_shell"));
