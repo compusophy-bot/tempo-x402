@@ -334,6 +334,20 @@ async fn main() -> std::io::Result<()> {
                 "Node identity, version, uptime",
             ),
             (
+                "events",
+                format!("{}/soul/events", self_url),
+                "$0.0001",
+                "100",
+                "Structured event log with filtering",
+            ),
+            (
+                "health",
+                format!("{}/soul/health", self_url),
+                "$0.0001",
+                "100",
+                "Computed health summary",
+            ),
+            (
                 "clone",
                 format!("{}/clone", self_url),
                 clone_price.as_deref().unwrap_or(&default_clone_price),

@@ -1360,6 +1360,48 @@ async fn open_prs(state: web::Data<NodeState>) -> HttpResponse {
     }))
 }
 
+/// GET /soul/events — queryable structured event log.
+/// Supports filters: level, code, category, plan_id, resolved, since, until, limit, offset.
+async fn soul_events(
+    state: web::Data<NodeState>,
+    query: web::Query<x402_soul::EventFilter>,
+) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    match soul_db.query_events(&query) {
+        Ok(events) => {
+            let count = events.len();
+            HttpResponse::Ok().json(serde_json::json!({
+                "events": events,
+                "count": count,
+            }))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()}))
+        }
+    }
+}
+
+/// GET /soul/health — computed health summary from events.
+async fn soul_health(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    let health = x402_soul::compute_health(soul_db);
+    HttpResponse::Ok().json(health)
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(soul_status))
         .route("/soul/chat", web::post().to(soul_chat))
@@ -1383,5 +1425,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         )
         .route("/soul/open-prs", web::get().to(open_prs))
         .route("/soul/diagnostics", web::get().to(soul_diagnostics))
-        .route("/soul/cleanup", web::post().to(soul_cleanup));
+        .route("/soul/cleanup", web::post().to(soul_cleanup))
+        .route("/soul/events", web::get().to(soul_events))
+        .route("/soul/health", web::get().to(soul_health));
 }

@@ -2809,6 +2809,35 @@ impl ToolExecutor {
                     }
                 }
 
+                // Emit structured event for peer discovery result
+                if let Some(ref db) = self.db {
+                    if enriched_peers.is_empty() {
+                        crate::events::emit_event(
+                            db,
+                            "warn",
+                            "peer.discovery.empty",
+                            "No peers found after discovery",
+                            Some(serde_json::json!({"parent_url": parent_url})),
+                            crate::events::EventRefs::default(),
+                        );
+                    } else {
+                        let peer_ids: Vec<&str> = enriched_peers
+                            .iter()
+                            .filter_map(|p| p.get("instance_id").and_then(|v| v.as_str()))
+                            .collect();
+                        crate::events::emit_event(
+                            db,
+                            "info",
+                            "peer.discovery.success",
+                            &format!("{} peers found: {:?}", enriched_peers.len(), peer_ids),
+                            Some(
+                                serde_json::json!({"count": enriched_peers.len(), "peers": peer_ids}),
+                            ),
+                            crate::events::EventRefs::default(),
+                        );
+                    }
+                }
+
                 let output = serde_json::to_string_pretty(&serde_json::json!({
                     "source": "http",
                     "parent_url": parent_url,
@@ -2835,6 +2864,16 @@ impl ToolExecutor {
                 })
             }
             Err(e) => {
+                if let Some(ref db) = self.db {
+                    crate::events::emit_event(
+                        db,
+                        "error",
+                        "peer.discovery.failed",
+                        &format!("HTTP request failed: {e}"),
+                        None,
+                        crate::events::EventRefs::default(),
+                    );
+                }
                 let duration_ms = start.elapsed().as_millis() as u64;
                 Ok(ToolResult {
                     stdout: String::new(),
@@ -3013,6 +3052,49 @@ impl ToolExecutor {
         } else {
             final_body
         };
+
+        // Emit structured event for paid call result
+        if let Some(ref db) = self.db {
+            if status.is_success() {
+                crate::events::emit_event(
+                    db,
+                    "info",
+                    "peer.call.success",
+                    &format!("Paid call succeeded: {url}"),
+                    Some(
+                        serde_json::json!({"status": status.as_u16(), "duration_ms": duration_ms}),
+                    ),
+                    crate::events::EventRefs {
+                        peer_url: Some(url.to_string()),
+                        ..Default::default()
+                    },
+                );
+            } else if status.as_u16() == 402 {
+                crate::events::emit_event(
+                    db,
+                    "warn",
+                    "peer.call.payment_failed",
+                    &format!("Payment required: {url}"),
+                    Some(serde_json::json!({"status": 402, "url": url})),
+                    crate::events::EventRefs {
+                        peer_url: Some(url.to_string()),
+                        ..Default::default()
+                    },
+                );
+            } else {
+                crate::events::emit_event(
+                    db,
+                    "warn",
+                    "peer.call.failed",
+                    &format!("Paid call returned {status}: {url}"),
+                    Some(serde_json::json!({"status": status.as_u16(), "url": url})),
+                    crate::events::EventRefs {
+                        peer_url: Some(url.to_string()),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
 
         Ok(ToolResult {
             stdout: body_truncated.clone(),
