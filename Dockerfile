@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates gosu git curl \
     jq python3 bc \
     xvfb xdotool scrot imagemagick \
+    gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI for soul PR/issue creation
@@ -72,6 +73,7 @@ COPY --from=builder /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH="/usr/local/cargo/bin:${PATH}"
+RUN chmod -R a+rX /usr/local/rustup /usr/local/cargo
 
 RUN chown -R app:app /app
 
