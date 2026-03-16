@@ -967,8 +967,8 @@ pub async fn run_benchmark_session(
         "Exercism Rust benchmark session complete"
     );
 
-    // Record multi-agent contribution tracking
-    if rescued > 0 || review_improved > 0 {
+    // Always record multi-agent contribution tracking (even if 0 — shows baseline)
+    {
         let _ = db.set_state(
             "benchmark_multiagent",
             &serde_json::json!({
@@ -982,6 +982,8 @@ pub async fn run_benchmark_session(
                 } else {
                     0.0
                 },
+                "has_review_peer": peer_url.is_some(),
+                "peer_failures_available": peer_failures.len(),
                 "measured_at": now,
             })
             .to_string(),
