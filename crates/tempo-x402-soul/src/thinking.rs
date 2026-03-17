@@ -331,6 +331,23 @@ impl ThinkingLoop {
                         "Cortex dream consolidation"
                     );
                 }
+                // Dream insights → durable rules: high-confidence insights become
+                // behavioral nudges that influence future goal/plan creation.
+                for insight in cortex.insights.iter().rev().take(3) {
+                    if insight.confidence > 0.7 {
+                        let _ = self.db.insert_nudge(
+                            "dream",
+                            &format!("[dream insight] {}", insight.pattern),
+                            2,
+                        );
+                        tracing::info!(
+                            confidence = format!("{:.0}%", insight.confidence * 100.0),
+                            "Dream insight promoted to nudge: {}",
+                            &insight.pattern.chars().take(80).collect::<String>(),
+                        );
+                    }
+                }
+
                 crate::cortex::save_cortex(&self.db, &cortex);
             }
 
@@ -1481,6 +1498,18 @@ impl ThinkingLoop {
         // Inject all cognitive systems into planning
         let gene_pool = crate::genesis::load_gene_pool(&self.db);
         let template_section = gene_pool.prompt_section(&goal.description);
+        // Record best matching template ID for feedback loop
+        let best_template_id = gene_pool
+            .suggest_templates(&goal.description, 1)
+            .first()
+            .map(|(t, _)| t.id);
+        if let Some(tid) = best_template_id {
+            let _ = self
+                .db
+                .set_state("active_genesis_template_id", &tid.to_string());
+        } else {
+            let _ = self.db.set_state("active_genesis_template_id", "");
+        }
         let cortex = crate::cortex::load_cortex(&self.db);
         let cortex_section = cortex.curiosity_report();
         let hive = crate::hivemind::load_hivemind(&self.db);
@@ -1493,20 +1522,48 @@ impl ThinkingLoop {
         let imagine_section = if imagined.is_empty() {
             String::new()
         } else {
-            let mut lines =
-                vec!["# Imagined Plans (generated from world model, no LLM)".to_string()];
-            for (i, plan) in imagined.iter().enumerate() {
+            let mut lines = vec![
+                "# Imagined Plans (COPY THESE — generated from world model, proven to work)"
+                    .to_string(),
+                "These step sequences are predicted to succeed. Use them directly:".to_string(),
+            ];
+            // Show best imagined plan as copyable JSON
+            if let Some(best) = imagined.iter().max_by(|a, b| {
+                a.predicted_success
+                    .partial_cmp(&b.predicted_success)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
                 lines.push(format!(
-                    "## Imagination {} ({:.0}% predicted success, novelty {:.0}%)",
-                    i + 1,
-                    plan.predicted_success * 100.0,
-                    plan.novelty * 100.0,
+                    "\nBest plan ({:.0}% predicted success):",
+                    best.predicted_success * 100.0
                 ));
-                lines.push(format!("Steps: {}", plan.steps.join(" → ")));
-                lines.push(format!("Reasoning: {}", plan.reasoning));
+                lines.push("```json".to_string());
+                let json_steps: Vec<String> = best
+                    .steps
+                    .iter()
+                    .map(|s| format!("  {{\"type\": \"{}\"}}", s))
+                    .collect();
+                lines.push(format!("[\n{}\n]", json_steps.join(",\n")));
+                lines.push("```".to_string());
+                lines.push(format!("Reasoning: {}", best.reasoning));
+            }
+            // Also list alternatives compactly
+            for (i, plan) in imagined.iter().enumerate().skip(0).take(3) {
+                lines.push(format!(
+                    "Alt {}: {} ({:.0}% success)",
+                    i + 1,
+                    plan.steps.join(" -> "),
+                    plan.predicted_success * 100.0,
+                ));
             }
             lines.join("\n")
         };
+        // Track imagination for evaluation
+        {
+            let mut eval = crate::evaluation::load_evaluation(&self.db);
+            eval.record_imagination(imagined.len() as u64, false, None);
+            crate::evaluation::save_evaluation(&self.db, &eval);
+        }
         crate::synthesis::save_synthesis(&self.db, &synth);
 
         let extra = [
@@ -2005,7 +2062,7 @@ impl ThinkingLoop {
             &goal.description,
         );
 
-        // Genesis: record successful plan as an evolved template
+        // Genesis: record successful plan + close template feedback loop
         {
             let step_types: Vec<String> = plan
                 .steps
@@ -2015,6 +2072,18 @@ impl ThinkingLoop {
             let instance_id = self.config.instance_id.as_deref().unwrap_or("unknown");
             let mut gene_pool = crate::genesis::load_gene_pool(&self.db);
             gene_pool.record_success(&goal.description, step_types, instance_id);
+            // Feedback: if this plan was influenced by a template, record its success
+            if let Some(tid_str) = self
+                .db
+                .get_state("active_genesis_template_id")
+                .ok()
+                .flatten()
+            {
+                if let Ok(tid) = tid_str.parse::<u64>() {
+                    gene_pool.record_template_success(tid);
+                    tracing::info!(template_id = tid, "Genesis template feedback: SUCCESS");
+                }
+            }
             crate::genesis::save_gene_pool(&self.db, &gene_pool);
         }
 
@@ -2093,6 +2162,20 @@ impl ThinkingLoop {
                 false,
                 &format!("{}: {}", step_desc, error),
             );
+            // Genesis feedback: record template failure
+            if let Some(tid_str) = self
+                .db
+                .get_state("active_genesis_template_id")
+                .ok()
+                .flatten()
+            {
+                if let Ok(tid) = tid_str.parse::<u64>() {
+                    let mut gene_pool = crate::genesis::load_gene_pool(&self.db);
+                    gene_pool.record_failure(tid);
+                    crate::genesis::save_gene_pool(&self.db, &gene_pool);
+                    tracing::info!(template_id = tid, "Genesis template feedback: FAILURE");
+                }
+            }
             crate::events::emit_event(
                 &self.db,
                 "error",

@@ -273,11 +273,13 @@ impl Evaluation {
     }
 
     /// Snapshot accuracy before a peer sync (for colony benefit measurement).
+    /// Records the count of records so we can compare ONLY new predictions after sync.
     pub fn pre_sync_snapshot(&mut self) {
-        let accuracy = self.compute_overall_accuracy();
         let now = chrono::Utc::now().timestamp();
-        self.colony.accuracy_before_sync = accuracy;
-        self.sync_accuracy_snapshots.push((now, accuracy));
+        // Use RECENT accuracy (last 30 predictions), not all-time
+        let recent_acc = self.compute_recent_accuracy(30);
+        self.colony.accuracy_before_sync = recent_acc;
+        self.sync_accuracy_snapshots.push((now, recent_acc));
         if self.sync_accuracy_snapshots.len() > 50 {
             self.sync_accuracy_snapshots
                 .drain(..self.sync_accuracy_snapshots.len() - 50);
@@ -285,16 +287,30 @@ impl Evaluation {
     }
 
     /// Measure accuracy after a peer sync and compute benefit.
+    /// Compares RECENT predictions (not all-time) to detect actual improvement.
     pub fn post_sync_measurement(&mut self) {
-        let accuracy = self.compute_overall_accuracy();
-        self.colony.accuracy_after_sync = accuracy;
-        self.colony.sync_delta = accuracy - self.colony.accuracy_before_sync;
+        let recent_acc = self.compute_recent_accuracy(30);
+        self.colony.accuracy_after_sync = recent_acc;
+        self.colony.sync_delta = recent_acc - self.colony.accuracy_before_sync;
         self.colony.syncs_measured += 1;
 
         // Running average of sync benefit
         let n = self.colony.syncs_measured as f32;
         self.colony.avg_sync_benefit =
             self.colony.avg_sync_benefit * ((n - 1.0) / n) + self.colony.sync_delta * (1.0 / n);
+    }
+
+    /// Compute accuracy of the most recent N predictions.
+    fn compute_recent_accuracy(&self, n: usize) -> f32 {
+        let recent: Vec<&PredictionRecord> = self.records.iter().rev().take(n).collect();
+        if recent.is_empty() {
+            return 0.5;
+        }
+        let correct = recent
+            .iter()
+            .filter(|r| (r.predicted_prob > 0.5) == r.actual)
+            .count();
+        correct as f32 / recent.len() as f32
     }
 
     // ── Compute Metrics ──────────────────────────────────────────────

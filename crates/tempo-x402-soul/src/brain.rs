@@ -272,13 +272,16 @@ impl Brain {
         // Gradients for w1, b1
         let (d_w1, d_b1, _) = backward_layer(input, &d_z1, &self.w1, INPUT_SIZE, HIDDEN_SIZE);
 
-        // ── Update weights (SGD + weight decay) ──
-        update_weights(&mut self.w1, &d_w1, LEARNING_RATE, WEIGHT_DECAY);
-        update_weights(&mut self.b1, &d_b1, LEARNING_RATE, 0.0);
-        update_weights(&mut self.w2, &d_w2, LEARNING_RATE, WEIGHT_DECAY);
-        update_weights(&mut self.b2, &d_b2, LEARNING_RATE, 0.0);
-        update_weights(&mut self.w3, &d_w3, LEARNING_RATE, WEIGHT_DECAY);
-        update_weights(&mut self.b3, &d_b3, LEARNING_RATE, 0.0);
+        // ── Update weights (SGD + weight decay + LR decay) ──
+        // Decay learning rate after 100K steps to prevent overfitting.
+        // LR = base_lr / (1 + steps/100K). At 600K steps → LR = 0.01/7 ≈ 0.0014.
+        let lr = LEARNING_RATE / (1.0 + self.train_steps as f32 / 100_000.0);
+        update_weights(&mut self.w1, &d_w1, lr, WEIGHT_DECAY);
+        update_weights(&mut self.b1, &d_b1, lr, 0.0);
+        update_weights(&mut self.w2, &d_w2, lr, WEIGHT_DECAY);
+        update_weights(&mut self.b2, &d_b2, lr, 0.0);
+        update_weights(&mut self.w3, &d_w3, lr, WEIGHT_DECAY);
+        update_weights(&mut self.b3, &d_b3, lr, 0.0);
 
         self.train_steps += 1;
         self.running_loss = 0.95 * self.running_loss + 0.05 * total_loss;
