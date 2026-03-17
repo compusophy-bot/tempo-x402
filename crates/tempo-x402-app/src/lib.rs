@@ -1011,24 +1011,13 @@ fn DashboardPage() -> impl IntoView {
     });
 
     view! {
-        <div class="page dashboard">
-            <div class="dashboard-header">
-                <h1>"Node Dashboard"</h1>
-                <div class="live-badge">
-                    <span class="live-dot"></span>
-                    "Live"
-                    {move || {
-                        let _ = tick.get();
-                    }}
-                </div>
-            </div>
-
+        <div class="tmux">
             <Show when=move || loading.get() && info.get().is_none() fallback=|| ()>
-                <p class="loading">"Loading dashboard..."</p>
+                <p class="loading" style="padding: 20px;">"Loading dashboard..."</p>
             </Show>
 
             <Show when=move || error.get().is_some() && info.get().is_none() fallback=|| ()>
-                <p class="error-text">{move || error.get().unwrap_or_default()}</p>
+                <p class="error-text" style="padding: 20px;">{move || error.get().unwrap_or_default()}</p>
             </Show>
 
             <Show when=move || info.get().is_some() fallback=|| ()>
@@ -1137,52 +1126,319 @@ fn DashboardPage() -> impl IntoView {
                         "\u{25C6}"
                     };
 
+                    // Extract cognitive system data from soul_status
+                    let soul_data = soul_status.get().unwrap_or_default();
+                    let fe = soul_data.get("free_energy");
+                    let fe_total = fe.and_then(|f| f.get("F")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                    let fe_regime = fe.and_then(|f| f.get("regime")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                    let fe_trend = fe.and_then(|f| f.get("trend")).and_then(|v| v.as_str()).unwrap_or("0").to_string();
+                    let cortex_data = soul_data.get("cortex");
+                    let genesis_data = soul_data.get("genesis");
+                    let hivemind_data = soul_data.get("hivemind");
+                    let synthesis_data = soul_data.get("synthesis");
+                    let bench_data = soul_data.get("benchmark");
+                    let brain_data = soul_data.get("brain");
+                    let eval_data = soul_data.get("evaluation");
+                    let total_cycles = soul_data.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+
                     view! {
-                        // Stats cards
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <span class="stat-label">"Status"</span>
-                                <span class="stat-value">
-                                    <span class="status-dot status-dot--green"></span>
-                                    " Online"
+                        // ═══ TMUX STATUS BAR ═══
+                        <div class="tmux-bar">
+                            <div class="tmux-bar-section">
+                                <span class="tmux-bar-value">"x402"</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-label">"v"</span>
+                                <span class="tmux-bar-value">{version.clone()}</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-value">{format_uptime(uptime)}</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-label">"F="</span>
+                                <span class="tmux-bar-value">{fe_total.clone()}</span>
+                                <span class={format!("tmux-tag tmux-tag--{}", match fe_regime.as_str() {
+                                    "EXPLORE" => "blue", "LEARN" => "purple", "EXPLOIT" => "green", "ANOMALY" => "red", _ => "blue"
+                                })}>{fe_regime.clone()}</span>
+                            </div>
+                            <div class="tmux-bar-section">
+                                <span class="tmux-bar-label">"fitness"</span>
+                                <span class="tmux-bar-value">{format!("{:.0}%", fitness_total * 100.0)}</span>
+                                <span class={trend_class}>
+                                    {trend_arrow}{format!("{:+.3}", fitness_trend)}
                                 </span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Version"</span>
-                                <span class="stat-value">{format!("v{}", version)}</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Uptime"</span>
-                                <span class="stat-value">{format_uptime(uptime)}</span>
-                            </div>
-                        </div>
-
-                        // Analytics + fitness + peers stats
-                        <div class="stats-grid">
-                            <div class="stat-card">
-                                <span class="stat-label">"Fitness"</span>
-                                <span class="stat-value">{format!("{:.0}%", fitness_total * 100.0)}</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Peers"</span>
-                                <span class="stat-value">{peer_count.to_string()}</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Total Payments"</span>
-                                <span class="stat-value">{total_payments.to_string()}</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Revenue"</span>
-                                <span class="stat-value">{total_revenue_usd}</span>
-                            </div>
-                            <div class="stat-card">
-                                <span class="stat-label">"Endpoints"</span>
-                                <span class="stat-value">{active_endpoints.to_string()}</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-value">{total_cycles.to_string()}</span>
+                                <span class="tmux-bar-label">"cycles"</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-value">{peer_count.to_string()}</span>
+                                <span class="tmux-bar-label">"peers"</span>
+                                <span class="tmux-bar-divider">"|"</span>
+                                <span class="tmux-bar-value">{total_payments.to_string()}</span>
+                                <span class="tmux-bar-label">"payments"</span>
+                                {move || { let _ = tick.get(); }}
                             </div>
                         </div>
 
-                        // Fitness panel
-                        {if fitness.is_some() {
+                        // ═══ TMUX 3-COLUMN GRID ═══
+                        <div class="tmux-grid">
+
+                        // ─── LEFT PANE: AGENT ───
+                        <div class="tmux-pane">
+                            <div class="tmux-pane-title">"AGENT"</div>
+
+                            // Fitness bars
+                            <div class="tmux-section">
+                                <div class="tmux-section-title">"Fitness"</div>
+                                {components.iter().map(|(name, value)| {
+                                    let pct = (*value * 100.0) as u64;
+                                    let fill_class = format!("tmux-bar-fill tmux-bar-fill--{}", name);
+                                    view! {
+                                        <div class="tmux-kv">
+                                            <span class="tmux-kv-label">{name.to_string()}</span>
+                                            <span class="tmux-kv-value">{format!("{}%", pct)}</span>
+                                        </div>
+                                        <div class="tmux-bar-mini">
+                                            <div class={fill_class} style=format!("width: {}%", pct)></div>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+
+                            // Peers
+                            <div class="tmux-section">
+                                <div class="tmux-section-title">{format!("Peers ({})", peer_count)}</div>
+                                {children.iter().map(|child| {
+                                    let id = child.get("instance_id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    let status = child.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    let dot_class = if status == "running" { "tmux-peer-dot tmux-peer-dot--running" } else { "tmux-peer-dot tmux-peer-dot--stopped" };
+                                    let short = if id.len() > 10 { format!("{}...", &id[..10]) } else { id };
+                                    view! {
+                                        <div class="tmux-peer">
+                                            <span class={dot_class}></span>
+                                            <span>{short}</span>
+                                            <span class="tmux-tag tmux-tag--green">{status}</span>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+
+                            // Endpoints compact
+                            <div class="tmux-section">
+                                <div class="tmux-section-title">{format!("Endpoints ({})", ep_count)}</div>
+                                {eps.iter().take(8).map(|ep| {
+                                    let slug = ep.get("slug").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    let price = ep.get("price").and_then(|v| v.as_str()).unwrap_or("0").to_string();
+                                    let ep_stats = analytics_endpoints.iter().find(|a| a.get("slug").and_then(|v| v.as_str()) == Some(&slug));
+                                    let payments = ep_stats.and_then(|s| s.get("payment_count")).and_then(|v| v.as_i64()).unwrap_or(0);
+                                    view! {
+                                        <div class="tmux-endpoint">
+                                            <span class="tmux-endpoint-slug">{format!("/g/{}", slug)}</span>
+                                            <span class="tmux-endpoint-stat">{format!("${}", price)}</span>
+                                            <span class="tmux-endpoint-stat">{format!("{}pay", payments)}</span>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+
+                            // Clone
+                            <div class="tmux-section">
+                                <button
+                                    class="btn clone-btn"
+                                    style="width: 100%; font-size: 11px; padding: 4px 8px;"
+                                    disabled=move || {
+                                        if !clone_available { return true; }
+                                        let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+                                        wallet.get().mode == WalletMode::Disconnected || clone_loading.get()
+                                    }
+                                    on:click=move |_| {
+                                        if !clone_available { return; }
+                                        let (wallet, _) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+                                        let w = wallet.get();
+                                        set_clone_loading.set(true);
+                                        set_clone_result.set(None);
+                                        spawn_local(async move {
+                                            let result = api::clone_instance(&w).await;
+                                            set_clone_result.set(Some(result));
+                                            set_clone_loading.set(false);
+                                        });
+                                    }
+                                >
+                                    {let cp = clone_price.clone(); move || if clone_loading.get() {
+                                        "Cloning...".to_string()
+                                    } else if clone_available {
+                                        format!("Clone ({})", cp)
+                                    } else {
+                                        "Clone N/A".to_string()
+                                    }}
+                                </button>
+                            </div>
+                        </div>
+
+                        // ─── CENTER PANE: SOUL ───
+                        <div class="tmux-pane">
+                            <div class="tmux-pane-title">"SOUL"</div>
+                            <SoulPanel status=soul_status />
+                        </div>
+
+                        // ─── RIGHT PANE: INTELLIGENCE ───
+                        <div class="tmux-pane">
+                            <div class="tmux-pane-title">"INTELLIGENCE"</div>
+
+                            // Free Energy
+                            {fe.map(|f| {
+                                let comps = f.get("components").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-fe">
+                                            <span class="tmux-fe-value">{"F="}{fe_total.clone()}</span>
+                                            <span class={format!("tmux-fe-regime tmux-fe-regime--{}", fe_regime.to_lowercase())}>{fe_regime.clone()}</span>
+                                        </div>
+                                        <div class="tmux-kv">
+                                            <span class="tmux-kv-label">"trend"</span>
+                                            <span class="tmux-kv-value">{fe_trend.clone()}</span>
+                                        </div>
+                                        {comps.iter().take(5).map(|c| {
+                                            let sys = c.get("system").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                            let surp = c.get("surprise").and_then(|v| v.as_str()).unwrap_or("0").to_string();
+                                            view! { <div class="tmux-kv"><span class="tmux-kv-label">{sys}</span><span class="tmux-kv-value">{surp}</span></div> }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }
+                            })}
+
+                            // Benchmark
+                            {bench_data.map(|b| {
+                                let pass = b.get("pass_at_1").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let elo = b.get("elo_display").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                let passed = b.get("problems_passed").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let attempted = b.get("problems_attempted").and_then(|v| v.as_u64()).unwrap_or(0);
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Benchmark"</div>
+                                        <div class="tmux-metric-big">{format!("{:.1}%", pass)}</div>
+                                        <div class="tmux-metric-label">"pass@1"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"ELO"</span><span class="tmux-kv-value">{elo}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"solved"</span><span class="tmux-kv-value">{format!("{}/{}", passed, attempted)}</span></div>
+                                    </div>
+                                }
+                            })}
+
+                            // Brain
+                            {brain_data.map(|b| {
+                                let params = b.get("parameters").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let steps = b.get("train_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let loss = b.get("running_loss").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Brain"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"params"</span><span class="tmux-kv-value">{format!("{}K", params/1000)}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"steps"</span><span class="tmux-kv-value">{steps.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"loss"</span><span class="tmux-kv-value">{format!("{:.4}", loss)}</span></div>
+                                    </div>
+                                }
+                            })}
+
+                            // Cortex
+                            {cortex_data.map(|c| {
+                                let experiences = c.get("total_experiences").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let accuracy = c.get("prediction_accuracy").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                let drive = c.get("emotion").and_then(|e| e.get("drive")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                let valence = c.get("emotion").and_then(|e| e.get("valence")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let arousal = c.get("emotion").and_then(|e| e.get("arousal")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let dreams = c.get("dream_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let edges = c.get("causal_edges").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let drive_tag = match drive.as_str() {
+                                    "explore" => "blue", "exploit" => "green", "avoid" => "red", _ => "purple"
+                                };
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Cortex"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"drive"</span><span class={format!("tmux-tag tmux-tag--{}", drive_tag)}>{drive}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"accuracy"</span><span class="tmux-kv-value">{accuracy}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"valence"</span><span class="tmux-kv-value">{format!("{:+.2}", valence)}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"arousal"</span><span class="tmux-kv-value">{format!("{:.2}", arousal)}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"experiences"</span><span class="tmux-kv-value">{experiences.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"causal edges"</span><span class="tmux-kv-value">{edges.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"dreams"</span><span class="tmux-kv-value">{dreams.to_string()}</span></div>
+                                    </div>
+                                }
+                            })}
+
+                            // Genesis
+                            {genesis_data.map(|g| {
+                                let templates = g.get("templates").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let generation = g.get("generation").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let crossovers = g.get("total_crossovers").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let mutations = g.get("total_mutations").and_then(|v| v.as_u64()).unwrap_or(0);
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Genesis"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"templates"</span><span class="tmux-kv-value">{templates.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"generation"</span><span class="tmux-kv-value">{generation.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"crossovers"</span><span class="tmux-kv-value">{crossovers.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"mutations"</span><span class="tmux-kv-value">{mutations.to_string()}</span></div>
+                                    </div>
+                                }
+                            })}
+
+                            // Hivemind
+                            {hivemind_data.map(|h| {
+                                let trails = h.get("total_trails").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let deposits = h.get("total_deposits").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let evap = h.get("evaporation_cycles").and_then(|v| v.as_u64()).unwrap_or(0);
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Hivemind"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"trails"</span><span class="tmux-kv-value">{trails.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"deposits"</span><span class="tmux-kv-value">{deposits.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"evaporation"</span><span class="tmux-kv-value">{evap.to_string()}</span></div>
+                                    </div>
+                                }
+                            })}
+
+                            // Synthesis
+                            {synthesis_data.map(|s| {
+                                let state = s.get("state").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                let preds = s.get("total_predictions").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let conflicts = s.get("conflicts").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let imagined = s.get("total_imagined").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let narrative = s.get("self_model").and_then(|m| m.get("narrative")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let state_tag = match state.as_str() {
+                                    "coherent" => "green", "conflicted" => "yellow", "exploring" => "blue", "exploiting" => "green", "stuck" => "red", _ => "purple"
+                                };
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Synthesis"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"state"</span><span class={format!("tmux-tag tmux-tag--{}", state_tag)}>{state}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"predictions"</span><span class="tmux-kv-value">{preds.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"conflicts"</span><span class="tmux-kv-value">{conflicts.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"imagined"</span><span class="tmux-kv-value">{imagined.to_string()}</span></div>
+                                        {if !narrative.is_empty() {
+                                            Some(view! { <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.3;">{narrative}</div> })
+                                        } else { None }}
+                                    </div>
+                                }
+                            })}
+
+                            // Evaluation
+                            {eval_data.map(|e| {
+                                let records = e.get("total_records").and_then(|v| v.as_u64()).unwrap_or(0);
+                                let colony_benefit = e.get("colony_benefit").and_then(|c| c.get("avg_sync_benefit")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let syncs = e.get("colony_benefit").and_then(|c| c.get("syncs_measured")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                view! {
+                                    <div class="tmux-section">
+                                        <div class="tmux-section-title">"Evaluation"</div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"records"</span><span class="tmux-kv-value">{records.to_string()}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"colony delta"</span><span class="tmux-kv-value">{format!("{:+.3}", colony_benefit)}</span></div>
+                                        <div class="tmux-kv"><span class="tmux-kv-label">"syncs"</span><span class="tmux-kv-value">{syncs.to_string()}</span></div>
+                                    </div>
+                                }
+                            })}
+                        </div>
+
+                        </div> // end tmux-grid
+
+                        // OLD LAYOUT REMOVED — now in tmux grid above
+                        // (keeping marker for safe deletion)
+                        {if false {
                             Some(view! {
                                 <div class="fitness-panel">
                                     <h2>"Fitness"</h2>

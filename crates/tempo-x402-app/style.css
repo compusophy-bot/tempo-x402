@@ -2349,3 +2349,409 @@ a.node-address:hover { text-decoration: underline; }
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
+
+/* ============================================================
+   TMUX-INSPIRED DASHBOARD GRID LAYOUT
+   Dense, terminal-aesthetic, information-rich panels
+   ============================================================ */
+
+/* 1. Full viewport container */
+.tmux {
+    height: calc(100vh - 64px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* 2. Status bar */
+.tmux-bar {
+    height: 32px;
+    min-height: 32px;
+    background: var(--bg-surface);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    border-bottom: 1px solid var(--accent);
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 12px;
+    color: var(--success);
+}
+
+/* 3. Bar sections */
+.tmux-bar-section {
+    display: inline-flex;
+    gap: 12px;
+    align-items: center;
+}
+
+/* 4. Bar label */
+.tmux-bar-label {
+    color: var(--text-muted);
+}
+
+/* 5. Bar value */
+.tmux-bar-value {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+/* 6. Bar divider */
+.tmux-bar-divider {
+    color: var(--text-dim);
+    margin: 0 4px;
+}
+
+/* 7. Main grid */
+.tmux-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 280px 1fr 300px;
+    min-height: 0;
+    border-top: 1px solid var(--border);
+}
+
+/* 8. Panes */
+.tmux-pane {
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tmux-pane:last-child {
+    border-right: none;
+}
+
+/* 9. Pane scrollbar */
+.tmux-pane::-webkit-scrollbar {
+    width: 4px;
+}
+
+.tmux-pane::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 2px;
+}
+
+.tmux-pane::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* 10. Pane title */
+.tmux-pane-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+}
+
+/* 11. Section */
+.tmux-section {
+    margin-bottom: 4px;
+}
+
+/* 12. Section title */
+.tmux-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+/* 13. Key-value rows */
+.tmux-kv {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.tmux-kv-label {
+    color: var(--text-muted);
+}
+
+.tmux-kv-value {
+    color: var(--text);
+}
+
+/* 14. Mini progress bars */
+.tmux-bar-mini {
+    height: 16px;
+    background: var(--bg-elevated);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 2px;
+}
+
+.tmux-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.tmux-bar-fill--economic {
+    background: var(--warning);
+}
+
+.tmux-bar-fill--execution {
+    background: var(--primary);
+}
+
+.tmux-bar-fill--evolution {
+    background: var(--success);
+}
+
+.tmux-bar-fill--coordination {
+    background: var(--accent);
+}
+
+.tmux-bar-fill--introspection {
+    background: var(--info);
+}
+
+.tmux-bar-fill--prediction {
+    background: #a855f7;
+}
+
+/* 15. Tags */
+.tmux-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+.tmux-tag--green {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.tmux-tag--yellow {
+    background: var(--warning-bg);
+    color: var(--warning);
+}
+
+.tmux-tag--red {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+.tmux-tag--blue {
+    background: var(--info-bg);
+    color: var(--info);
+}
+
+.tmux-tag--purple {
+    background: rgba(168, 85, 247, 0.12);
+    color: #a855f7;
+}
+
+/* 16. Thought entries */
+.tmux-thought {
+    font-size: 11px;
+    padding: 4px 6px;
+    border-left: 2px solid var(--border);
+    margin-bottom: 2px;
+    cursor: pointer;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-secondary);
+}
+
+.tmux-thought:hover {
+    border-color: var(--primary);
+    color: var(--text);
+}
+
+/* 17. Expanded thought */
+.tmux-thought--expanded {
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* 18. Goal cards */
+.tmux-goal {
+    padding: 4px 6px;
+    border-radius: 4px;
+    background: var(--bg-elevated);
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.tmux-goal-desc {
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* 19. Big metric */
+.tmux-metric-big {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+}
+
+.tmux-metric-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* 20. Peer entries */
+.tmux-peer {
+    font-size: 11px;
+    padding: 3px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tmux-peer-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.tmux-peer-dot--running {
+    background: var(--success);
+}
+
+.tmux-peer-dot--stopped {
+    background: var(--error);
+}
+
+/* 21. Nudge input */
+.tmux-nudge {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.tmux-nudge input {
+    flex: 1;
+    font-size: 11px;
+    padding: 4px 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+}
+
+.tmux-nudge input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.tmux-nudge button {
+    padding: 4px 8px;
+    font-size: 11px;
+    background: var(--primary);
+    color: #ffffff;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+}
+
+.tmux-nudge button:hover {
+    background: var(--primary-dark);
+}
+
+/* 22. Endpoint rows */
+.tmux-endpoint {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.tmux-endpoint-slug {
+    color: var(--accent);
+}
+
+.tmux-endpoint-stat {
+    color: var(--text-muted);
+    text-align: right;
+}
+
+/* 23. Free energy display */
+.tmux-fe-value {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.tmux-fe-regime {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.tmux-fe-regime--EXPLORE {
+    background: var(--accent-glow);
+    color: var(--accent);
+}
+
+.tmux-fe-regime--LEARN {
+    background: var(--primary-glow);
+    color: var(--primary);
+}
+
+.tmux-fe-regime--EXPLOIT {
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.tmux-fe-regime--ANOMALY {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+/* 24. Outcome entries */
+.tmux-outcome {
+    font-size: 11px;
+    padding: 2px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.tmux-outcome-icon {
+    width: 14px;
+    text-align: center;
+}
+
+/* 25. Responsive breakpoints */
+@media (max-width: 900px) {
+    .tmux-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tmux-pane {
+        max-height: 33vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .tmux-pane:last-child {
+        border-bottom: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .tmux-bar {
+        font-size: 10px;
+    }
+}
