@@ -51,6 +51,7 @@ RUN apt-get update && apt-get install -y \
     jq python3 bc \
     xvfb xdotool scrot imagemagick \
     gcc libc6-dev \
+    libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI for soul PR/issue creation
