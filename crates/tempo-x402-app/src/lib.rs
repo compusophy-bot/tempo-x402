@@ -1202,24 +1202,6 @@ fn DashboardPage() -> impl IntoView {
                                 }).collect::<Vec<_>>()}
                             </div>
 
-                            // Peers
-                            <div class="tmux-section">
-                                <div class="tmux-section-title">{format!("Peers ({})", peer_count)}</div>
-                                {children.iter().map(|child| {
-                                    let id = child.get("instance_id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                                    let status = child.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-                                    let dot_class = if status == "running" { "tmux-peer-dot tmux-peer-dot--running" } else { "tmux-peer-dot tmux-peer-dot--stopped" };
-                                    let short = if id.len() > 10 { format!("{}...", &id[..10]) } else { id };
-                                    view! {
-                                        <div class="tmux-peer">
-                                            <span class={dot_class}></span>
-                                            <span>{short}</span>
-                                            <span class="tmux-tag tmux-tag--green">{status}</span>
-                                        </div>
-                                    }
-                                }).collect::<Vec<_>>()}
-                            </div>
-
                             // Endpoints compact
                             <div class="tmux-section">
                                 <div class="tmux-section-title">{format!("Endpoints ({})", ep_count)}</div>
@@ -1404,6 +1386,97 @@ fn DashboardPage() -> impl IntoView {
                         </div>
 
                         </div> // end tmux-grid
+
+                        // ═══ TERMINAL PANEL (bottom, full width) ═══
+                        <div class="tmux-terminal">
+                            <div class="tmux-terminal-tabs">
+                                <button class="tmux-terminal-tab tmux-terminal-tab--active">"NETWORK"</button>
+                                <button class="tmux-terminal-tab">"ACTIVITY"</button>
+                                <button class="tmux-terminal-tab">"ENDPOINTS"</button>
+                            </div>
+                            <div class="tmux-terminal-body">
+                                // Peer network as terminal rows
+                                {children.iter().map(|child| {
+                                    let id = child.get("instance_id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    let url = child.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let status = child.get("status").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                    let dot_class = if status == "running" { "tmux-peer-dot tmux-peer-dot--running" } else { "tmux-peer-dot tmux-peer-dot--stopped" };
+                                    let short = if id.len() > 12 { format!("{}...", &id[..12]) } else { id };
+                                    view! {
+                                        <div class="tmux-terminal-row">
+                                            <span class={dot_class}></span>
+                                            <span class="tmux-terminal-badge tmux-terminal-badge--peer">"PEER"</span>
+                                            <span>{short}</span>
+                                            <span class="tmux-terminal-msg">
+                                                {if !url.is_empty() {
+                                                    view! { <a href={url.clone()} target="_blank" style="color: var(--accent);">{url}</a> }.into_view()
+                                                } else {
+                                                    view! { <span style="color: var(--text-dim);">"no url"</span> }.into_view()
+                                                }}
+                                            </span>
+                                            <span class="tmux-tag tmux-tag--green">{status}</span>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+
+                                // Hivemind pheromone activity
+                                {
+                                    let hive_data = soul_data.get("hivemind");
+                                    let deposits = hive_data.and_then(|h| h.get("total_deposits")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let trails = hive_data.and_then(|h| h.get("total_trails")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let evap = hive_data.and_then(|h| h.get("evaporation_cycles")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let attractants = hive_data
+                                        .and_then(|h| h.get("top_attractants"))
+                                        .and_then(|v| v.as_array())
+                                        .cloned()
+                                        .unwrap_or_default();
+
+                                    view! {
+                                        <div class="tmux-terminal-row">
+                                            <span class="tmux-terminal-badge tmux-terminal-badge--sync">"HIVE"</span>
+                                            <span class="tmux-terminal-msg">
+                                                {format!("{} trails, {} deposits, {} evaporation cycles", trails, deposits, evap)}
+                                            </span>
+                                        </div>
+                                        {attractants.iter().take(3).map(|a| {
+                                            let resource = a.get("resource").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                                            let intensity = a.get("intensity").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                            let reinforced = a.get("reinforced").and_then(|v| v.as_u64()).unwrap_or(0);
+                                            view! {
+                                                <div class="tmux-terminal-row">
+                                                    <span class="tmux-terminal-ts"></span>
+                                                    <span class="tmux-terminal-badge tmux-terminal-badge--tx">"TRAIL"</span>
+                                                    <span>{resource}</span>
+                                                    <span class="tmux-terminal-msg">
+                                                        {format!("intensity {:.0}% reinforced {}x", intensity * 100.0, reinforced)}
+                                                    </span>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    }
+                                }
+
+                                // Colony sync info
+                                {
+                                    let eval = soul_data.get("evaluation");
+                                    let syncs = eval.and_then(|e| e.get("colony_benefit")).and_then(|c| c.get("syncs_measured")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let delta = eval.and_then(|e| e.get("colony_benefit")).and_then(|c| c.get("avg_sync_benefit")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    if syncs > 0 {
+                                        Some(view! {
+                                            <div class="tmux-terminal-row">
+                                                <span class="tmux-terminal-badge tmux-terminal-badge--sync">"SYNC"</span>
+                                                <span class="tmux-terminal-msg">
+                                                    {format!("{} cognitive syncs completed, avg benefit {:+.3}", syncs, delta)}
+                                                </span>
+                                            </div>
+                                        })
+                                    } else {
+                                        None
+                                    }
+                                }
+                            </div>
+                        </div>
+
                         // Old layout sections removed — everything is in the tmux grid now
                         {if false {
                             Some(view! {
