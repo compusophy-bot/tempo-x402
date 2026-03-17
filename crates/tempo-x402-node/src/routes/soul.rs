@@ -1736,5 +1736,149 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         // Cognitive architecture sharing endpoints
         .route("/soul/cortex", web::get().to(get_cortex))
         .route("/soul/genesis", web::get().to(get_genesis))
-        .route("/soul/hivemind", web::get().to(get_hivemind));
+        .route("/soul/hivemind", web::get().to(get_hivemind))
+        // Admin: direct command execution (mind meld)
+        .route("/soul/admin/exec", web::post().to(admin_exec))
+        .route(
+            "/soul/admin/workspace-reset",
+            web::post().to(admin_workspace_reset),
+        )
+        .route("/soul/admin/cargo-check", web::post().to(admin_cargo_check));
+}
+
+// ── Admin: Mind Meld (direct command execution) ──
+
+/// Verify admin token from SOUL_ADMIN_TOKEN env var or fall back to first 16 chars of GEMINI_API_KEY.
+fn verify_admin(req: &actix_web::HttpRequest) -> bool {
+    let token = std::env::var("SOUL_ADMIN_TOKEN")
+        .or_else(|_| std::env::var("GEMINI_API_KEY").map(|k| k.chars().take(16).collect()))
+        .unwrap_or_default();
+    if token.is_empty() {
+        return false;
+    }
+    req.headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.strip_prefix("Bearer ").unwrap_or(v) == token)
+        .unwrap_or(false)
+}
+
+#[derive(Deserialize)]
+struct ExecRequest {
+    command: String,
+    #[serde(default = "default_timeout")]
+    timeout_secs: u64,
+}
+fn default_timeout() -> u64 {
+    30
+}
+
+/// POST /soul/admin/exec — execute a shell command directly on the agent.
+/// Auth: Bearer token (SOUL_ADMIN_TOKEN or first 16 chars of GEMINI_API_KEY).
+async fn admin_exec(req: actix_web::HttpRequest, body: web::Json<ExecRequest>) -> HttpResponse {
+    if !verify_admin(&req) {
+        return HttpResponse::Unauthorized()
+            .json(serde_json::json!({"error": "invalid admin token"}));
+    }
+
+    let timeout = std::time::Duration::from_secs(body.timeout_secs.min(120));
+    match tokio::time::timeout(
+        timeout,
+        tokio::process::Command::new("bash")
+            .arg("-c")
+            .arg(&body.command)
+            .output(),
+    )
+    .await
+    {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            HttpResponse::Ok().json(serde_json::json!({
+                "exit_code": output.status.code().unwrap_or(-1),
+                "stdout": &stdout[..stdout.len().min(8000)],
+                "stderr": &stderr[..stderr.len().min(4000)],
+            }))
+        }
+        Ok(Err(e)) => {
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": format!("{e}")}))
+        }
+        Err(_) => {
+            HttpResponse::GatewayTimeout().json(serde_json::json!({"error": "command timed out"}))
+        }
+    }
+}
+
+/// POST /soul/admin/workspace-reset — reset workspace to clean state.
+async fn admin_workspace_reset(req: actix_web::HttpRequest) -> HttpResponse {
+    if !verify_admin(&req) {
+        return HttpResponse::Unauthorized()
+            .json(serde_json::json!({"error": "invalid admin token"}));
+    }
+
+    let ws = std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/data/workspace".to_string());
+    let script = format!(
+        "cd {ws} && \
+         git stash 2>/dev/null; \
+         git fetch origin main 2>&1 && \
+         git reset --hard origin/main 2>&1 && \
+         git clean -fd 2>&1 && \
+         echo '=== WORKSPACE RESET OK ===' && \
+         git log --oneline -3"
+    );
+
+    match tokio::process::Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .await
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            HttpResponse::Ok().json(serde_json::json!({
+                "success": output.status.success(),
+                "stdout": stdout.to_string(),
+                "stderr": stderr.to_string(),
+            }))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": format!("{e}")}))
+        }
+    }
+}
+
+/// POST /soul/admin/cargo-check — run cargo check and return results.
+async fn admin_cargo_check(req: actix_web::HttpRequest) -> HttpResponse {
+    if !verify_admin(&req) {
+        return HttpResponse::Unauthorized()
+            .json(serde_json::json!({"error": "invalid admin token"}));
+    }
+
+    let ws = std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/data/workspace".to_string());
+    let script = format!("cd {ws} && cargo check --workspace 2>&1 | tail -40");
+
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        tokio::process::Command::new("bash")
+            .arg("-c")
+            .arg(&script)
+            .output(),
+    )
+    .await
+    {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let passed = output.status.success();
+            HttpResponse::Ok().json(serde_json::json!({
+                "passed": passed,
+                "output": stdout.to_string(),
+            }))
+        }
+        Ok(Err(e)) => {
+            HttpResponse::InternalServerError().json(serde_json::json!({"error": format!("{e}")}))
+        }
+        Err(_) => HttpResponse::GatewayTimeout()
+            .json(serde_json::json!({"error": "cargo check timed out (120s)"})),
+    }
 }
