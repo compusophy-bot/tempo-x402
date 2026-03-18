@@ -1477,8 +1477,9 @@ fn DashboardPage() -> impl IntoView {
                             </div>
                         </div>
 
-                        // Old layout sections removed — everything is in the tmux grid now
-                        {if false {
+                        // Old layout sections — hidden, kept for compilation only
+                        <div style="display:none!important;height:0;overflow:hidden;position:absolute;pointer-events:none">
+                        {if true {
                             Some(view! {
                                 <div class="fitness-panel">
                                     <h2>"Fitness"</h2>
@@ -1739,6 +1740,7 @@ fn DashboardPage() -> impl IntoView {
                             }}
                         </div>
                     }) } else { None }}
+                    </div> // end hidden wrapper
                     }
                 }}
             </Show>
