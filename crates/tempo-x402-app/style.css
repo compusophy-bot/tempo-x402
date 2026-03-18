@@ -3014,3 +3014,26 @@ body { background: var(--bg-base) !important; -webkit-font-smoothing: antialiase
 ::-webkit-scrollbar { width: 2px !important; }
 ::-webkit-scrollbar-thumb { background: var(--border) !important; }
 .footer { display: none !important; }
+
+/* Thin sticky footer for external links */
+.tmux-footer {
+    height: 20px;
+    min-height: 20px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 10px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    background: var(--bg-base);
+}
+.tmux-footer a {
+    color: var(--text-muted);
+    text-decoration: none;
+    text-transform: lowercase;
+    letter-spacing: 1px;
+}
+.tmux-footer a:hover { color: var(--accent); }
+.tmux-footer-dot { margin: 0 6px; color: var(--text-dim); }
+.tmux-footer-spacer { flex: 1; }
+.tmux-footer-text { color: var(--text-dim); font-size: 9px; letter-spacing: 1px; }

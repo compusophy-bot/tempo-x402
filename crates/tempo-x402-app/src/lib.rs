@@ -108,7 +108,7 @@ fn Header() -> impl IntoView {
     view! {
         <header class="header">
             <nav class="nav">
-                <a href="/" class="logo">"x402"</a>
+                <a href="/" class="logo">"tempo-x402"</a>
                 <button class="mobile-nav-toggle" on:click=toggle_mobile>
                     {move || if mobile_open.get() { "\u{2715}" } else { "\u{2630}" }}
                 </button>
@@ -128,9 +128,7 @@ fn Header() -> impl IntoView {
                                 class=if path == "/dashboard" { "active" } else { "" }
                                 on:click=move |_| set_mobile_open.set(false)
                             >"Dashboard"</a>
-                            <a href="https://docs.rs/tempo-x402" target="_blank">"Docs"</a>
-                            <a href="https://crates.io/crates/tempo-x402" target="_blank">"Crates"</a>
-                            <a href="https://github.com/compusophy/tempo-x402" target="_blank">"GitHub"</a>
+                            // External links moved to dashboard footer
                         }
                     }}
                 </div>
@@ -1145,7 +1143,7 @@ fn DashboardPage() -> impl IntoView {
                         // ═══ TMUX STATUS BAR ═══
                         <div class="tmux-bar">
                             <div class="tmux-bar-section">
-                                <span class="tmux-bar-value">"x402"</span>
+                                <span class="tmux-bar-value">"tempo-x402"</span>
                                 <span class="tmux-bar-divider">"|"</span>
                                 <span class="tmux-bar-label">"v"</span>
                                 <span class="tmux-bar-value">{version.clone()}</span>
@@ -1475,6 +1473,17 @@ fn DashboardPage() -> impl IntoView {
                                     }
                                 }
                             </div>
+                        </div>
+
+                        // Sticky footer with external links
+                        <div class="tmux-footer">
+                            <a href="https://docs.rs/tempo-x402" target="_blank">"docs"</a>
+                            <span class="tmux-footer-dot">{"\u{00B7}"}</span>
+                            <a href="https://crates.io/crates/tempo-x402" target="_blank">"crates"</a>
+                            <span class="tmux-footer-dot">{"\u{00B7}"}</span>
+                            <a href="https://github.com/compusophy/tempo-x402" target="_blank">"github"</a>
+                            <span class="tmux-footer-spacer"></span>
+                            <span class="tmux-footer-text">"tempo-x402 v1.9.0"</span>
                         </div>
 
                         // Old layout sections — hidden, kept for compilation only
