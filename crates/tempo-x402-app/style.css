@@ -3037,3 +3037,45 @@ body { background: var(--bg-base) !important; -webkit-font-smoothing: antialiase
 .tmux-footer-dot { margin: 0 6px; color: var(--text-dim); }
 .tmux-footer-spacer { flex: 1; }
 .tmux-footer-text { color: var(--text-dim); font-size: 9px; letter-spacing: 1px; }
+
+/* Account dropdown */
+.wallet-dropdown { position: relative; }
+.wallet-dropdown-trigger {
+    font-size: 10px !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.wallet-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    z-index: 100;
+    min-width: 160px;
+    padding: 4px 0;
+    margin-top: 4px;
+}
+.wallet-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 6px 12px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-family: var(--font-mono);
+}
+.wallet-dropdown-item:hover {
+    background: var(--bg-elevated);
+    color: var(--accent);
+}
+
+/* Fix gray bar — kill any margin/padding on body/html/main */
+html, body { margin: 0 !important; padding: 0 !important; }
+.container { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+
+/* Kill old wallet-buttons layout */
+.wallet-buttons { display: flex; gap: 4px; }

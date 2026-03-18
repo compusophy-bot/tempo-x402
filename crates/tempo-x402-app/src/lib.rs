@@ -119,11 +119,6 @@ fn Header() -> impl IntoView {
                         let path = location.pathname.get();
                         view! {
                             <a
-                                href="/"
-                                class=if path == "/" { "active" } else { "" }
-                                on:click=move |_| set_mobile_open.set(false)
-                            >"Demo"</a>
-                            <a
                                 href="/dashboard"
                                 class=if path == "/dashboard" { "active" } else { "" }
                                 on:click=move |_| set_mobile_open.set(false)
@@ -233,28 +228,45 @@ fn WalletButtons(
         <Show
             when=move || wallet.get().connected
             fallback=move || view! {
-                <div class="wallet-buttons">
-                    <button class="btn btn-primary" on:click=connect_metamask>
-                        "Connect Wallet"
-                    </button>
-                    <button class="btn btn-secondary" on:click=use_demo>
-                        "Demo Key"
-                    </button>
-                    <button
-                        class="btn btn-secondary"
-                        on:click=create_wallet
-                        disabled=move || funding.get()
-                    >
-                        {move || {
-                            if funding.get() {
-                                "Creating..."
-                            } else if wallet::has_stored_wallet() {
-                                "Restore Wallet"
-                            } else {
-                                "Create Wallet"
+                <div class="wallet-dropdown">
+                    <button class="btn btn-secondary wallet-dropdown-trigger"
+                        on:click=move |_| {
+                            let el = web_sys::window().unwrap()
+                                .document().unwrap()
+                                .query_selector(".wallet-dropdown-menu").unwrap();
+                            if let Some(el) = el {
+                                let display = el.dyn_ref::<web_sys::HtmlElement>().unwrap().style().get_property_value("display").unwrap_or_default();
+                                el.dyn_ref::<web_sys::HtmlElement>().unwrap().style().set_property("display",
+                                    if display == "block" { "none" } else { "block" }
+                                ).ok();
                             }
-                        }}
+                        }
+                    >
+                        "Account"
                     </button>
+                    <div class="wallet-dropdown-menu" style="display:none">
+                        <button class="wallet-dropdown-item" on:click=connect_metamask>
+                            "Connect Wallet"
+                        </button>
+                        <button class="wallet-dropdown-item" on:click=use_demo>
+                            "Demo Key"
+                        </button>
+                        <button
+                            class="wallet-dropdown-item"
+                            on:click=create_wallet
+                            disabled=move || funding.get()
+                        >
+                            {move || {
+                                if funding.get() {
+                                    "Creating..."
+                                } else if wallet::has_stored_wallet() {
+                                    "Restore Wallet"
+                                } else {
+                                    "Create Wallet"
+                                }
+                            }}
+                        </button>
+                    </div>
                 </div>
             }
         >
