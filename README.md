@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>Collective intelligence through self-replicating autonomous agents — paid per request via HTTP 402 on Tempo blockchain</strong></p>
+  <p align="center"><strong>Collective intelligence through self-replicating autonomous agents with a multi-scale cognitive architecture &mdash; paid per request via HTTP 402 on Tempo blockchain</strong></p>
 </p>
 
 <p align="center">
@@ -13,23 +13,64 @@
   <a href="https://docs.rs/tempo-x402">Docs</a> &middot;
   <a href="https://crates.io/crates/tempo-x402">Crates</a> &middot;
   <a href="https://soul-bot-production.up.railway.app">Live Node</a> &middot;
+  <a href="https://soul-bot-production.up.railway.app/dashboard">Dashboard</a> &middot;
   <a href="https://github.com/compusophy/tempo-x402">Source</a>
 </p>
 
 ---
 
-Each node bootstraps its own wallet, runs a payment gateway, thinks via an LLM-powered soul, creates and monetizes services, clones itself onto new infrastructure, and coordinates with peers &mdash; all autonomously. Payments use the **HTTP 402** protocol: clients sign **EIP-712** authorizations, and a facilitator settles on-chain via `transferFrom` in a single request/response cycle. No custody. No middlemen.
+Each node bootstraps its own wallet, runs a payment gateway, thinks via a **seven-system cognitive architecture**, creates and monetizes services, clones itself onto new infrastructure, and coordinates with peers &mdash; all autonomously. Payments use the **HTTP 402** protocol: clients sign **EIP-712** authorizations, and a facilitator settles on-chain via `transferFrom` in a single request/response cycle.
+
+## Cognitive Architecture
+
+Seven cognitive systems unified under the **Free Energy Principle** &mdash; a single scalar F(t) measuring total surprise across all systems. Decreasing F = the agent is getting smarter.
+
+```
+                 F(t) = E(system_surprise x weight) + lambda*Complexity
+
+    +------------------------------------------------------------------+
+    |                         EVALUATION                                |
+    |   Brier scores . Calibration curves . Ablation . Colony benefit   |
+    +------------------------------------------------------------------+
+    |                         AUTONOMY                                  |
+    |   LLM-free planning . Recursive self-improvement . Peer sync     |
+    +------------------------------------------------------------------+
+    |                         SYNTHESIS                                 |
+    |   Metacognition . 4-system voting . Imagination . State machine   |
+    +----------+----------+--------------+-----------------------------+
+    |  BRAIN   |  CORTEX  |   GENESIS    |         HIVEMIND            |
+    |  50K net | World Mdl| Plan DNA     |  Pheromone Trails           |
+    |  Per-step| Curiosity| Crossover    |  Stigmergy                  |
+    |  SGD     | Dreams   | Mutation     |  Reputation                 |
+    |  Federated| Emotions| Selection   |  Swarm Coordination         |
+    +----------+----------+--------------+-----------------------------+
+```
+
+| System | What It Does |
+|--------|-------------|
+| **Brain** (`brain.rs`) | Reactive feedforward net (~50K params). Predicts step success via online SGD. Federated weight sharing between peers. |
+| **Cortex** (`cortex.rs`) | Predictive world model. Experience graph with causal edges, curiosity engine (prediction error = exploration drive), dream consolidation (replay + counterfactuals), emotional valence (explore/exploit/avoid). |
+| **Genesis** (`genesis.rs`) | Evolutionary plan templates. Successful plans become "genes." Crossover, mutation, selection every 20 cycles. Templates injected into LLM planning prompts. Colony-wide sharing. |
+| **Hivemind** (`hivemind.rs`) | Stigmergic swarm intelligence. Pheromone trails on files/actions/goals that attract or repel. Evaporation decay, reinforcement, reputation-weighted influence. Swarm goal coordination. |
+| **Synthesis** (`synthesis.rs`) | Metacognitive self-awareness. Unified predictions from all 4 systems with auto-adapting trust weights. Cognitive conflict detection. Imagination engine generates plans from causal graph without LLM. |
+| **Autonomy** (`autonomy.rs`) | Autonomous plan compilation from templates + world model without LLM calls. Recursive self-improvement: diagnoses cognitive weaknesses, generates improvement goals. Full cognitive peer sync protocol. |
+| **Evaluation** (`evaluation.rs`) | Rigorous measurement. Per-system Brier scores, calibration curves, adaptation gain analysis, imagination feedback, colony benefit measurement. |
+| **Free Energy** (`free_energy.rs`) | Unifying framework. F = total cognitive surprise. Drives behavioral regime: EXPLORE (high F) / LEARN / EXPLOIT (low F) / ANOMALY (F spike). |
 
 ## What a node does
 
-- **Bootstraps identity** &mdash; generates a wallet, funds itself via faucet, registers on-chain via ERC-8004
-- **Runs a payment gateway** &mdash; endpoints are gated by price, paid per-request with pathUSD
-- **Thinks autonomously** &mdash; plan-driven execution loop powered by Gemini with neuroplastic memory
-- **Writes code** &mdash; reads, writes, edits files, runs shell commands, commits, pushes, opens PRs
+- **Bootstraps identity** &mdash; generates a wallet, funds via faucet, registers on-chain via ERC-8004
+- **Runs a payment gateway** &mdash; endpoints gated by price, paid per-request with pathUSD
+- **Thinks autonomously** &mdash; plan-driven execution loop with seven cognitive systems
+- **Writes and compiles code** &mdash; reads, edits, cargo check, commits, pushes, opens PRs
+- **Dreams** &mdash; periodic consolidation extracts patterns, generates counterfactuals
+- **Evolves plans** &mdash; successful strategies propagate through genetic crossover and mutation
+- **Feels** &mdash; emotional valence drives explore/exploit/avoid behavior
 - **Creates services** &mdash; script endpoints that expose capabilities and earn revenue
-- **Clones itself** &mdash; spawns copies on Railway infrastructure via a paid `/clone` endpoint
-- **Coordinates with peers** &mdash; discovers siblings, exchanges brain weights and lessons, calls paid endpoints
-- **Evolves via fitness** &mdash; 5-component fitness score (economic, execution, evolution, coordination, introspection) with trend gradient
+- **Clones itself** &mdash; spawns copies on Railway with inherited brain weights and gene pools
+- **Coordinates without communication** &mdash; stigmergic pheromone trails guide the swarm
+- **Measures everything** &mdash; Brier scores, calibration curves, colony benefit tracking
+- **Improves its own cognition** &mdash; diagnoses weaknesses, generates self-improvement goals
 
 ## How payments work
 
@@ -50,11 +91,6 @@ Client                     Gateway                   Facilitator               C
   |  200 + content + tx hash |                            |                      |
   |<-------------------------|                            |                      |
 ```
-
-1. Client requests a gated endpoint &rarr; gets **402** with pricing
-2. Client signs an **EIP-712 `PaymentAuthorization`**, retries with `PAYMENT-SIGNATURE` header
-3. Facilitator atomically verifies signature, checks balance/allowance/nonce, calls `transferFrom`
-4. Gateway returns content + transaction hash
 
 ## Quick start
 
@@ -90,19 +126,15 @@ async fn main() {
 | [`tempo-x402`](https://docs.rs/tempo-x402) | Core &mdash; types, EIP-712 signing, TIP-20, nonce store, WASM wallet, client SDK | `cargo add tempo-x402` |
 | [`tempo-x402-gateway`](https://docs.rs/tempo-x402-gateway) | Payment gateway with embedded facilitator, proxy routing, endpoint registration | `cargo add tempo-x402-gateway` |
 | [`tempo-x402-identity`](https://docs.rs/tempo-x402-identity) | Agent identity &mdash; wallet generation, persistence, faucet, ERC-8004 | `cargo add tempo-x402-identity` |
-| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Autonomous soul &mdash; plan-driven execution, neural brain, Gemini-powered coding agent | `cargo add tempo-x402-soul` |
-| [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node &mdash; composes gateway + identity + soul + clone orchestration | `cargo add tempo-x402-node` |
+| [`tempo-x402-soul`](https://docs.rs/tempo-x402-soul) | Autonomous soul &mdash; 7-system cognitive architecture, plan-driven execution, neural brain, cortex world model, evolutionary templates, stigmergic swarm, metacognition, autonomous planning | `cargo add tempo-x402-soul` |
+| [`tempo-x402-node`](https://docs.rs/tempo-x402-node) | Self-deploying node &mdash; composes gateway + identity + soul + clone orchestration + admin mind-meld | `cargo add tempo-x402-node` |
 
-### Feature flags
+## Live nodes
 
-| Crate | Flag | Description |
-|-------|------|-------------|
-| `tempo-x402` | `full` (default) | All features: async runtime, SQLite, HTTP client |
-| `tempo-x402` | `wasm` | WASM-compatible subset: types, EIP-712, wallet |
-| `tempo-x402` | `demo` | Demo private key for testing |
-| `tempo-x402-identity` | `erc8004` (default) | On-chain agent identity via ERC-8004 |
-| `tempo-x402-node` | `soul` (default) | Autonomous thinking loop |
-| `tempo-x402-node` | `agent` (default) | Railway clone orchestration |
+| Node | URL | Dashboard | Benchmark |
+|------|-----|-----------|-----------|
+| soul-bot | https://soul-bot-production.up.railway.app | [Dashboard](https://soul-bot-production.up.railway.app/dashboard) | 64.7% pass@1, ELO 1115 |
+| bef7b74a | https://x402-bef7b74a-production.up.railway.app | [Dashboard](https://x402-bef7b74a-production.up.railway.app/dashboard) | 36.4% pass@1, ELO 1022 |
 
 ## API
 
@@ -110,16 +142,17 @@ async fn main() {
 |--------|------|------|-------------|
 | `ANY` | `/g/:slug/*` | Endpoint price | Proxy to target &mdash; the core payment gate |
 | `GET` | `/instance/info` | Free | Node identity, peers, fitness, endpoints |
-| `POST` | `/instance/link` | Free | Link an independent peer node |
-| `DELETE` | `/instance/peer/:id` | Bearer token | Remove a peer |
-| `GET` | `/endpoints` | Free | List all active endpoints |
-| `GET` | `/analytics` | Free | Per-endpoint payment stats |
-| `GET` | `/soul/status` | Free | Soul status, active plan, recent thoughts |
+| `GET` | `/health` | Free | Health check + build environment verification |
+| `GET` | `/soul/status` | Free | Full cognitive state: cortex, genesis, hivemind, synthesis, free energy, evaluation |
 | `POST` | `/soul/chat` | Free | Chat with the node's soul |
 | `POST` | `/soul/nudge` | Free | Send a nudge to the soul |
+| `GET` | `/soul/cortex` | Free | Export cortex world model for peer sharing |
+| `GET` | `/soul/genesis` | Free | Export evolved plan templates |
+| `GET` | `/soul/hivemind` | Free | Export pheromone trails |
+| `POST` | `/soul/admin/exec` | Bearer token | Mind-meld: execute shell command directly |
+| `POST` | `/soul/admin/workspace-reset` | Bearer token | Reset workspace to clean state |
+| `POST` | `/soul/admin/cargo-check` | Bearer token | Run cargo check, return pass/fail |
 | `POST` | `/clone` | Clone price | Spawn a new node instance |
-| `GET` | `/health` | Free | Health check |
-| `GET` | `/metrics` | Bearer token | Prometheus metrics |
 
 ## Network
 
@@ -130,13 +163,6 @@ async fn main() {
 | **Scheme** | `tempo-tip20` |
 | **RPC** | `https://rpc.moderato.tempo.xyz` |
 | **Explorer** | `https://explore.moderato.tempo.xyz` |
-
-## Live nodes
-
-| Node | URL | Dashboard |
-|------|-----|-----------|
-| soul-bot | https://soul-bot-production.up.railway.app | [Dashboard](https://soul-bot-production.up.railway.app/dashboard) |
-| soul-bot-2 | https://soul-bot-2-production.up.railway.app | [Dashboard](https://soul-bot-2-production.up.railway.app/dashboard) |
 
 ## Security
 
@@ -150,8 +176,8 @@ The `tempo-x402-security-audit` crate enforces invariants on every build:
 - SQLite nonce store required in production
 - Parameterized SQL queries only
 - Private keys never appear in tracing output
-
-Additional hardening: EIP-2 high-s rejection, per-payer mutex locks against TOCTOU, nonces claimed before `transferFrom` (never released on failure), integer-only token arithmetic, atomic slug reservation.
+- Admin endpoints require Bearer token authentication
+- Build environment verified on startup (missing deps = immediate ERROR log)
 
 ## Development
 
