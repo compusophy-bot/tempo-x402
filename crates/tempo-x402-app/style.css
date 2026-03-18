@@ -2878,3 +2878,139 @@ a.node-address:hover { text-decoration: underline; }
     padding: 0;
     max-width: none;
 }
+
+/* ============================================================
+   HYPER-MINIMAL — monochrome terminal aesthetic
+   IBM Plex Mono, no boxes, pure data
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap');
+
+:root {
+    --font-mono: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+    --bg-base: #0a0a0a;
+    --bg-surface: #0e0e0e;
+    --bg-card: #111;
+    --bg-card-hover: #161616;
+    --bg-elevated: #1a1a1a;
+    --bg-input: #0c0c0c;
+    --text: #d4d4d4;
+    --text-secondary: #a0a0a0;
+    --text-muted: #606060;
+    --text-dim: #404040;
+    --border: #1e1e1e;
+    --border-light: #2a2a2a;
+    --primary: #888;
+    --primary-light: #aaa;
+    --accent: #00ff88;
+    --accent-glow: rgba(0,255,136,0.08);
+    --success: #00ff88;
+    --success-bg: rgba(0,255,136,0.06);
+    --warning: #ffaa00;
+    --warning-bg: rgba(255,170,0,0.06);
+    --error: #ff4444;
+    --error-bg: rgba(255,68,68,0.06);
+    --info: #4488ff;
+    --info-bg: rgba(68,136,255,0.06);
+}
+
+* { font-family: var(--font-mono) !important; }
+body { background: var(--bg-base) !important; -webkit-font-smoothing: antialiased; }
+
+/* Kill ALL boxes */
+.soul-card, .stat-card, .fitness-panel, .peer-panel, .clone-section,
+.benchmark-panel, .brain-panel, .capability-panel, .outcomes-panel,
+.soul-goals, .soul-plan, .soul-nudge-form, .soul-thoughts,
+.endpoints-section {
+    background: none !important; border: none !important;
+    box-shadow: none !important; border-radius: 0 !important;
+    padding: 0 !important; margin: 0 !important;
+}
+
+/* Hide duplicate sections from SoulPanel already shown in tmux grid */
+.tmux-pane .peer-panel,
+.tmux-pane .benchmark-panel,
+.tmux-pane .brain-panel,
+.tmux-pane .benchmark-collective,
+.tmux-pane .benchmark-history,
+.tmux-pane .benchmark-refs,
+.tmux-pane .soul-header,
+.tmux-pane .stats-grid,
+.tmux-pane .soul-streak,
+.tmux-pane .soul-plans-summary,
+.tmux-pane .soul-flags { display: none !important; }
+
+/* Header */
+.header {
+    background: var(--bg-base) !important;
+    border-bottom: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    height: 40px !important; min-height: 40px !important;
+    padding: 0 16px !important;
+}
+.header .logo { font-size: 13px !important; font-weight: 400 !important; letter-spacing: 2px !important; text-transform: uppercase !important; color: var(--text-muted) !important; }
+.nav-links a { font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 1px !important; color: var(--text-muted) !important; padding: 0 8px !important; }
+.nav-links a:hover { color: var(--accent) !important; }
+
+/* tmux overrides */
+.tmux { height: calc(100vh - 40px) !important; background: var(--bg-base) !important; }
+.tmux-bar { height: 24px !important; min-height: 24px !important; background: var(--bg-base) !important; border-bottom: 1px solid var(--border) !important; font-size: 11px !important; padding: 0 8px !important; }
+.tmux-grid { border-top: none !important; }
+.tmux-pane { border-right: 1px solid var(--border) !important; padding: 6px 8px !important; gap: 4px !important; font-size: 11px !important; }
+.tmux-pane:last-child { border-right: none !important; }
+.tmux-pane-title { font-size: 10px !important; letter-spacing: 2px !important; color: var(--text-dim) !important; border-bottom: 1px solid var(--border) !important; margin-bottom: 2px !important; padding-bottom: 2px !important; }
+.tmux-section-title { font-size: 10px !important; color: var(--text-dim) !important; letter-spacing: 1px !important; text-transform: uppercase !important; }
+.tmux-kv { font-size: 11px !important; line-height: 1.4 !important; }
+.tmux-kv-label { color: var(--text-dim) !important; }
+.tmux-kv-value { color: var(--text) !important; }
+.tmux-bar-mini { height: 3px !important; background: var(--border) !important; border-radius: 0 !important; margin: 1px 0 !important; }
+.tmux-bar-fill { border-radius: 0 !important; }
+.tmux-bar-fill--economic { background: var(--warning) !important; }
+.tmux-bar-fill--execution { background: var(--accent) !important; }
+.tmux-bar-fill--evolution { background: var(--accent) !important; }
+.tmux-bar-fill--coordination { background: var(--info) !important; }
+.tmux-bar-fill--introspection { background: var(--text-muted) !important; }
+.tmux-bar-fill--prediction { background: #a855f7 !important; }
+.tmux-tag { font-size: 9px !important; border-radius: 0 !important; padding: 0 4px !important; }
+.tmux-metric-big { font-size: 20px !important; font-weight: 300 !important; color: var(--accent) !important; }
+.tmux-fe-value { font-size: 22px !important; font-weight: 300 !important; color: var(--accent) !important; }
+.tmux-fe-regime { border-radius: 0 !important; }
+
+/* Terminal */
+.tmux-terminal { height: 140px !important; border-top: 1px solid var(--border) !important; background: var(--bg-base) !important; font-size: 10px !important; }
+.tmux-terminal-tabs { background: var(--bg-base) !important; border-bottom: 1px solid var(--border) !important; }
+.tmux-terminal-tab { font-size: 9px !important; padding: 2px 10px !important; }
+.tmux-terminal-row { font-size: 10px !important; padding: 1px 0 !important; }
+.tmux-terminal-badge { border-radius: 0 !important; font-size: 8px !important; }
+
+/* Soul panel strip */
+.soul-section, .soul-card { background: none !important; padding: 0 !important; }
+.soul-card h2, .soul-card h3 { font-size: 10px !important; font-weight: 500 !important; text-transform: uppercase !important; letter-spacing: 1px !important; color: var(--text-dim) !important; margin: 4px 0 2px !important; }
+.soul-goal { font-size: 10px !important; padding: 2px 0 !important; border: none !important; background: none !important; }
+.goal-desc { font-size: 10px !important; color: var(--text-secondary) !important; line-height: 1.3 !important; }
+.goal-status-badge, .plan-status-badge { font-size: 8px !important; border-radius: 0 !important; padding: 0 3px !important; }
+.soul-thought { font-size: 10px !important; padding: 2px 4px !important; border-left: 1px solid var(--border) !important; margin-bottom: 1px !important; }
+.soul-thought:hover { border-left-color: var(--accent) !important; }
+.thought-badge { font-size: 8px !important; border-radius: 0 !important; padding: 0 3px !important; }
+.thought-content, .thought-time { font-size: 10px !important; }
+.plan-progress-bar { height: 2px !important; border-radius: 0 !important; background: var(--border) !important; }
+.plan-progress-fill { border-radius: 0 !important; background: var(--accent) !important; }
+.plan-info { font-size: 10px !important; }
+.soul-nudge-input { font-size: 10px !important; padding: 3px 6px !important; background: var(--bg-base) !important; border: 1px solid var(--border) !important; border-radius: 0 !important; color: var(--text) !important; }
+.soul-nudge-input:focus { border-color: var(--accent) !important; outline: none !important; }
+.capability-bar-track { height: 3px !important; border-radius: 0 !important; }
+.capability-bar-fill--good { background: var(--accent) !important; border-radius: 0 !important; }
+.capability-bar-fill--ok { background: var(--warning) !important; border-radius: 0 !important; }
+.capability-bar-fill--bad { background: var(--error) !important; border-radius: 0 !important; }
+.capability-overview, .capability-bar-row, .capability-bar-label, .capability-bar-value { font-size: 10px !important; }
+.outcome-item, .outcome-lesson, .outcome-meta { font-size: 10px !important; }
+.benchmark-pass-at-1 { font-size: 20px !important; font-weight: 300 !important; color: var(--accent) !important; }
+.benchmark-label, .benchmark-meta, .benchmark-stats { font-size: 10px !important; }
+.tmux-endpoint { font-size: 10px !important; padding: 1px 0 !important; }
+.tmux-endpoint-slug { color: var(--accent) !important; }
+.tmux-peer-dot { width: 4px !important; height: 4px !important; }
+.btn { border-radius: 0 !important; font-size: 10px !important; }
+.btn-primary { background: var(--accent) !important; color: #000 !important; }
+::-webkit-scrollbar { width: 2px !important; }
+::-webkit-scrollbar-thumb { background: var(--border) !important; }
+.footer { display: none !important; }
