@@ -1203,7 +1203,20 @@ fn DashboardPage() -> impl IntoView {
                             // Endpoints compact
                             <div class="tmux-section">
                                 <div class="tmux-section-title">{format!("Endpoints ({})", ep_count)}</div>
-                                {eps.iter().take(8).map(|ep| {
+                                {
+                                    // Sort endpoints by payment count (most active first)
+                                    let mut sorted_eps = eps.clone();
+                                    let analytics_for_sort = analytics_endpoints.clone();
+                                    sorted_eps.sort_by(|a, b| {
+                                        let slug_a = a.get("slug").and_then(|v| v.as_str()).unwrap_or("");
+                                        let slug_b = b.get("slug").and_then(|v| v.as_str()).unwrap_or("");
+                                        let pay_a = analytics_for_sort.iter().find(|x| x.get("slug").and_then(|v| v.as_str()) == Some(slug_a))
+                                            .and_then(|s| s.get("payment_count")).and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let pay_b = analytics_for_sort.iter().find(|x| x.get("slug").and_then(|v| v.as_str()) == Some(slug_b))
+                                            .and_then(|s| s.get("payment_count")).and_then(|v| v.as_i64()).unwrap_or(0);
+                                        pay_b.cmp(&pay_a)
+                                    });
+                                    sorted_eps.iter().take(10).map(|ep| {
                                     let slug = ep.get("slug").and_then(|v| v.as_str()).unwrap_or("?").to_string();
                                     let price = ep.get("price").and_then(|v| v.as_str()).unwrap_or("0").to_string();
                                     let ep_stats = analytics_endpoints.iter().find(|a| a.get("slug").and_then(|v| v.as_str()) == Some(&slug));
@@ -1215,10 +1228,9 @@ fn DashboardPage() -> impl IntoView {
                                             <span class="tmux-endpoint-stat">{format!("{}pay", payments)}</span>
                                         </div>
                                     }
-                                }).collect::<Vec<_>>()}
+                                }).collect::<Vec<_>>()
+                                }
                             </div>
-
-                            // Clone button removed — available on Demo page
                         </div>
 
                         // ─── CENTER PANE: SOUL ───
