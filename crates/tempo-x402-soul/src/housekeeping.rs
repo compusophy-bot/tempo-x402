@@ -76,6 +76,9 @@ pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root
             Err(e) => tracing::warn!(error = %e, "Housekeeping: pruning failed"),
         }
 
+        // Prune soul_state blobs — large JSON values that grow monotonically
+        prune_soul_state(db);
+
         // Clean up cargo build artifacts — target/ can be 2-4 GB
         // Only cleaned after commits normally, but if a plan fails mid-way
         // the target/ directory persists between cycles
@@ -233,4 +236,86 @@ pub fn get_cycles_since_last_commit(db: &Arc<SoulDatabase>) -> u64 {
         .flatten()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0)
+}
+
+/// Prune soul_state key-value blobs that grow monotonically.
+/// Without this, evaluation_state, peer_failures, peer_lessons, and
+/// benchmark caches grow forever and bloat the SQLite DB.
+fn prune_soul_state(db: &Arc<SoulDatabase>) {
+    let mut pruned_keys = 0u32;
+    let mut freed_bytes = 0usize;
+
+    // Delete dead keys
+    for dead_key in &["humaneval_problems_cache"] {
+        if let Ok(Some(val)) = db.get_state(dead_key) {
+            freed_bytes += val.len();
+            let _ = db.set_state(dead_key, "");
+            pruned_keys += 1;
+        }
+    }
+
+    // Truncate peer_failures: keep only last 30 entries
+    truncate_json_array(db, "peer_failures", 30, &mut pruned_keys, &mut freed_bytes);
+
+    // Truncate imported_solutions: keep only last 30
+    truncate_json_array(
+        db,
+        "imported_solutions",
+        30,
+        &mut pruned_keys,
+        &mut freed_bytes,
+    );
+
+    // Truncate peer_lessons: keep last 15 per peer
+    // These are stored as peer_lessons_<instance_id>
+    if let Ok(Some(catalog)) = db.get_state("peer_endpoint_catalog") {
+        if let Ok(peers) = serde_json::from_str::<Vec<serde_json::Value>>(&catalog) {
+            for peer in &peers {
+                if let Some(id) = peer.get("peer").and_then(|v| v.as_str()) {
+                    let key = format!("peer_lessons_{}", id);
+                    truncate_json_array(db, &key, 15, &mut pruned_keys, &mut freed_bytes);
+                }
+            }
+        }
+    }
+
+    // Exercism problem cache: re-fetch is cheap, clear if >500KB
+    if let Ok(Some(val)) = db.get_state("exercism_problems_cache") {
+        if val.len() > 500_000 {
+            freed_bytes += val.len();
+            let _ = db.set_state("exercism_problems_cache", "");
+            pruned_keys += 1;
+        }
+    }
+
+    if pruned_keys > 0 {
+        tracing::info!(
+            keys = pruned_keys,
+            freed_kb = freed_bytes / 1024,
+            "Housekeeping: soul_state pruned"
+        );
+    }
+}
+
+/// Truncate a JSON array stored in soul_state to keep only the last N entries.
+fn truncate_json_array(
+    db: &Arc<SoulDatabase>,
+    key: &str,
+    keep: usize,
+    pruned_keys: &mut u32,
+    freed_bytes: &mut usize,
+) {
+    if let Ok(Some(val)) = db.get_state(key) {
+        if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&val) {
+            if arr.len() > keep {
+                let before_len = val.len();
+                arr.drain(..arr.len() - keep);
+                if let Ok(new_val) = serde_json::to_string(&arr) {
+                    *freed_bytes += before_len.saturating_sub(new_val.len());
+                    let _ = db.set_state(key, &new_val);
+                    *pruned_keys += 1;
+                }
+            }
+        }
+    }
 }
