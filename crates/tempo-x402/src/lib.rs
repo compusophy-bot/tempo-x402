@@ -66,7 +66,7 @@
 //! use x402::wallet::{generate_random_key, WalletSigner};
 //!
 //! let key = generate_random_key();
-//! let signer = WalletSigner::from_hex(&key).unwrap();
+//! let signer = WalletSigner::new(&key).unwrap();
 //! let address = signer.address();
 //! ```
 //!

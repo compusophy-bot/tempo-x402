@@ -1082,9 +1082,9 @@ mod tests {
         assert_eq!(brain.w2.len(), HIDDEN_SIZE * HIDDEN_SIZE);
         assert_eq!(brain.w3.len(), HIDDEN_SIZE * OUTPUT_SIZE);
         assert_eq!(brain.train_steps, 0);
-        // ~50K params
-        assert!(brain.param_count() > 40_000);
-        assert!(brain.param_count() < 60_000);
+        // ~24K params (INPUT=32, HIDDEN=128, OUTPUT=23)
+        assert!(brain.param_count() > 20_000);
+        assert!(brain.param_count() < 30_000);
     }
 
     #[test]

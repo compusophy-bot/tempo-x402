@@ -931,8 +931,8 @@ impl SoulDatabase {
         conn.execute(
             "INSERT INTO beliefs (id, domain, subject, predicate, value, confidence, evidence, confirmation_count, created_at, updated_at, active) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
-             ON CONFLICT(id) DO UPDATE SET \
-               value = excluded.value, confidence = excluded.confidence, evidence = excluded.evidence, \
+             ON CONFLICT(domain, subject, predicate) WHERE active = 1 DO UPDATE SET \
+               id = excluded.id, value = excluded.value, confidence = excluded.confidence, evidence = excluded.evidence, \
                confirmation_count = confirmation_count + 1, \
                updated_at = excluded.updated_at",
             params![
