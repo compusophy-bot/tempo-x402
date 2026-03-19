@@ -1507,7 +1507,7 @@ fn DashboardPage() -> impl IntoView {
                             <span class="tmux-footer-dot">{"\u{00B7}"}</span>
                             <a href="https://github.com/compusophy/tempo-x402" target="_blank">"github"</a>
                             <span class="tmux-footer-spacer"></span>
-                            <span class="tmux-footer-text">"tempo-x402 v1.9.0"</span>
+                            <span class="tmux-footer-text">{concat!("tempo-x402 v", env!("CARGO_PKG_VERSION"))}</span>
                         </div>
 
                         // Old layout sections — hidden, kept for compilation only
