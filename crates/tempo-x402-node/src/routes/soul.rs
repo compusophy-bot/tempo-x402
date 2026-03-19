@@ -1738,6 +1738,76 @@ async fn soul_rules_reset(
     }))
 }
 
+/// POST /soul/model — set or clear model override (turbo boost)
+/// Body: {"model": "gemini-3.1-pro-preview"} to boost, {"model": null} to revert
+async fn set_model_override(
+    state: web::Data<NodeState>,
+    body: web::Json<serde_json::Value>,
+) -> HttpResponse {
+    let soul_db = match state.soul_db.as_ref() {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}))
+        }
+    };
+
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Store in soul_state for persistence across cycles
+    match &model {
+        Some(m) => {
+            let _ = soul_db.set_state("model_override", m);
+            tracing::info!(model = %m, "Model override SET — turbo boost active");
+        }
+        None => {
+            let _ = soul_db.set_state("model_override", "");
+            tracing::info!("Model override CLEARED — back to default");
+        }
+    }
+
+    // Also update the live LLM client if we can reach it via the soul
+    // (The thinking loop reads model_override from soul_state each cycle)
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "model_override": model,
+        "status": if model.is_some() { "turbo" } else { "default" },
+    }))
+}
+
+/// GET /soul/model — get current model status
+async fn get_model_status(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match state.soul_db.as_ref() {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}))
+        }
+    };
+
+    let override_model = soul_db
+        .get_state("model_override")
+        .ok()
+        .flatten()
+        .filter(|s| !s.is_empty());
+
+    let default_fast =
+        std::env::var("GEMINI_MODEL_FAST").unwrap_or_else(|_| "gemini-3-flash-preview".to_string());
+    let default_think =
+        std::env::var("GEMINI_MODEL_THINK").unwrap_or_else(|_| default_fast.clone());
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "active_model": override_model.as_deref().unwrap_or(&default_fast),
+        "override": override_model,
+        "default_fast": default_fast,
+        "default_think": default_think,
+        "turbo": override_model.is_some(),
+    }))
+}
+
 /// GET /soul/colony — colony selection status: rank, can_spawn, should_cull, niche
 async fn get_colony_status(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match state.soul_db.as_ref() {
@@ -1787,6 +1857,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/cleanup", web::post().to(soul_cleanup))
         .route("/soul/rules/reset", web::post().to(soul_rules_reset))
         .route("/soul/colony", web::get().to(get_colony_status))
+        .route("/soul/model", web::post().to(set_model_override))
+        .route("/soul/model", web::get().to(get_model_status))
         .route("/soul/events", web::get().to(soul_events))
         .route("/soul/health", web::get().to(soul_health))
         // Cognitive architecture sharing endpoints

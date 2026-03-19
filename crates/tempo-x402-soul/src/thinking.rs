@@ -199,6 +199,19 @@ impl ThinkingLoop {
             // Heartbeat: signal that the soul loop is alive
             alive.store(true, Ordering::Relaxed);
 
+            // Sync model override from soul_state (set via /soul/model endpoint)
+            if let Some(llm) = &self.llm {
+                let override_model = self
+                    .db
+                    .get_state("model_override")
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty());
+                if let Ok(mut guard) = llm.model_override.lock() {
+                    *guard = override_model;
+                }
+            }
+
             let snapshot = match self.observer.observe() {
                 Ok(s) => s,
                 Err(e) => {

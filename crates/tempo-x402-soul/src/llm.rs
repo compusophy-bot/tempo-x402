@@ -11,9 +11,11 @@ use crate::error::SoulError;
 pub struct LlmClient {
     api_key: String,
     model_fast: String,
-    #[allow(dead_code)]
     model_think: String,
     http: reqwest::Client,
+    /// Runtime model override — set via /soul/model endpoint, stored in soul_state.
+    /// When set, ALL calls use this model instead of fast/think defaults.
+    pub model_override: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 // ── Gemini wire types (private) ─────────────────────────────────────────
@@ -133,6 +135,7 @@ impl LlmClient {
             model_fast,
             model_think,
             http,
+            model_override: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -353,7 +356,11 @@ impl LlmClient {
         request: &GeminiRequest,
         use_deep: bool,
     ) -> Result<LlmResult, SoulError> {
-        let model = if use_deep {
+        // Check for runtime model override (turbo boost from dashboard)
+        let override_model = self.model_override.lock().ok().and_then(|g| g.clone());
+        let model = if let Some(ref ov) = override_model {
+            ov
+        } else if use_deep {
             &self.model_think
         } else {
             &self.model_fast
