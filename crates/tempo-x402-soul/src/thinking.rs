@@ -450,6 +450,19 @@ impl ThinkingLoop {
                                 .build()
                                 .unwrap_or_default();
                             let mut synced = 0u32;
+                            if peer_urls.is_empty() {
+                                tracing::warn!(
+                                    "Cognitive sync: 0 peer URLs — catalog may be empty"
+                                );
+                                crate::events::emit_event(
+                                    &self.db,
+                                    "warn",
+                                    "colony.sync",
+                                    "Cognitive sync skipped: 0 peer URLs in catalog",
+                                    None,
+                                    crate::events::EventRefs::default(),
+                                );
+                            }
                             for (peer_id, peer_url) in &peer_urls {
                                 crate::autonomy::sync_cognitive_systems(
                                     &self.db,
@@ -461,10 +474,13 @@ impl ThinkingLoop {
                                 synced += 1;
                             }
                             if synced > 0 {
-                                tracing::info!(
-                                    synced,
-                                    total_peers = peer_urls.len(),
-                                    "Cognitive sync complete — cortex/genesis/hivemind merged"
+                                crate::events::emit_info(
+                                    &self.db,
+                                    "colony.sync",
+                                    &format!(
+                                        "Cognitive sync with {} peers complete (cortex/genesis/hivemind)",
+                                        synced
+                                    ),
                                 );
                             }
                         } else {
