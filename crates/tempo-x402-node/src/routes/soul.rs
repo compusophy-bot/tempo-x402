@@ -1476,6 +1476,25 @@ async fn soul_cleanup(state: web::Data<NodeState>) -> HttpResponse {
         );
     }
 
+    // 1b. Remove CARGO_HOME registry/git (re-downloadable, bloats volume)
+    let cargo_home = std::env::var("CARGO_HOME").unwrap_or_default();
+    if !cargo_home.is_empty() && cargo_home.starts_with("/data") {
+        let mut cargo_freed: u64 = 0;
+        for subdir in &["registry", "git"] {
+            let path = format!("{}/{}", cargo_home, subdir);
+            if std::path::Path::new(&path).exists() {
+                cargo_freed += dir_size(&path);
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+        if cargo_freed > 0 {
+            cleaned.insert(
+                "cargo_home_freed".to_string(),
+                serde_json::json!(format_bytes(cargo_freed)),
+            );
+        }
+    }
+
     // 2. Git gc aggressive
     let _ = std::process::Command::new("git")
         .args(["gc", "--aggressive", "--prune=now"])

@@ -88,6 +88,24 @@ pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root
             let _ = std::fs::remove_dir_all(&target_dir);
         }
 
+        // Clean up CARGO_HOME registry/cache — downloads accumulate on the volume
+        // since CARGO_HOME=/data/cargo. Keep the bin/ dir (has cargo/rustc) but
+        // purge registry/ and git/ which are re-downloadable.
+        let cargo_home = std::env::var("CARGO_HOME").unwrap_or_default();
+        if !cargo_home.is_empty() && cargo_home.starts_with("/data") {
+            for subdir in &["registry", "git"] {
+                let path = format!("{}/{}", cargo_home, subdir);
+                if std::path::Path::new(&path).exists() {
+                    tracing::info!(
+                        path = %path,
+                        "Housekeeping: cleaning CARGO_HOME/{} to reclaim disk space",
+                        subdir
+                    );
+                    let _ = std::fs::remove_dir_all(&path);
+                }
+            }
+        }
+
         // Clean up git garbage — pack loose objects to reduce .git/ size
         let _ = std::process::Command::new("git")
             .args(["gc", "--auto", "--quiet"])
