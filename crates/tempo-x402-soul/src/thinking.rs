@@ -1519,7 +1519,7 @@ impl ThinkingLoop {
             }
             cg
         };
-        let role_guide = capability::role_guidance(&self.db);
+        let role_guide = String::new(); // Removed hardcoded roles — colony.rs handles differentiation
         let peer_catalog = self
             .db
             .get_state("peer_endpoint_catalog")
@@ -1928,7 +1928,7 @@ impl ThinkingLoop {
             }
             s
         };
-        let role_guide = capability::role_guidance(&self.db);
+        let role_guide = String::new(); // Removed hardcoded roles — colony.rs handles differentiation
         let peer_prs = self
             .db
             .get_state("peer_open_prs")

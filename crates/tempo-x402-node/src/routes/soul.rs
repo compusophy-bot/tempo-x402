@@ -420,8 +420,9 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             }
         },
         role: {
-            let role = x402_soul::capability::compute_role(soul_db);
-            serde_json::to_value(&role).ok()
+            // Colony niche from colony.rs (replaces hardcoded role labels)
+            x402_soul::colony::load_status(soul_db)
+                .and_then(|s| serde_json::to_value(&s).ok())
         },
         durable_rules: soul_db
             .get_state("durable_rules")
