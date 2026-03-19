@@ -74,16 +74,19 @@ COPY --from=builder /usr/local/cargo /usr/local/cargo
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH="/usr/local/cargo/bin:${PATH}"
-# Make cargo registry WRITABLE so cargo check can update the index at runtime.
-# The Docker layer has the full registry from the build stage — no cold download.
-# Build artifacts go to /data/workspace/target (on the volume, cleaned by housekeeping).
-RUN chmod -R a+rwX /usr/local/cargo/registry /usr/local/rustup
+# Make cargo writable so cargo check can update the index at runtime.
+# Only chmod specific dirs cargo writes to — not the entire tree (too slow).
+RUN chmod -R a+rwX /usr/local/cargo/registry 2>/dev/null; \
+    chmod a+rw /usr/local/cargo/.package-cache 2>/dev/null; \
+    chmod -R a+rX /usr/local/rustup; \
+    true
 
 RUN chown -R app:app /app
 
-# Entrypoint: fix volume + cargo permissions then drop to non-root
-# Use X402_BINARY env var to select binary (default: x402-node)
-RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nchown -R app:app /usr/local/cargo/registry 2>/dev/null || true\nBIN=${X402_BINARY:-x402-node}\nexec gosu app "$BIN" "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Entrypoint: fix volume permissions then drop to non-root
+# NOTE: Do NOT chown cargo/registry here — too slow (60s+), blocks healthcheck.
+# Cargo registry is world-writable from the chmod in the build stage.
+RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nBIN=${X402_BINARY:-x402-node}\nexec gosu app "$BIN" "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
