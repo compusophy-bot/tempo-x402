@@ -1707,14 +1707,21 @@ async fn soul_rules_reset(
 ) -> HttpResponse {
     let soul_db = match state.soul_db.as_ref() {
         Some(db) => db,
-        None => return HttpResponse::ServiceUnavailable().json(serde_json::json!({"error": "soul not active"})),
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}))
+        }
     };
 
     // Clear durable rules
     let _ = soul_db.set_state("durable_rules", "[]");
 
     // Optionally clear failure chains
-    let cleared_chains = if query.get("reset_failure_chains").map(|v| v == "true").unwrap_or(false) {
+    let cleared_chains = if query
+        .get("reset_failure_chains")
+        .map(|v| v == "true")
+        .unwrap_or(false)
+    {
         let _ = soul_db.set_state("failure_chains", "[]");
         true
     } else {

@@ -1254,7 +1254,11 @@ impl ToolExecutor {
             "description": description.unwrap_or("Script endpoint"),
         });
 
-        match reqwest::Client::new()
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default();
+        match client
             .post(&url)
             .json(&body)
             .timeout(std::time::Duration::from_secs(5))
@@ -1395,6 +1399,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -1449,7 +1454,10 @@ impl ToolExecutor {
         let private_key = std::env::var("EVM_PRIVATE_KEY")
             .map_err(|_| "EVM_PRIVATE_KEY not set — cannot sign payment".to_string())?;
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default();
 
         // Build registration body
         let mut body = serde_json::json!({
@@ -2013,7 +2021,10 @@ impl ToolExecutor {
             std::env::var("GATEWAY_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
         let url = format!("{}/clone/self", gateway_url.trim_end_matches('/'));
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default();
         let resp = client
             .post(&url)
             .timeout(std::time::Duration::from_secs(120))
@@ -2056,7 +2067,10 @@ impl ToolExecutor {
             body["initial_goal"] = serde_json::json!(goal);
         }
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default();
         let resp = client
             .post(&url)
             .json(&body)
@@ -2109,7 +2123,10 @@ impl ToolExecutor {
             let gateway_url = std::env::var("GATEWAY_URL")
                 .unwrap_or_else(|_| "http://localhost:8080".to_string());
             let peers_url = format!("{}/instance/children", gateway_url.trim_end_matches('/'));
-            let client = reqwest::Client::new();
+            let client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap_or_default();
             let resp = client
                 .get(&peers_url)
                 .timeout(std::time::Duration::from_secs(10))
@@ -2152,7 +2169,10 @@ impl ToolExecutor {
             "priority": priority.min(5),
         });
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap_or_default();
         let resp = client
             .post(&nudge_url)
             .json(&nudge_body)

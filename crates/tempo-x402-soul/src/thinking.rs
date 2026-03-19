@@ -421,6 +421,7 @@ impl ThinkingLoop {
                             let peer_urls = self.get_known_peer_urls();
                             let http_client = reqwest::Client::builder()
                                 .timeout(std::time::Duration::from_secs(15))
+                                .redirect(reqwest::redirect::Policy::none())
                                 .build()
                                 .unwrap_or_default();
                             for (peer_id, peer_url) in &peer_urls {
@@ -2098,7 +2099,10 @@ impl ThinkingLoop {
                         tracing::info!(template_id = tid, "Genesis template feedback: SUCCESS");
                     } else {
                         gene_pool.record_failure(tid);
-                        tracing::info!(template_id = tid, "Genesis template feedback: TRIVIAL (counted as failure)");
+                        tracing::info!(
+                            template_id = tid,
+                            "Genesis template feedback: TRIVIAL (counted as failure)"
+                        );
                     }
                 }
             }
@@ -2386,7 +2390,10 @@ impl ThinkingLoop {
                 });
                 if all_trivial && !outcome.steps_succeeded.is_empty() {
                     // Update status in DB
-                    if let Err(e) = self.db.update_plan_outcome_status(&outcome.id, "completed_trivial") {
+                    if let Err(e) = self
+                        .db
+                        .update_plan_outcome_status(&outcome.id, "completed_trivial")
+                    {
                         tracing::warn!(error = %e, id = %outcome.id, "Failed to reclassify outcome");
                     } else {
                         reclassified += 1;
@@ -2398,13 +2405,20 @@ impl ThinkingLoop {
 
         // 2. Clear corrupted gene pool (all trivial templates)
         let gene_pool = crate::genesis::load_gene_pool(&self.db);
-        let substantive_count = gene_pool.templates.iter().filter(|t| {
-            t.step_types.iter().any(|s| {
-                let lower = s.to_lowercase();
-                lower.contains("edit") || lower.contains("generate") || lower.contains("commit")
-                    || lower.contains("create") || lower.contains("shell")
+        let substantive_count = gene_pool
+            .templates
+            .iter()
+            .filter(|t| {
+                t.step_types.iter().any(|s| {
+                    let lower = s.to_lowercase();
+                    lower.contains("edit")
+                        || lower.contains("generate")
+                        || lower.contains("commit")
+                        || lower.contains("create")
+                        || lower.contains("shell")
+                })
             })
-        }).count();
+            .count();
         if substantive_count == 0 && !gene_pool.templates.is_empty() {
             tracing::info!(
                 templates = gene_pool.templates.len(),
@@ -2417,18 +2431,25 @@ impl ThinkingLoop {
         // 3. Clear corrupted durable rules (bare step type blocks like "ls", "read", "shell:")
         if let Ok(Some(rules_json)) = self.db.get_state("durable_rules") {
             if let Ok(rules) = serde_json::from_str::<Vec<validation::DurableRule>>(&rules_json) {
-                let clean: Vec<&validation::DurableRule> = rules.iter().filter(|r| {
-                    // Keep rules that use step_type:error_category format
-                    // Drop rules with bare step types or template variables
-                    if r.check_type == "step_type_blocked" {
-                        r.pattern.contains(':') && !r.pattern.contains("${")
-                    } else {
-                        !r.pattern.contains("${")
-                    }
-                }).collect();
+                let clean: Vec<&validation::DurableRule> = rules
+                    .iter()
+                    .filter(|r| {
+                        // Keep rules that use step_type:error_category format
+                        // Drop rules with bare step types or template variables
+                        if r.check_type == "step_type_blocked" {
+                            r.pattern.contains(':') && !r.pattern.contains("${")
+                        } else {
+                            !r.pattern.contains("${")
+                        }
+                    })
+                    .collect();
                 let dropped = rules.len() - clean.len();
                 if dropped > 0 {
-                    tracing::info!(dropped, kept = clean.len(), "Pruned corrupted durable rules");
+                    tracing::info!(
+                        dropped,
+                        kept = clean.len(),
+                        "Pruned corrupted durable rules"
+                    );
                     if let Ok(json) = serde_json::to_string(&clean) {
                         let _ = self.db.set_state("durable_rules", &json);
                     }

@@ -24,9 +24,8 @@ fn require_local_or_hmac(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(|token| {
-            hmac_secret.is_some_and(|secret| {
-                x402::security::constant_time_eq(token.as_bytes(), secret)
-            })
+            hmac_secret
+                .is_some_and(|secret| x402::security::constant_time_eq(token.as_bytes(), secret))
         })
         .unwrap_or(false);
 

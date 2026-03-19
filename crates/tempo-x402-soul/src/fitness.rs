@@ -156,7 +156,9 @@ fn compute_economic(snapshot: &NodeSnapshot) -> f64 {
 /// Uses plan_outcomes table (which has reclassified statuses) instead of plans table.
 fn compute_execution(db: &SoulDatabase) -> f64 {
     let completed = db.count_plan_outcomes_by_status("completed").unwrap_or(0) as f64;
-    let completed_trivial = db.count_plan_outcomes_by_status("completed_trivial").unwrap_or(0) as f64;
+    let completed_trivial = db
+        .count_plan_outcomes_by_status("completed_trivial")
+        .unwrap_or(0) as f64;
     let failed = db.count_plan_outcomes_by_status("failed").unwrap_or(0) as f64;
     // Trivial completions count at 10% — they're not real successes
     let effective_completed = completed + completed_trivial * 0.1;

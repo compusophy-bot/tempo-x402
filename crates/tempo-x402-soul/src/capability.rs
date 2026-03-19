@@ -298,7 +298,10 @@ pub fn capability_guidance(db: &SoulDatabase) -> String {
     if !unexplored.is_empty() {
         lines.push("## UNEXPLORED CAPABILITIES (never attempted — try these!)".to_string());
         for s in &unexplored {
-            lines.push(format!("- {} — 0 attempts, unknown potential", s.display_name));
+            lines.push(format!(
+                "- {} — 0 attempts, unknown potential",
+                s.display_name
+            ));
         }
         lines.push(
             "Pick one of these unexplored capabilities and include it in your next plan."

@@ -39,8 +39,8 @@
 //! Peer sync → export/merge → templates spread through colony
 //! ```
 
-use serde::{Deserialize, Serialize};
 use crate::db::SoulDatabase;
+use serde::{Deserialize, Serialize};
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -744,7 +744,13 @@ pub fn inject_seed_templates(pool: &mut GenePool, source_agent: &str) {
     let seeds = vec![
         (
             "Fix a compile error in existing code",
-            vec!["read_file", "search_code", "edit_code", "cargo_check", "commit"],
+            vec![
+                "read_file",
+                "search_code",
+                "edit_code",
+                "cargo_check",
+                "commit",
+            ],
         ),
         (
             "Create a new script endpoint with tests",
@@ -752,7 +758,15 @@ pub fn inject_seed_templates(pool: &mut GenePool, source_agent: &str) {
         ),
         (
             "Improve code quality in a module",
-            vec!["read_file", "search_code", "edit_code", "cargo_check", "edit_code", "cargo_check", "commit"],
+            vec![
+                "read_file",
+                "search_code",
+                "edit_code",
+                "cargo_check",
+                "edit_code",
+                "cargo_check",
+                "commit",
+            ],
         ),
     ];
 

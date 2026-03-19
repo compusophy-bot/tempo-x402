@@ -299,6 +299,7 @@ pub async fn link(body: web::Json<serde_json::Value>, state: web::Data<NodeState
     let info_url = format!("{peer_url}/instance/info");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap_or_default();
 

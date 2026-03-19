@@ -184,6 +184,7 @@ const EXERCISM_API: &str = "https://api.github.com/repos/exercism/rust/contents/
 async fn fetch_exercise_list() -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
@@ -233,6 +234,7 @@ async fn fetch_exercise_list() -> Result<Vec<String>, String> {
 async fn fetch_exercise(slug: &str) -> Result<ExercismProblem, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
@@ -588,6 +590,7 @@ pub async fn review_solution(
 pub async fn request_peer_review(peer_url: &str, req: &ReviewRequest) -> Option<ReviewResponse> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()?;
 
