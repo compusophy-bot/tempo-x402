@@ -827,6 +827,41 @@ impl Synthesis {
         self.weights.normalize();
     }
 
+    /// Adapt weights using Brier scores from the evaluation system.
+    /// Lower Brier = better calibrated = more weight.
+    /// This closes the feedback loop: evaluation measures → synthesis adapts.
+    pub fn adapt_from_brier(&mut self, eval: &crate::evaluation::Evaluation) {
+        let systems = ["brain", "cortex", "genesis", "hivemind"];
+        let brier_scores: Vec<(&str, f32)> = systems
+            .iter()
+            .map(|s| (*s, eval.brier_score_recent(s)))
+            .collect();
+
+        // Only adapt if we have meaningful data (Brier != 0.25 baseline for all)
+        let all_baseline = brier_scores.iter().all(|(_, b)| (*b - 0.25).abs() < 0.01);
+        if all_baseline {
+            return;
+        }
+
+        // Convert Brier to quality: lower Brier = higher quality
+        // Brier range: 0.0 (perfect) to 1.0 (worst), baseline 0.25
+        for (system, brier) in &brier_scores {
+            let quality = (1.0 - *brier).max(0.01); // Invert: 0→1.0, 0.25→0.75, 1.0→0.01
+            let current_weight = match *system {
+                "brain" => &mut self.weights.brain,
+                "cortex" => &mut self.weights.cortex,
+                "genesis" => &mut self.weights.genesis,
+                "hivemind" => &mut self.weights.hivemind,
+                _ => continue,
+            };
+            // Blend toward quality-derived weight (slower rate than accuracy adaptation)
+            *current_weight = *current_weight * (1.0 - WEIGHT_ADAPTATION_RATE * 0.5)
+                + quality * WEIGHT_ADAPTATION_RATE * 0.5;
+        }
+
+        self.weights.normalize();
+    }
+
     // ── Persistence ──────────────────────────────────────────────────
 
     pub fn to_json(&self) -> String {

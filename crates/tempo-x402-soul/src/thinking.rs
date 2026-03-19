@@ -355,10 +355,13 @@ impl ThinkingLoop {
                 crate::cortex::save_cortex(&self.db, &cortex);
             }
 
-            // Synthesis: update self-model every cycle
+            // Synthesis: update self-model every cycle + Brier-driven weight adaptation
             {
                 let mut synth = crate::synthesis::load_synthesis(&self.db);
                 synth.update_self_model();
+                // Close feedback loop: Brier scores from evaluation → synthesis weights
+                let eval = crate::evaluation::load_evaluation(&self.db);
+                synth.adapt_from_brier(&eval);
                 crate::synthesis::save_synthesis(&self.db, &synth);
             }
 
@@ -1059,6 +1062,46 @@ impl ThinkingLoop {
                         &brain_ctx,
                     );
 
+                    // Synthesis + Evaluation: record failure for metacognitive tracking
+                    // (Previously only recorded on success — blind spot that prevented learning from mistakes)
+                    {
+                        let cortex_f = crate::cortex::load_cortex(&self.db);
+                        let gene_pool_f = crate::genesis::load_gene_pool(&self.db);
+                        let hivemind_f = crate::hivemind::load_hivemind(&self.db);
+                        let goal_desc_f = self
+                            .db
+                            .get_goal(&plan.goal_id)
+                            .ok()
+                            .flatten()
+                            .map(|g| g.description.clone())
+                            .unwrap_or_default();
+                        let mut synth = crate::synthesis::load_synthesis(&self.db);
+                        let unified = synth.predict_step(
+                            &step,
+                            &prediction,
+                            &cortex_f,
+                            &gene_pool_f,
+                            &hivemind_f,
+                            &goal_desc_f,
+                        );
+                        synth.record_outcome(&unified.votes, false); // FALSE = failure
+                        crate::synthesis::save_synthesis(&self.db, &synth);
+
+                        // Brier scoring on failures too — critical for calibration
+                        let mut eval = crate::evaluation::load_evaluation(&self.db);
+                        for vote in &unified.votes {
+                            let prob = (vote.prediction + 1.0) / 2.0;
+                            eval.record_prediction(
+                                &vote.system,
+                                prob,
+                                vote.confidence,
+                                false, // FALSE = actual outcome was failure
+                                &step_summary,
+                            );
+                        }
+                        crate::evaluation::save_evaluation(&self.db, &eval);
+                    }
+
                     // Cortex: record failure experience for world model
                     {
                         let goal_desc_for_cortex = self
@@ -1522,6 +1565,9 @@ impl ThinkingLoop {
         let mut synth = crate::synthesis::load_synthesis(&self.db);
         let synth_section = synth.prompt_section();
 
+        // Free energy: inject regime + surprise decomposition into planning
+        let fe_section = crate::free_energy::prompt_section(&self.db);
+
         // Imagination: generate plans WITHOUT LLM from causal graph
         let imagined = synth.imagine_plans(&cortex, &gene_pool, &goal.description);
         let imagine_section = if imagined.is_empty() {
@@ -1576,6 +1622,7 @@ impl ThinkingLoop {
             cortex_section,
             hive_section,
             synth_section,
+            fe_section,
             imagine_section,
         ]
         .into_iter()

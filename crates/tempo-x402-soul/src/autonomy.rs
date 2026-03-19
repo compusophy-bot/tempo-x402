@@ -47,11 +47,14 @@ use crate::synthesis::{self, CognitiveState};
 // ── Constants ────────────────────────────────────────────────────────
 
 /// Minimum cortex simulation confidence to accept an autonomous plan.
-const AUTONOMOUS_CONFIDENCE_THRESHOLD: f32 = 0.5;
+/// Lowered from 0.5 to 0.3 — let autonomous plans attempt more often and learn from failures.
+const AUTONOMOUS_CONFIDENCE_THRESHOLD: f32 = 0.3;
 /// Minimum genesis template match score.
-const TEMPLATE_MATCH_THRESHOLD: f32 = 0.3;
+/// Lowered from 0.3 to 0.15 — partial keyword matches are still useful scaffolding.
+const TEMPLATE_MATCH_THRESHOLD: f32 = 0.15;
 /// Minimum cortex simulation success probability.
-const SIMULATION_SUCCESS_THRESHOLD: f32 = 0.3;
+/// Lowered from 0.3 to 0.2 — even 20% predicted success is worth attempting.
+const SIMULATION_SUCCESS_THRESHOLD: f32 = 0.2;
 
 // ── Autonomous Plan Compilation ──────────────────────────────────────
 
