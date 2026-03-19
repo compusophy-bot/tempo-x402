@@ -252,6 +252,9 @@ impl ThinkingLoop {
                 "Fitness score"
             );
 
+            // Colony selection: evaluate position relative to peers
+            let _colony_status = crate::colony::evaluate(&self.db, fitness.total);
+
             // Compute and store free energy — THE unifying metric
             let fe = crate::free_energy::measure(&self.db);
             tracing::info!(
@@ -1567,6 +1570,8 @@ impl ThinkingLoop {
 
         // Free energy: inject regime + surprise decomposition into planning
         let fe_section = crate::free_energy::prompt_section(&self.db);
+        // Colony: inject rank + specialization niche into planning
+        let colony_section = crate::colony::prompt_section(&self.db);
 
         // Imagination: generate plans WITHOUT LLM from causal graph
         let imagined = synth.imagine_plans(&cortex, &gene_pool, &goal.description);
@@ -1623,6 +1628,7 @@ impl ThinkingLoop {
             hive_section,
             synth_section,
             fe_section,
+            colony_section,
             imagine_section,
         ]
         .into_iter()

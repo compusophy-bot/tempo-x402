@@ -2556,6 +2556,33 @@ impl ToolExecutor {
                             }
                         }
 
+                        // Colony: record peer fitness for selection pressure
+                        if let Some(ref soul_data) = paid_soul_data {
+                            let fitness = soul_data
+                                .get("fitness")
+                                .and_then(|f| f.get("total"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            let benchmark = soul_data
+                                .get("benchmark")
+                                .and_then(|b| b.get("pass_at_1"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            let role = soul_data
+                                .get("role")
+                                .and_then(|r| r.get("primary"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("generalist");
+                            let strongest = soul_data
+                                .get("capability_profile")
+                                .and_then(|c| c.get("strongest"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            crate::colony::record_peer_fitness(
+                                db, inst_id, fitness, benchmark, role, strongest,
+                            );
+                        }
+
                         // Fallback: if no lessons from paid response, try free endpoint
                         if peer_lessons.is_empty() {
                             let lessons_url =

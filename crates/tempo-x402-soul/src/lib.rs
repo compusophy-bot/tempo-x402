@@ -57,6 +57,7 @@ pub mod brain;
 pub mod capability;
 pub mod chat;
 pub mod coding;
+pub mod colony;
 pub mod computer_use;
 pub mod config;
 pub mod cortex;

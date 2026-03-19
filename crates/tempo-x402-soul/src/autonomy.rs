@@ -521,6 +521,18 @@ pub async fn sync_cognitive_systems(
     peer_id: &str,
     http_client: &reqwest::Client,
 ) {
+    // Colony selection: weight merges by relative fitness
+    // Fitter peers get more influence (up to 2x base rate), weaker peers less (down to 0.1x)
+    let merge_weight = crate::colony::peer_merge_weight(db, peer_id);
+    let base_rate: f32 = 0.2;
+    let effective_rate = (base_rate * merge_weight).clamp(0.02, 0.4);
+    tracing::debug!(
+        peer = %peer_id,
+        merge_weight = format!("{:.2}", merge_weight),
+        effective_rate = format!("{:.3}", effective_rate),
+        "Fitness-weighted merge rate"
+    );
+
     // ── Fetch peer's cortex ──
     match http_client
         .get(format!("{peer_url}/soul/cortex"))
@@ -531,9 +543,9 @@ pub async fn sync_cognitive_systems(
         Ok(resp) if resp.status().is_success() => {
             if let Ok(snapshot) = resp.json::<crate::cortex::CortexSnapshot>().await {
                 let mut cortex = cortex::load_cortex(db);
-                cortex.merge(&snapshot, 0.2);
+                cortex.merge(&snapshot, effective_rate);
                 cortex::save_cortex(db, &cortex);
-                tracing::debug!(peer = %peer_id, "Merged peer cortex");
+                tracing::debug!(peer = %peer_id, rate = format!("{:.3}", effective_rate), "Merged peer cortex (fitness-weighted)");
             }
         }
         _ => {}
@@ -549,9 +561,9 @@ pub async fn sync_cognitive_systems(
         Ok(resp) if resp.status().is_success() => {
             if let Ok(snapshot) = resp.json::<crate::genesis::GenePoolSnapshot>().await {
                 let mut pool = genesis::load_gene_pool(db);
-                pool.merge(&snapshot, 0.2);
+                pool.merge(&snapshot, effective_rate);
                 genesis::save_gene_pool(db, &pool);
-                tracing::debug!(peer = %peer_id, "Merged peer gene pool");
+                tracing::debug!(peer = %peer_id, rate = format!("{:.3}", effective_rate), "Merged peer gene pool (fitness-weighted)");
             }
         }
         _ => {}

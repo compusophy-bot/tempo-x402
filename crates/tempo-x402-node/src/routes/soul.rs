@@ -1734,6 +1734,21 @@ async fn soul_rules_reset(
     }))
 }
 
+/// GET /soul/colony — colony selection status: rank, can_spawn, should_cull, niche
+async fn get_colony_status(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match state.soul_db.as_ref() {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}))
+        }
+    };
+    match x402_soul::colony::load_status(soul_db) {
+        Some(status) => HttpResponse::Ok().json(status),
+        None => HttpResponse::Ok().json(serde_json::json!({"status": "no colony data yet"})),
+    }
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(soul_status))
         .route("/soul/chat", web::post().to(soul_chat))
@@ -1767,6 +1782,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/diagnostics", web::get().to(soul_diagnostics))
         .route("/soul/cleanup", web::post().to(soul_cleanup))
         .route("/soul/rules/reset", web::post().to(soul_rules_reset))
+        .route("/soul/colony", web::get().to(get_colony_status))
         .route("/soul/events", web::get().to(soul_events))
         .route("/soul/health", web::get().to(soul_health))
         // Cognitive architecture sharing endpoints
