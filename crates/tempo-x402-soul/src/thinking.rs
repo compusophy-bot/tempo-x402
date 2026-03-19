@@ -423,13 +423,33 @@ impl ThinkingLoop {
                             );
 
                             // Cognitive architecture sync: share cortex, genesis, hivemind
-                            // with ALL known peers. This was previously DEAD CODE — now wired.
-                            let peer_urls = self.get_known_peer_urls();
+                            // with ALL known peers AND parent (if we have one).
+                            let mut peer_urls = self.get_known_peer_urls();
+
+                            // Also add parent as a sync target — children need to sync
+                            // with their parent too, not just siblings.
+                            if let Ok(Some(parent)) = self.db.get_state("parent_url") {
+                                if !parent.is_empty()
+                                    && !peer_urls.iter().any(|(_, u)| u == &parent)
+                                {
+                                    peer_urls.push(("parent".to_string(), parent));
+                                }
+                            }
+                            // Also try PARENT_URL env var
+                            if let Ok(parent_env) = std::env::var("PARENT_URL") {
+                                if !parent_env.is_empty()
+                                    && !peer_urls.iter().any(|(_, u)| u == &parent_env)
+                                {
+                                    peer_urls.push(("parent".to_string(), parent_env));
+                                }
+                            }
+
                             let http_client = reqwest::Client::builder()
                                 .timeout(std::time::Duration::from_secs(15))
                                 .redirect(reqwest::redirect::Policy::none())
                                 .build()
                                 .unwrap_or_default();
+                            let mut synced = 0u32;
                             for (peer_id, peer_url) in &peer_urls {
                                 crate::autonomy::sync_cognitive_systems(
                                     &self.db,
@@ -438,10 +458,12 @@ impl ThinkingLoop {
                                     &http_client,
                                 )
                                 .await;
+                                synced += 1;
                             }
-                            if !peer_urls.is_empty() {
+                            if synced > 0 {
                                 tracing::info!(
-                                    peers = peer_urls.len(),
+                                    synced,
+                                    total_peers = peer_urls.len(),
                                     "Cognitive sync complete — cortex/genesis/hivemind merged"
                                 );
                             }
@@ -458,10 +480,14 @@ impl ThinkingLoop {
                 }
 
                 // Evaluation: measure accuracy AFTER sync for colony benefit
+                // Only record if we actually synced with at least one peer
                 {
-                    let mut eval = crate::evaluation::load_evaluation(&self.db);
-                    eval.post_sync_measurement();
-                    crate::evaluation::save_evaluation(&self.db, &eval);
+                    let peer_count = self.get_known_peer_urls().len();
+                    if peer_count > 0 {
+                        let mut eval = crate::evaluation::load_evaluation(&self.db);
+                        eval.post_sync_measurement();
+                        crate::evaluation::save_evaluation(&self.db, &eval);
+                    }
                 }
             }
 

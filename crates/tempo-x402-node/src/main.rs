@@ -583,6 +583,12 @@ async fn main() -> std::io::Result<()> {
                             x402_soul::EventRefs::default(),
                         );
                     }
+                    // Store parent URL in soul_state so cognitive sync can reach parent
+                    if let Ok(parent) = std::env::var("PARENT_URL") {
+                        if !parent.is_empty() {
+                            let _ = db.set_state("parent_url", &parent);
+                        }
+                    }
                     (
                         Some(db),
                         dormant,
