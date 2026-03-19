@@ -77,6 +77,7 @@ pub mod housekeeping;
 pub mod llm;
 pub mod memory;
 pub mod mode;
+pub mod model;
 pub mod neuroplastic;
 pub mod normalize;
 pub mod observer;

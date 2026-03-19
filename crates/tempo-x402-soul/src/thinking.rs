@@ -339,6 +339,16 @@ impl ThinkingLoop {
                     );
                 }
 
+                // Plan transformer training — online learning from successful plans
+                let (model_trained, model_loss) = crate::model::train_from_outcomes(&self.db);
+                if model_trained > 0 {
+                    tracing::info!(
+                        trained = model_trained,
+                        loss = format!("{:.4}", model_loss),
+                        "Plan transformer training cycle"
+                    );
+                }
+
                 // Cortex dream consolidation: extract patterns, prune, counterfactuals
                 let mut cortex = crate::cortex::load_cortex(&self.db);
                 let insights = cortex.dream();

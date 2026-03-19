@@ -44,7 +44,10 @@ struct SoulStatus {
     /// Neural brain status — parameters, training steps, loss.
     #[serde(skip_serializing_if = "Option::is_none")]
     brain: Option<serde_json::Value>,
-    /// Emergent agent role — computed from capability profile.
+    /// Plan transformer — 284K parameter sequence model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transformer: Option<serde_json::Value>,
+    /// Colony status — rank, niche, peer fitness.
     #[serde(skip_serializing_if = "Option::is_none")]
     role: Option<serde_json::Value>,
     /// Durable behavioral rules — mechanically enforced from past failures.
@@ -418,6 +421,18 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             } else {
                 None
             }
+        },
+        transformer: {
+            let ms = x402_soul::model::status(soul_db);
+            Some(serde_json::json!({
+                "param_count": ms.param_count,
+                "train_steps": ms.train_steps,
+                "running_loss": ms.running_loss,
+                "vocab_size": ms.vocab_size,
+                "templates_trained_on": ms.templates_trained_on,
+                "plans_generated": ms.plans_generated,
+                "last_train_loss": ms.last_train_loss,
+            }))
         },
         role: {
             // Colony niche from colony.rs (replaces hardcoded role labels)
@@ -1808,6 +1823,19 @@ async fn get_model_status(state: web::Data<NodeState>) -> HttpResponse {
     }))
 }
 
+/// GET /soul/model/transformer — plan transformer status (284K param model)
+async fn get_transformer_status(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match state.soul_db.as_ref() {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}))
+        }
+    };
+    let status = x402_soul::model::status(soul_db);
+    HttpResponse::Ok().json(status)
+}
+
 /// GET /soul/colony — colony selection status: rank, can_spawn, should_cull, niche
 async fn get_colony_status(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match state.soul_db.as_ref() {
@@ -1859,6 +1887,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/colony", web::get().to(get_colony_status))
         .route("/soul/model", web::post().to(set_model_override))
         .route("/soul/model", web::get().to(get_model_status))
+        .route(
+            "/soul/model/transformer",
+            web::get().to(get_transformer_status),
+        )
         .route("/soul/events", web::get().to(soul_events))
         .route("/soul/health", web::get().to(soul_health))
         // Cognitive architecture sharing endpoints
