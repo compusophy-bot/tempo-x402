@@ -157,6 +157,10 @@ pub async fn clone_instance(
             "Failed to update child deployment details in DB"
         );
     }
+    // Store volume_id for cleanup on delete — prevents orphaned volumes
+    if let Some(ref vid) = clone_result.volume_id {
+        let _ = db::set_child_volume_id(&node.gateway.db, &instance_id, vid);
+    }
 
     tracing::info!(
         instance_id = %instance_id,
@@ -254,7 +258,26 @@ pub async fn delete_clone(
         })));
     }
 
-    // Best-effort Railway cleanup if service ID exists
+    // Best-effort Railway cleanup: volume FIRST, then service.
+    // Deleting a service does NOT delete its volumes — they become orphans.
+    if let Some(ref volume_id) = child.volume_id {
+        if let Some(ref agent) = node.agent {
+            if let Err(e) = agent.delete_volume(volume_id).await {
+                tracing::warn!(
+                    instance_id = %instance_id,
+                    volume_id = %volume_id,
+                    error = %e,
+                    "Failed to delete Railway volume (best-effort cleanup)"
+                );
+            } else {
+                tracing::info!(
+                    instance_id = %instance_id,
+                    volume_id = %volume_id,
+                    "Deleted Railway volume"
+                );
+            }
+        }
+    }
     if let Some(ref service_id) = child.railway_service_id {
         if let Some(ref agent) = node.agent {
             if let Err(e) = agent.delete_service(service_id).await {
@@ -532,6 +555,9 @@ pub async fn clone_self(
     ) {
         tracing::error!(instance_id = %instance_id, error = %e, "Failed to update child deployment");
     }
+    if let Some(ref vid) = clone_result.volume_id {
+        let _ = db::set_child_volume_id(&node.gateway.db, &instance_id, vid);
+    }
 
     tracing::info!(
         instance_id = %instance_id,
@@ -644,6 +670,9 @@ pub async fn clone_specialist(
         clone_result.branch.as_deref(),
     ) {
         tracing::error!(instance_id = %instance_id, error = %e, "Failed to update child deployment");
+    }
+    if let Some(ref vid) = clone_result.volume_id {
+        let _ = db::set_child_volume_id(&node.gateway.db, &instance_id, vid);
     }
 
     tracing::info!(

@@ -50,6 +50,8 @@ pub struct CloneResult {
     pub deployment_id: String,
     /// GitHub branch name (only for source-based clones)
     pub branch: Option<String>,
+    /// Railway volume ID — MUST be stored for cleanup on delete.
+    pub volume_id: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -230,12 +232,17 @@ impl CloneOrchestrator {
         }
 
         // 6. Add volume (best-effort — clone works without persistent storage)
-        match self.railway.add_volume(service_id, &env_id, "/data").await {
-            Ok(_) => tracing::info!("Volume attached at /data"),
-            Err(e) => {
-                tracing::warn!(error = %e, "Volume attachment failed (best-effort, continuing)")
+        // Capture volume_id so caller can store it for cleanup on delete.
+        let volume_id = match self.railway.add_volume(service_id, &env_id, "/data").await {
+            Ok(vid) => {
+                tracing::info!(volume_id = %vid, "Volume attached at /data");
+                Some(vid)
             }
-        }
+            Err(e) => {
+                tracing::warn!(error = %e, "Volume attachment failed (best-effort, continuing)");
+                None
+            }
+        };
 
         // 7. Set resource limits (best-effort — Railway defaults are fine)
         if self.config.clone_cpu_millicores > 0 || self.config.clone_memory_mb > 0 {
@@ -292,6 +299,7 @@ impl CloneOrchestrator {
             railway_service_id: service_id.to_string(),
             deployment_id,
             branch: branch_name,
+            volume_id,
         })
     }
 
@@ -337,6 +345,12 @@ impl CloneOrchestrator {
         }
 
         self.redeploy_clone(service_id).await
+    }
+
+    /// Delete a Railway volume. MUST be called BEFORE delete_service.
+    pub async fn delete_volume(&self, volume_id: &str) -> Result<(), CloneError> {
+        self.railway.delete_volume(volume_id).await?;
+        Ok(())
     }
 
     /// Delete a Railway service. Delegates to the Railway client.

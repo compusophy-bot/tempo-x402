@@ -17,6 +17,8 @@ pub struct ChildInstance {
     pub funding_tx: Option<String>,
     pub status: String,
     pub branch: Option<String>,
+    /// Railway volume ID — MUST be deleted separately when service is deleted.
+    pub volume_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -32,6 +34,7 @@ const CHILDREN_SCHEMA: &str = r#"
         funding_tx TEXT,
         status TEXT NOT NULL DEFAULT 'pending',
         branch TEXT,
+        volume_id TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
@@ -56,11 +59,45 @@ fn migrate_add_branch_column(db: &Database) -> Result<(), GatewayError> {
     })
 }
 
+/// Migrate: add `volume_id` column if it doesn't exist (backward-compatible).
+fn migrate_add_volume_id_column(db: &Database) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        let has_column: bool = conn
+            .prepare("PRAGMA table_info(children)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "volume_id");
+
+        if !has_column {
+            conn.execute_batch("ALTER TABLE children ADD COLUMN volume_id TEXT;")?;
+            tracing::info!("Migrated children table: added `volume_id` column");
+        }
+        Ok(())
+    })
+}
+
 /// Initialize the children table on an existing gateway database.
 pub fn init_children_schema(db: &Database) -> Result<(), GatewayError> {
     db.execute_schema(CHILDREN_SCHEMA)?;
     migrate_add_branch_column(db)?;
+    migrate_add_volume_id_column(db)?;
     Ok(())
+}
+
+/// Store the volume_id for a child instance.
+pub fn set_child_volume_id(
+    db: &Database,
+    instance_id: &str,
+    volume_id: &str,
+) -> Result<(), GatewayError> {
+    let now = chrono::Utc::now().timestamp();
+    db.with_connection(|conn| {
+        conn.execute(
+            "UPDATE children SET volume_id = ?1, updated_at = ?2 WHERE instance_id = ?3",
+            params![volume_id, now, instance_id],
+        )?;
+        Ok(())
+    })
 }
 
 /// Atomically check the children count is under the limit, then insert.
@@ -182,7 +219,7 @@ pub fn get_child_by_instance_id(
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, address, url, railway_service_id, \
-                 funded_amount, funding_tx, status, branch, created_at, updated_at \
+                 funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at \
                  FROM children WHERE instance_id = ?1",
             )
             .map_err(|e| GatewayError::Internal(format!("prepare failed: {e}")))?;
@@ -199,8 +236,9 @@ pub fn get_child_by_instance_id(
                     funding_tx: row.get(6)?,
                     status: row.get(7)?,
                     branch: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
+                    volume_id: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })
             .optional()
@@ -243,7 +281,7 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, branch, created_at, updated_at
+               funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
         FROM children
         ORDER BY created_at DESC
         "#,
@@ -261,8 +299,9 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
                 funding_tx: row.get(6)?,
                 status: row.get(7)?,
                 branch: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                volume_id: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -277,7 +316,7 @@ pub fn query_children_active(
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, branch, created_at, updated_at
+               funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
         FROM children
         WHERE status != 'failed'
         ORDER BY created_at DESC
@@ -296,8 +335,9 @@ pub fn query_children_active(
                 funding_tx: row.get(6)?,
                 status: row.get(7)?,
                 branch: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                volume_id: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -311,7 +351,7 @@ pub fn list_children_active(db: &Database) -> Result<Vec<ChildInstance>, Gateway
         let mut stmt = conn.prepare(
             r#"
             SELECT id, instance_id, address, url, railway_service_id,
-                   funded_amount, funding_tx, status, branch, created_at, updated_at
+                   funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
             FROM children
             WHERE status != 'failed'
             ORDER BY created_at DESC
@@ -330,8 +370,9 @@ pub fn list_children_active(db: &Database) -> Result<Vec<ChildInstance>, Gateway
                     funding_tx: row.get(6)?,
                     status: row.get(7)?,
                     branch: row.get(8)?,
-                    created_at: row.get(9)?,
-                    updated_at: row.get(10)?,
+                    volume_id: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

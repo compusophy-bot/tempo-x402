@@ -386,6 +386,20 @@ impl RailwayClient {
             .ok_or_else(|| RailwayError::MissingField("volumeCreate.id".to_string()))
     }
 
+    /// Delete a Railway volume. MUST be called BEFORE deleting the service.
+    /// Deleting a service does NOT delete its volumes — they become orphans.
+    pub async fn delete_volume(&self, volume_id: &str) -> Result<(), RailwayError> {
+        let query = r#"
+            mutation VolumeDelete($volumeId: String!) {
+                volumeDelete(volumeId: $volumeId)
+            }
+        "#;
+
+        let variables = serde_json::json!({ "volumeId": volume_id });
+        self.execute(query, variables).await?;
+        Ok(())
+    }
+
     /// Delete a Railway service. Best-effort cleanup — logs on failure.
     pub async fn delete_service(&self, service_id: &str) -> Result<(), RailwayError> {
         let query = r#"
