@@ -119,8 +119,13 @@ pub async fn clone_instance(
         }
     }
 
-    // 2. Spawn clone on Railway (with retry + cleanup-on-failure)
-    let clone_result = match agent.spawn_clone(&instance_id, &payer_address).await {
+    // 2. Get ordinal designation for this drone
+    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    let mut clone_extra = std::collections::HashMap::new();
+    clone_extra.insert("DRONE_DESIGNATION".to_string(), designation.clone());
+
+    // 3. Spawn clone on Railway (with retry + cleanup-on-failure)
+    let clone_result = match agent.spawn_clone_with_extra_vars(&instance_id, &payer_address, &clone_extra).await {
         Ok(result) => result,
         Err(e) => {
             tracing::error!(
@@ -177,6 +182,7 @@ pub async fn clone_instance(
         .json(serde_json::json!({
             "success": true,
             "instance_id": instance_id,
+            "designation": clone_result.designation,
             "url": clone_result.url,
             "branch": clone_result.branch,
             "status": "deploying",
@@ -532,7 +538,11 @@ pub async fn clone_self(
         }
     }
 
-    let clone_result = match agent.spawn_clone(&instance_id, &self_address).await {
+    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    let mut clone_extra = std::collections::HashMap::new();
+    clone_extra.insert("DRONE_DESIGNATION".to_string(), designation.clone());
+
+    let clone_result = match agent.spawn_clone_with_extra_vars(&instance_id, &self_address, &clone_extra).await {
         Ok(result) => result,
         Err(e) => {
             tracing::error!(instance_id = %instance_id, error = %e, "Self-clone failed");
@@ -568,6 +578,7 @@ pub async fn clone_self(
     Ok(HttpResponse::Created().json(serde_json::json!({
         "success": true,
         "instance_id": instance_id,
+        "designation": clone_result.designation,
         "url": clone_result.url,
         "branch": clone_result.branch,
         "status": "deploying",
@@ -637,6 +648,8 @@ pub async fn clone_specialist(
 
     // Build extra env vars for this specialist (thread-safe, no set_var)
     let mut extra_vars = std::collections::HashMap::new();
+    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    extra_vars.insert("DRONE_DESIGNATION".to_string(), designation.clone());
     extra_vars.insert(
         "SOUL_SPECIALIZATION".to_string(),
         specialization.to_string(),
@@ -685,6 +698,7 @@ pub async fn clone_specialist(
     Ok(HttpResponse::Created().json(serde_json::json!({
         "success": true,
         "instance_id": instance_id,
+        "designation": clone_result.designation,
         "url": clone_result.url,
         "branch": clone_result.branch,
         "specialization": specialization,

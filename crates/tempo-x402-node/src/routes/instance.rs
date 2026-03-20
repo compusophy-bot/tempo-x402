@@ -144,8 +144,15 @@ pub async fn info(state: web::Data<NodeState>) -> HttpResponse {
             })
         });
 
+    // Node designation: "queen" if no parent, else DRONE_DESIGNATION env var
+    let designation = std::env::var("DRONE_DESIGNATION")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "queen".to_string());
+
     HttpResponse::Ok().json(serde_json::json!({
         "identity": identity_info,
+        "designation": designation,
         "agent_token_id": state.agent_token_id,
         "peers": peers,
         "peer_count": peers.len(),

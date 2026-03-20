@@ -52,6 +52,8 @@ pub struct CloneResult {
     pub branch: Option<String>,
     /// Railway volume ID — MUST be stored for cleanup on delete.
     pub volume_id: Option<String>,
+    /// Borg-style ordinal designation: "one", "two", etc.
+    pub designation: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,7 +107,12 @@ impl CloneOrchestrator {
         parent_address: &str,
         extra_vars: &std::collections::HashMap<String, String>,
     ) -> Result<CloneResult, CloneError> {
-        let service_name = format!("x402-{}", &instance_id[..8]);
+        // Borg-style ordinal designation: "one", "two", "three", ...
+        let designation = extra_vars
+            .get("DRONE_DESIGNATION")
+            .cloned()
+            .unwrap_or_else(|| format!("drone-{}", &instance_id[..8]));
+        let service_name = designation.clone();
 
         tracing::info!(
             instance_id = %instance_id,
@@ -119,7 +126,7 @@ impl CloneOrchestrator {
 
         // All subsequent steps run with cleanup-on-failure
         match self
-            .spawn_clone_inner(&service_id, instance_id, parent_address, extra_vars)
+            .spawn_clone_inner(&service_id, instance_id, &designation, parent_address, extra_vars)
             .await
         {
             Ok(result) => Ok(result),
@@ -163,6 +170,7 @@ impl CloneOrchestrator {
         &self,
         service_id: &str,
         instance_id: &str,
+        designation: &str,
         parent_address: &str,
         extra_vars: &std::collections::HashMap<String, String>,
     ) -> Result<CloneResult, CloneError> {
@@ -293,6 +301,7 @@ impl CloneOrchestrator {
             deployment_id,
             branch: branch_name,
             volume_id,
+            designation: designation.to_string(),
         })
     }
 

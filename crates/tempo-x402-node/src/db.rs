@@ -19,9 +19,18 @@ pub struct ChildInstance {
     pub branch: Option<String>,
     /// Railway volume ID — MUST be deleted separately when service is deleted.
     pub volume_id: Option<String>,
+    /// Borg-style ordinal designation: "one", "two", "three", etc.
+    pub designation: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
+
+/// Ordinal designations for drones. Queen is the parent, drones are numbered.
+const DESIGNATIONS: &[&str] = &[
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+    "eighteen", "nineteen", "twenty",
+];
 
 const CHILDREN_SCHEMA: &str = r#"
     CREATE TABLE IF NOT EXISTS children (
@@ -76,12 +85,52 @@ fn migrate_add_volume_id_column(db: &Database) -> Result<(), GatewayError> {
     })
 }
 
+/// Migrate: add `designation` column if it doesn't exist.
+fn migrate_add_designation_column(db: &Database) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        let has_column: bool = conn
+            .prepare("PRAGMA table_info(children)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(|r| r.ok())
+            .any(|name| name == "designation");
+
+        if !has_column {
+            conn.execute_batch("ALTER TABLE children ADD COLUMN designation TEXT;")?;
+            tracing::info!("Migrated children table: added `designation` column");
+        }
+        Ok(())
+    })
+}
+
 /// Initialize the children table on an existing gateway database.
 pub fn init_children_schema(db: &Database) -> Result<(), GatewayError> {
     db.execute_schema(CHILDREN_SCHEMA)?;
     migrate_add_branch_column(db)?;
     migrate_add_volume_id_column(db)?;
+    migrate_add_designation_column(db)?;
     Ok(())
+}
+
+/// Get the next available ordinal designation ("one", "two", ...).
+/// Counts all non-failed children to determine the next number.
+pub fn next_designation(db: &Database) -> Result<String, GatewayError> {
+    db.with_connection(|conn| {
+        let count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM children WHERE status != 'failed'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| GatewayError::Internal(format!("count query failed: {e}")))?;
+
+        let idx = count as usize;
+        let name = if idx < DESIGNATIONS.len() {
+            DESIGNATIONS[idx].to_string()
+        } else {
+            format!("drone-{}", idx + 1)
+        };
+        Ok(name)
+    })
 }
 
 /// Store the volume_id for a child instance.
@@ -219,7 +268,7 @@ pub fn get_child_by_instance_id(
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, address, url, railway_service_id, \
-                 funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at \
+                 funded_amount, funding_tx, status, branch, volume_id, designation, created_at, updated_at \
                  FROM children WHERE instance_id = ?1",
             )
             .map_err(|e| GatewayError::Internal(format!("prepare failed: {e}")))?;
@@ -237,8 +286,9 @@ pub fn get_child_by_instance_id(
                     status: row.get(7)?,
                     branch: row.get(8)?,
                     volume_id: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    designation: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })
             .optional()
@@ -281,7 +331,7 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
+               funded_amount, funding_tx, status, branch, volume_id, designation, created_at, updated_at
         FROM children
         ORDER BY created_at DESC
         "#,
@@ -300,8 +350,9 @@ pub fn query_children(conn: &rusqlite::Connection) -> Result<Vec<ChildInstance>,
                 status: row.get(7)?,
                 branch: row.get(8)?,
                 volume_id: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                designation: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -316,7 +367,7 @@ pub fn query_children_active(
     let mut stmt = conn.prepare(
         r#"
         SELECT id, instance_id, address, url, railway_service_id,
-               funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
+               funded_amount, funding_tx, status, branch, volume_id, designation, created_at, updated_at
         FROM children
         WHERE status != 'failed'
         ORDER BY created_at DESC
@@ -336,8 +387,9 @@ pub fn query_children_active(
                 status: row.get(7)?,
                 branch: row.get(8)?,
                 volume_id: row.get(9)?,
-                created_at: row.get(10)?,
-                updated_at: row.get(11)?,
+                designation: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -351,7 +403,7 @@ pub fn list_children_active(db: &Database) -> Result<Vec<ChildInstance>, Gateway
         let mut stmt = conn.prepare(
             r#"
             SELECT id, instance_id, address, url, railway_service_id,
-                   funded_amount, funding_tx, status, branch, volume_id, created_at, updated_at
+                   funded_amount, funding_tx, status, branch, volume_id, designation, created_at, updated_at
             FROM children
             WHERE status != 'failed'
             ORDER BY created_at DESC
@@ -371,8 +423,9 @@ pub fn list_children_active(db: &Database) -> Result<Vec<ChildInstance>, Gateway
                     status: row.get(7)?,
                     branch: row.get(8)?,
                     volume_id: row.get(9)?,
-                    created_at: row.get(10)?,
-                    updated_at: row.get(11)?,
+                    designation: row.get(10)?,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
