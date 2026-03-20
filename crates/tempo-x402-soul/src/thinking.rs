@@ -247,8 +247,18 @@ impl ThinkingLoop {
                 }
             };
 
+            // ── Temporal binding: adaptive cognitive scheduling ──
+            // Compute internal signals, tick all oscillators, get fired operations.
+            let temporal_signals = crate::temporal::compute_signals(&self.db);
+            let mut temporal = crate::temporal::load_temporal(&self.db);
+            let fired_ops = temporal.tick(&temporal_signals);
+            crate::temporal::save_temporal(&self.db, &temporal);
+            if !fired_ops.is_empty() {
+                tracing::info!(fired = ?fired_ops, "Temporal binding fires");
+            }
+
             // Run housekeeping (decay, promotion, belief decay, consolidation)
-            self.housekeeping();
+            self.housekeeping(&fired_ops);
 
             // Compute and store fitness score every cycle
             let fitness = crate::fitness::FitnessScore::compute(&snapshot, &self.db);
@@ -277,12 +287,14 @@ impl ThinkingLoop {
                 "Free energy"
             );
 
-            // Run Exercism Rust benchmark periodically (every 100 cycles)
+            // Run Exercism Rust benchmark (driven by temporal binding + cooldown)
             if let Some(llm) = &self.llm {
-                if crate::benchmark::should_run_benchmark(
-                    &self.db,
-                    crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
-                ) {
+                if fired_ops.contains(&crate::temporal::OP_BENCHMARK.to_string())
+                    && crate::benchmark::should_run_benchmark(
+                        &self.db,
+                        crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
+                    )
+                {
                     tracing::info!("Starting periodic Exercism Rust benchmark session");
                     let current_cycle: u64 = self
                         .db
@@ -321,15 +333,8 @@ impl ThinkingLoop {
                 }
             }
 
-            // Train the neural brain every 10 cycles
-            let cycle_count: u64 = self
-                .db
-                .get_state("total_think_cycles")
-                .ok()
-                .flatten()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0);
-            if cycle_count.is_multiple_of(10) {
+            // Train the neural brain (driven by temporal binding)
+            if fired_ops.contains(&crate::temporal::OP_BRAIN_TRAINING.to_string()) {
                 let (examples, loss) = crate::brain::train_cycle(&self.db);
                 if examples > 0 {
                     tracing::info!(
@@ -348,8 +353,10 @@ impl ThinkingLoop {
                         "Plan transformer training cycle"
                     );
                 }
+            }
 
-                // Cortex dream consolidation: extract patterns, prune, counterfactuals
+            // Cortex dream consolidation (driven by temporal binding — independent from brain training)
+            if fired_ops.contains(&crate::temporal::OP_CORTEX_DREAMING.to_string()) {
                 let mut cortex = crate::cortex::load_cortex(&self.db);
                 let insights = cortex.dream();
                 if insights > 0 {
@@ -401,8 +408,8 @@ impl ThinkingLoop {
                 crate::hivemind::save_hivemind(&self.db, &hive);
             }
 
-            // Gene pool evolution every 20 cycles: crossover, mutation, selection
-            if cycle_count > 0 && cycle_count.is_multiple_of(20) {
+            // Gene pool evolution (driven by temporal binding)
+            if fired_ops.contains(&crate::temporal::OP_GENESIS_EVOLUTION.to_string()) {
                 let mut gene_pool = crate::genesis::load_gene_pool(&self.db);
                 if !gene_pool.templates.is_empty() {
                     let (crossovers, mutations, pruned) = gene_pool.evolve();
@@ -420,10 +427,10 @@ impl ThinkingLoop {
                 }
             }
 
-            // Automatic peer sync every 5 cycles — don't rely on LLM choosing to discover.
+            // Automatic peer sync (driven by temporal binding) — don't rely on LLM choosing to discover.
             // discover_peers itself now makes x402 PAID calls to each peer's soul + info
             // gateway endpoints, generating real economic activity mechanically.
-            if cycle_count > 0 && cycle_count.is_multiple_of(5) {
+            if fired_ops.contains(&crate::temporal::OP_PEER_SYNC.to_string()) {
                 tracing::info!("Automatic peer sync with x402 paid calls (every 5 cycles)");
 
                 // Evaluation: snapshot accuracy BEFORE sync for colony benefit measurement
@@ -2941,11 +2948,12 @@ impl ThinkingLoop {
         }
     }
 
-    fn housekeeping(&self) {
+    fn housekeeping(&self, fired_ops: &[String]) {
         crate::housekeeping::housekeeping(
             &self.db,
             self.config.prune_threshold,
             &self.config.workspace_root,
+            fired_ops,
         );
     }
 }

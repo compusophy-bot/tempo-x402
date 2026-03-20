@@ -77,6 +77,9 @@ struct SoulStatus {
     /// Lifecycle: Fork → Branch → Birth differentiation phase.
     #[serde(skip_serializing_if = "Option::is_none")]
     lifecycle: Option<serde_json::Value>,
+    /// Temporal binding: adaptive cognitive scheduling via neural oscillators.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temporal: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -626,6 +629,33 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
                 "own_repo": ls.own_repo,
                 "lines_diverged": ls.lines_diverged,
             }))
+        },
+        temporal: {
+            let tb = x402_soul::temporal::load_temporal(soul_db);
+            if tb.current_cycle > 0 {
+                let oscillators: Vec<serde_json::Value> = tb.status().iter()
+                    .map(|o| serde_json::json!({
+                        "name": o.name,
+                        "phase": format!("{:.2}", o.phase),
+                        "urgency": format!("{:.3}", o.urgency),
+                        "natural_period": o.natural_period,
+                        "effective_period": format!("{:.1}", o.effective_period),
+                        "refractory": o.refractory,
+                        "cycles_since_fire": o.cycles_since_fire,
+                        "total_fires": o.total_fires,
+                    }))
+                    .collect();
+                let recent: Vec<serde_json::Value> = tb.recent_fires.iter().rev().take(20)
+                    .map(|(cy, op)| serde_json::json!({"cycle": cy, "operation": op}))
+                    .collect();
+                Some(serde_json::json!({
+                    "current_cycle": tb.current_cycle,
+                    "oscillators": oscillators,
+                    "recent_fires": recent,
+                }))
+            } else {
+                None
+            }
         },
     })
 }

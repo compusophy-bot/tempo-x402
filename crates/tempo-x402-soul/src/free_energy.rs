@@ -117,11 +117,12 @@ pub struct FreeEnergy {
 }
 
 /// What behavioral regime the free energy suggests.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub enum EnergyRegime {
     /// F is high — models are wrong, EXPLORE to gather information.
     Explore,
     /// F is moderate — learning actively, balanced approach.
+    #[default]
     Learn,
     /// F is low — models are accurate, EXPLOIT known strategies.
     Exploit,

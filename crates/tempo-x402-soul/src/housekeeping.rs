@@ -11,16 +11,12 @@ use crate::memory::{Thought, ThoughtType};
 
 /// Background housekeeping: decay, promotion, belief decay, consolidation.
 /// Ported from mind crate's subconscious loop — runs inline, no separate task.
-pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root: &str) {
-    let cycle_count: u64 = db
-        .get_state("total_think_cycles")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-
-    // Every 10 cycles: decay + promote + belief decay
-    if cycle_count > 0 && cycle_count.is_multiple_of(10) {
+///
+/// `fired_ops` comes from the temporal binding system — it lists which
+/// cognitive operations should run this cycle based on neural oscillators.
+pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root: &str, fired_ops: &[String]) {
+    // Thought decay + promotion + belief decay (driven by temporal binding)
+    if fired_ops.iter().any(|op| op == crate::temporal::OP_THOUGHT_DECAY) {
         match db.run_decay_cycle(prune_threshold) {
             Ok((decayed, pruned)) => {
                 if decayed > 0 || pruned > 0 {
@@ -99,15 +95,23 @@ pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root
             .output();
     }
 
-    // Every 20 cycles: mechanical self-repair of cognitive systems
+    // Mechanical self-repair of cognitive systems (driven by temporal binding)
     // No LLM, no nudges — pure Rust enforcement. The agent should self-correct.
-    if cycle_count > 0 && cycle_count.is_multiple_of(20) {
+    if fired_ops.iter().any(|op| op == crate::temporal::OP_SELF_REPAIR) {
         self_repair(db);
     }
 
-    // Every 40 cycles: simple consolidation (no LLM — save tokens for coding)
-    if cycle_count > 0 && cycle_count.is_multiple_of(40) {
+    // Memory consolidation (driven by temporal binding)
+    if fired_ops.iter().any(|op| op == crate::temporal::OP_MEMORY_CONSOLIDATION) {
         simple_consolidate(db);
+        // Track when consolidation last ran for staleness signal
+        let cycle_count: u64 = db
+            .get_state("total_think_cycles")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let _ = db.set_state("last_consolidation_cycle", &cycle_count.to_string());
     }
 }
 

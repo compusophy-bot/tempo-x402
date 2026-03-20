@@ -86,6 +86,7 @@ pub mod persistent_memory;
 pub mod plan;
 pub mod prompts;
 pub mod synthesis;
+pub mod temporal;
 pub mod thinking;
 pub mod tool_decl;
 pub mod tool_registry;
