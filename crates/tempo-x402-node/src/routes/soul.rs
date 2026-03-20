@@ -1747,6 +1747,129 @@ async fn soul_events(
     }
 }
 
+/// GET /soul/history — aggregated time-series data for timeline visualization.
+/// Returns free energy history, ELO history, fitness history, and events.
+/// Query params: since (unix timestamp), limit (event limit, default 500).
+#[derive(Deserialize)]
+struct HistoryQuery {
+    since: Option<i64>,
+    limit: Option<u32>,
+}
+
+async fn soul_history(
+    state: web::Data<NodeState>,
+    query: web::Query<HistoryQuery>,
+) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    // Free energy history
+    let fe_history: serde_json::Value = soul_db
+        .get_state("free_energy_history")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::json!({"measurements": [], "global_min": 0, "global_max": 0, "total_measurements": 0}));
+
+    // ELO history
+    let elo_history: Vec<serde_json::Value> = soul_db
+        .get_state("elo_history")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // Fitness history
+    let fitness_history: Vec<serde_json::Value> = soul_db
+        .get_state("fitness_history")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // Temporal binding state
+    let temporal: Option<serde_json::Value> = soul_db
+        .get_state("temporal_binding")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    // Events (filtered by since, limited)
+    let event_filter = x402_soul::EventFilter {
+        since: query.since,
+        limit: query.limit.unwrap_or(500),
+        ..Default::default()
+    };
+    let events: Vec<serde_json::Value> = soul_db
+        .query_events(&event_filter)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "id": e.id,
+                "level": e.level,
+                "code": e.code,
+                "category": e.category,
+                "message": e.message,
+                "created_at": e.created_at,
+            })
+        })
+        .collect();
+
+    // Compute time range from all data
+    let mut timestamps: Vec<i64> = Vec::new();
+    if let Some(measurements) = fe_history.get("measurements").and_then(|m| m.as_array()) {
+        for m in measurements {
+            if let Some(t) = m.get("timestamp").and_then(|v| v.as_i64()) {
+                timestamps.push(t);
+            }
+        }
+    }
+    for e in &elo_history {
+        if let Some(t) = e.get("measured_at").and_then(|v| v.as_i64()) {
+            timestamps.push(t);
+        }
+    }
+    for f in &fitness_history {
+        if let Some(t) = f.get("measured_at").and_then(|v| v.as_i64()) {
+            timestamps.push(t);
+        }
+    }
+    for ev in &events {
+        if let Some(t) = ev.get("created_at").and_then(|v| v.as_i64()) {
+            timestamps.push(t);
+        }
+    }
+
+    let time_start = timestamps.iter().copied().min().unwrap_or(0);
+    let time_end = timestamps.iter().copied().max().unwrap_or(0);
+
+    let total_cycles: u64 = soul_db
+        .get_state("total_think_cycles")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "free_energy": fe_history,
+        "elo": elo_history,
+        "fitness": fitness_history,
+        "temporal": temporal,
+        "events": events,
+        "time_range": {
+            "start": time_start,
+            "end": time_end,
+        },
+        "total_cycles": total_cycles,
+    }))
+}
+
 /// GET /soul/health — computed health summary from events.
 async fn soul_health(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
@@ -1996,6 +2119,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::post().to(merge_transformer_delta),
         )
         .route("/soul/events", web::get().to(soul_events))
+        .route("/soul/history", web::get().to(soul_history))
         .route("/soul/health", web::get().to(soul_health))
         // Cognitive architecture sharing endpoints
         .route("/soul/cortex", web::get().to(get_cortex))

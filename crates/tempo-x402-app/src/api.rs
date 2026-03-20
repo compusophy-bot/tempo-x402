@@ -509,6 +509,18 @@ pub async fn reject_plan(plan_id: &str, reason: Option<&str>) -> Result<serde_js
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
+/// Fetch soul history for timeline visualization
+pub async fn fetch_soul_history() -> Result<serde_json::Value, String> {
+    let resp = Request::get(&format!("{}/soul/history?limit=500", GATEWAY_URL))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 /// Fetch soul status from the node
 pub async fn fetch_soul_status() -> Result<serde_json::Value, String> {
     let resp = Request::get(&format!("{}/soul/status", GATEWAY_URL))
