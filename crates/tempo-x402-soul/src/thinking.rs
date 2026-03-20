@@ -1119,126 +1119,139 @@ impl ThinkingLoop {
                 StepResult::Failed(error) => {
                     consecutive_failures += 1;
                     tracing::warn!(step = %step_summary, error = %error, consecutive_failures, "Step failed");
-                    // Track capability failure
-                    capability::record_step_result(&self.db, &step, false, &error);
-                    // Online brain learning — learn from failures immediately
-                    let err_cat = crate::feedback::classify_error(&error);
-                    crate::brain::train_on_step(
-                        &self.db,
-                        &step,
-                        false,
-                        Some(err_cat.clone()),
-                        &brain_ctx,
-                    );
 
-                    // Synthesis + Evaluation: record failure for metacognitive tracking
-                    // (Previously only recorded on success — blind spot that prevented learning from mistakes)
-                    {
-                        let cortex_f = crate::cortex::load_cortex(&self.db);
-                        let gene_pool_f = crate::genesis::load_gene_pool(&self.db);
-                        let hivemind_f = crate::hivemind::load_hivemind(&self.db);
-                        let goal_desc_f = self
-                            .db
-                            .get_goal(&plan.goal_id)
-                            .ok()
-                            .flatten()
-                            .map(|g| g.description.clone())
-                            .unwrap_or_default();
-                        let mut synth = crate::synthesis::load_synthesis(&self.db);
-                        let unified = synth.predict_step(
+                    // CRITICAL: Rate limit errors are transient infra issues.
+                    // Do NOT record them as capability/brain/cortex/hivemind failures —
+                    // that permanently poisons the learning systems against LLM-dependent tools.
+                    let is_rate_limited = feedback::is_rate_limit_error(&error);
+
+                    if !is_rate_limited {
+                        // Track capability failure (only for real failures)
+                        capability::record_step_result(&self.db, &step, false, &error);
+                        // Online brain learning — learn from failures immediately
+                        let err_cat = crate::feedback::classify_error(&error);
+                        crate::brain::train_on_step(
+                            &self.db,
                             &step,
-                            &prediction,
-                            &cortex_f,
-                            &gene_pool_f,
-                            &hivemind_f,
-                            &goal_desc_f,
+                            false,
+                            Some(err_cat.clone()),
+                            &brain_ctx,
                         );
-                        synth.record_outcome(&unified.votes, false); // FALSE = failure
-                        crate::synthesis::save_synthesis(&self.db, &synth);
 
-                        // Brier scoring on failures too — critical for calibration
-                        let mut eval = crate::evaluation::load_evaluation(&self.db);
-                        for vote in &unified.votes {
-                            let prob = (vote.prediction + 1.0) / 2.0;
-                            eval.record_prediction(
-                                &vote.system,
-                                prob,
-                                vote.confidence,
-                                false, // FALSE = actual outcome was failure
-                                &step_summary,
+                        // Synthesis + Evaluation: record failure for metacognitive tracking
+                        {
+                            let cortex_f = crate::cortex::load_cortex(&self.db);
+                            let gene_pool_f = crate::genesis::load_gene_pool(&self.db);
+                            let hivemind_f = crate::hivemind::load_hivemind(&self.db);
+                            let goal_desc_f = self
+                                .db
+                                .get_goal(&plan.goal_id)
+                                .ok()
+                                .flatten()
+                                .map(|g| g.description.clone())
+                                .unwrap_or_default();
+                            let mut synth = crate::synthesis::load_synthesis(&self.db);
+                            let unified = synth.predict_step(
+                                &step,
+                                &prediction,
+                                &cortex_f,
+                                &gene_pool_f,
+                                &hivemind_f,
+                                &goal_desc_f,
                             );
-                        }
-                        crate::evaluation::save_evaluation(&self.db, &eval);
-                    }
+                            synth.record_outcome(&unified.votes, false);
+                            crate::synthesis::save_synthesis(&self.db, &synth);
 
-                    // Cortex: record failure experience for world model
-                    {
-                        let goal_desc_for_cortex = self
+                            let mut eval = crate::evaluation::load_evaluation(&self.db);
+                            for vote in &unified.votes {
+                                let prob = (vote.prediction + 1.0) / 2.0;
+                                eval.record_prediction(
+                                    &vote.system,
+                                    prob,
+                                    vote.confidence,
+                                    false,
+                                    &step_summary,
+                                );
+                            }
+                            crate::evaluation::save_evaluation(&self.db, &eval);
+                        }
+
+                        // Cortex: record failure experience for world model
+                        {
+                            let goal_desc_for_cortex = self
+                                .db
+                                .get_goal(&plan.goal_id)
+                                .ok()
+                                .flatten()
+                                .map(|g| g.description.clone())
+                                .unwrap_or_default();
+                            let ctx_tags = crate::cortex::build_context_tags(
+                                &step,
+                                &goal_desc_for_cortex,
+                                if plan.steps.is_empty() {
+                                    0.0
+                                } else {
+                                    plan.current_step as f32 / plan.steps.len() as f32
+                                },
+                                cycle_count,
+                            );
+                            let mut cortex = crate::cortex::load_cortex(&self.db);
+                            cortex.record(
+                                &crate::cortex::step_to_action_name(&step),
+                                ctx_tags,
+                                false,
+                                -0.5,
+                                Some(format!("{:?}", err_cat)),
+                            );
+                            crate::cortex::save_cortex(&self.db, &cortex);
+
+                            // Hivemind: deposit negative pheromone on failed step
+                            let mut hive = crate::hivemind::load_hivemind(&self.db);
+                            let file_path_for_hive = match &step {
+                                PlanStep::ReadFile { path, .. }
+                                | PlanStep::GenerateCode {
+                                    file_path: path, ..
+                                }
+                                | PlanStep::EditCode {
+                                    file_path: path, ..
+                                } => Some(path.as_str()),
+                                _ => None,
+                            };
+                            let instance_id =
+                                self.config.instance_id.as_deref().unwrap_or("unknown");
+                            let goal_kw =
+                                crate::genesis::extract_keywords_pub(&goal_desc_for_cortex);
+                            hive.deposit_from_step(
+                                &crate::cortex::step_to_action_name(&step),
+                                file_path_for_hive,
+                                &goal_kw,
+                                false,
+                                instance_id,
+                            );
+                            crate::hivemind::save_hivemind(&self.db, &hive);
+                        }
+
+                        // Record failure chain for causal reasoning
+                        let goal_desc = self
                             .db
                             .get_goal(&plan.goal_id)
                             .ok()
                             .flatten()
                             .map(|g| g.description.clone())
-                            .unwrap_or_default();
-                        let ctx_tags = crate::cortex::build_context_tags(
+                            .unwrap_or_else(|| "unknown".to_string());
+                        validation::record_failure_chain(
+                            &self.db,
+                            &goal_desc,
                             &step,
-                            &goal_desc_for_cortex,
-                            if plan.steps.is_empty() {
-                                0.0
-                            } else {
-                                plan.current_step as f32 / plan.steps.len() as f32
-                            },
-                            cycle_count,
+                            &error,
+                            plan.replan_count,
                         );
-                        let mut cortex = crate::cortex::load_cortex(&self.db);
-                        cortex.record(
-                            &crate::cortex::step_to_action_name(&step),
-                            ctx_tags,
-                            false,
-                            -0.5,
-                            Some(format!("{:?}", err_cat)),
+                    } else {
+                        tracing::info!(
+                            step = %step_summary,
+                            "Rate limit hit — skipping learning system updates to prevent poisoning"
                         );
-                        crate::cortex::save_cortex(&self.db, &cortex);
-
-                        // Hivemind: deposit negative pheromone on failed step
-                        let mut hive = crate::hivemind::load_hivemind(&self.db);
-                        let file_path_for_hive = match &step {
-                            PlanStep::ReadFile { path, .. }
-                            | PlanStep::GenerateCode {
-                                file_path: path, ..
-                            }
-                            | PlanStep::EditCode {
-                                file_path: path, ..
-                            } => Some(path.as_str()),
-                            _ => None,
-                        };
-                        let instance_id = self.config.instance_id.as_deref().unwrap_or("unknown");
-                        let goal_kw = crate::genesis::extract_keywords_pub(&goal_desc_for_cortex);
-                        hive.deposit_from_step(
-                            &crate::cortex::step_to_action_name(&step),
-                            file_path_for_hive,
-                            &goal_kw,
-                            false,
-                            instance_id,
-                        );
-                        crate::hivemind::save_hivemind(&self.db, &hive);
                     }
-
-                    // Record failure chain for causal reasoning
-                    let goal_desc = self
-                        .db
-                        .get_goal(&plan.goal_id)
-                        .ok()
-                        .flatten()
-                        .map(|g| g.description.clone())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    validation::record_failure_chain(
-                        &self.db,
-                        &goal_desc,
-                        &step,
-                        &error,
-                        plan.replan_count,
-                    );
 
                     return self
                         .handle_step_failure(llm, &mut plan, &step_summary, &error)
@@ -1246,63 +1259,69 @@ impl ThinkingLoop {
                 }
                 StepResult::NeedsReplan(reason) => {
                     tracing::info!(step = %step_summary, reason = %reason, "Step needs replan");
-                    // Track capability failure
-                    capability::record_step_result(&self.db, &step, false, &reason);
-                    // Online brain learning
-                    let err_cat = crate::feedback::classify_error(&reason);
-                    crate::brain::train_on_step(
-                        &self.db,
-                        &step,
-                        false,
-                        Some(err_cat.clone()),
-                        &brain_ctx,
-                    );
 
-                    // Cortex: record replan experience
-                    {
-                        let goal_desc_for_cortex = self
+                    // Rate-limit protection: don't poison learning systems
+                    let is_rate_limited_replan = feedback::is_rate_limit_error(&reason);
+
+                    if !is_rate_limited_replan {
+                        // Track capability failure
+                        capability::record_step_result(&self.db, &step, false, &reason);
+                        // Online brain learning
+                        let err_cat = crate::feedback::classify_error(&reason);
+                        crate::brain::train_on_step(
+                            &self.db,
+                            &step,
+                            false,
+                            Some(err_cat.clone()),
+                            &brain_ctx,
+                        );
+
+                        // Cortex: record replan experience
+                        {
+                            let goal_desc_for_cortex = self
+                                .db
+                                .get_goal(&plan.goal_id)
+                                .ok()
+                                .flatten()
+                                .map(|g| g.description.clone())
+                                .unwrap_or_default();
+                            let ctx_tags = crate::cortex::build_context_tags(
+                                &step,
+                                &goal_desc_for_cortex,
+                                if plan.steps.is_empty() {
+                                    0.0
+                                } else {
+                                    plan.current_step as f32 / plan.steps.len() as f32
+                                },
+                                cycle_count,
+                            );
+                            let mut cortex = crate::cortex::load_cortex(&self.db);
+                            cortex.record(
+                                &crate::cortex::step_to_action_name(&step),
+                                ctx_tags,
+                                false,
+                                -0.3,
+                                Some(format!("{:?}", err_cat)),
+                            );
+                            crate::cortex::save_cortex(&self.db, &cortex);
+                        }
+
+                        // Record failure chain for causal reasoning
+                        let goal_desc = self
                             .db
                             .get_goal(&plan.goal_id)
                             .ok()
                             .flatten()
                             .map(|g| g.description.clone())
-                            .unwrap_or_default();
-                        let ctx_tags = crate::cortex::build_context_tags(
+                            .unwrap_or_else(|| "unknown".to_string());
+                        validation::record_failure_chain(
+                            &self.db,
+                            &goal_desc,
                             &step,
-                            &goal_desc_for_cortex,
-                            if plan.steps.is_empty() {
-                                0.0
-                            } else {
-                                plan.current_step as f32 / plan.steps.len() as f32
-                            },
-                            cycle_count,
+                            &reason,
+                            plan.replan_count,
                         );
-                        let mut cortex = crate::cortex::load_cortex(&self.db);
-                        cortex.record(
-                            &crate::cortex::step_to_action_name(&step),
-                            ctx_tags,
-                            false,
-                            -0.3,
-                            Some(format!("{:?}", err_cat)),
-                        );
-                        crate::cortex::save_cortex(&self.db, &cortex);
                     }
-
-                    // Record failure chain for causal reasoning
-                    let goal_desc = self
-                        .db
-                        .get_goal(&plan.goal_id)
-                        .ok()
-                        .flatten()
-                        .map(|g| g.description.clone())
-                        .unwrap_or_else(|| "unknown".to_string());
-                    validation::record_failure_chain(
-                        &self.db,
-                        &goal_desc,
-                        &step,
-                        &reason,
-                        plan.replan_count,
-                    );
 
                     return self
                         .handle_step_failure(llm, &mut plan, &step_summary, &reason)
@@ -1689,23 +1708,22 @@ impl ThinkingLoop {
         crate::synthesis::save_synthesis(&self.db, &synth);
 
         // Plan transformer: if trained, generate a plan and inject as strong hint
-        let transformer_section =
-            match crate::model::generate_plan(&self.db, &goal.description) {
-                Some(steps) => {
-                    let steps_json: Vec<String> = steps
-                        .iter()
-                        .map(|s| format!("  {{\"type\": \"{}\"}}", s))
-                        .collect();
-                    format!(
+        let transformer_section = match crate::model::generate_plan(&self.db, &goal.description) {
+            Some(steps) => {
+                let steps_json: Vec<String> = steps
+                    .iter()
+                    .map(|s| format!("  {{\"type\": \"{}\"}}", s))
+                    .collect();
+                format!(
                         "# Transformer Plan (generated by 284K-param model trained on colony experience)\n\
                          This plan was generated WITHOUT LLM by the local transformer model.\n\
                          Use it as your starting point — adapt details but follow the step structure:\n\
                          ```json\n[\n{}\n]\n```",
                         steps_json.join(",\n")
                     )
-                }
-                None => String::new(),
-            };
+            }
+            None => String::new(),
+        };
 
         // Lifecycle: tell the agent what phase it's in and encourage differentiation
         let lifecycle_section = crate::lifecycle::prompt_section(&self.db);
@@ -1738,11 +1756,15 @@ impl ThinkingLoop {
             Ok(response) => {
                 let steps =
                     crate::normalize::parse_plan_steps(&response, self.config.max_plan_steps)?;
-                let steps = crate::normalize::sanitize_plan_steps(steps);
+                let mut steps = crate::normalize::sanitize_plan_steps(steps);
                 if steps.is_empty() {
                     tracing::warn!("Plan sanitization removed all steps — skipping plan creation");
                     return Ok(None);
                 }
+
+                // Auto-fix: insert CargoCheck before Commit if missing (prevents
+                // weaker models from getting stuck in validation rejection loops)
+                validation::auto_fix_cargo_check(&mut steps);
 
                 // ── Mechanical plan validation ──
                 // Hard checks that reject bad plans BEFORE execution.
@@ -2289,15 +2311,29 @@ impl ThinkingLoop {
         );
 
         // Short-circuit: some errors are unsolvable — replanning won't help
-        let error_lower = error.to_lowercase();
-        let unsolvable = error.contains("Peers found: 0")
-            || error.contains("unable to auto-detect email address")
-            || error_lower.contains("rate limit")
-            || error_lower.contains("429")
-            || error_lower.contains("resource_exhausted")
-            || error_lower.contains("too many requests")
-            || error_lower.contains("protected")
-            || error_lower.contains("guard");
+        // IMPORTANT: Rate limits (429) are NOT unsolvable — they're transient infra issues.
+        // Treating them as unsolvable poisons durable rules, hivemind, cortex, and brain.
+        let is_rate_limited = feedback::is_rate_limit_error(error);
+        let unsolvable = !is_rate_limited
+            && (error.contains("Peers found: 0")
+                || error.contains("unable to auto-detect email address")
+                || error.to_lowercase().contains("protected")
+                || error.to_lowercase().contains("guard"));
+        if is_rate_limited {
+            tracing::warn!(
+                plan_id = %plan.id,
+                error = %error,
+                "Rate limit hit — pausing plan (NOT recording as failure to avoid poisoning)"
+            );
+            // Don't fail the plan — just pause it. The next cycle will retry.
+            // Increase cycle interval to back off.
+            self.increment_cycle_count()?;
+            return Ok(CycleResult {
+                step_type: StepType::Llm,
+                entered_code: false,
+                summary: format!("rate limited — backing off (plan {} paused)", plan.id),
+            });
+        }
         if unsolvable {
             tracing::warn!(
                 plan_id = %plan.id,
@@ -2425,9 +2461,12 @@ impl ThinkingLoop {
 
         match llm.think(system, &prompt).await {
             Ok(response) => {
-                let new_steps = crate::normalize::sanitize_plan_steps(
+                let mut new_steps = crate::normalize::sanitize_plan_steps(
                     crate::normalize::parse_plan_steps(&response, self.config.max_plan_steps)?,
                 );
+
+                // Auto-fix: insert CargoCheck before Commit if missing
+                validation::auto_fix_cargo_check(&mut new_steps);
 
                 // Validate replanned steps too
                 let goal_desc = goal.description.clone();

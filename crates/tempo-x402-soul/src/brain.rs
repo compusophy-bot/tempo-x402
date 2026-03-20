@@ -980,7 +980,7 @@ fn error_category_to_idx(cat: &ErrorCategory) -> usize {
         ErrorCategory::TestFailure => 1,
         ErrorCategory::FileNotFound => 2,
         ErrorCategory::ShellError => 3,
-        ErrorCategory::NetworkError => 4,
+        ErrorCategory::NetworkError | ErrorCategory::RateLimit => 4,
         ErrorCategory::ProtectedFile => 5,
         ErrorCategory::EndpointError => 6,
         ErrorCategory::GitError => 7,

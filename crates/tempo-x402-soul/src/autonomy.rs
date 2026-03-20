@@ -589,61 +589,64 @@ pub async fn sync_cognitive_systems(
                     }
                 }
 
-    // ── Fetch peer's transformer weights ──
-    match http_client
-        .get(format!("{peer_url}/soul/model/transformer"))
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                let peer_steps = data
-                    .get("train_steps")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                // Only merge if the peer has done meaningful training
-                if peer_steps >= 50 {
-                    // Fetch full weights for delta computation
-                    if let Ok(weights_resp) = http_client
-                        .get(format!("{peer_url}/soul/model/transformer/weights"))
-                        .timeout(std::time::Duration::from_secs(15))
-                        .send()
-                        .await
-                    {
-                        if weights_resp.status().is_success() {
-                            if let Ok(weights_data) = weights_resp.json::<serde_json::Value>().await
-                            {
-                                if let Some(weights_json) =
-                                    weights_data.get("weights").and_then(|v| v.as_str())
+                // ── Fetch peer's transformer weights ──
+                match http_client
+                    .get(format!("{peer_url}/soul/model/transformer"))
+                    .timeout(std::time::Duration::from_secs(10))
+                    .send()
+                    .await
+                {
+                    Ok(resp) if resp.status().is_success() => {
+                        if let Ok(data) = resp.json::<serde_json::Value>().await {
+                            let peer_steps = data
+                                .get("train_steps")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            // Only merge if the peer has done meaningful training
+                            if peer_steps >= 50 {
+                                // Fetch full weights for delta computation
+                                if let Ok(weights_resp) = http_client
+                                    .get(format!("{peer_url}/soul/model/transformer/weights"))
+                                    .timeout(std::time::Duration::from_secs(15))
+                                    .send()
+                                    .await
                                 {
-                                    if let Some(peer_model) =
-                                        x402_model::PlanTransformer::from_json(weights_json)
-                                    {
-                                        let local = crate::model::load_model(db);
-                                        let delta =
-                                            peer_model.compute_delta(&local, peer_id);
-                                        crate::model::merge_peer_delta(
-                                            db,
-                                            &delta,
-                                            effective_rate,
-                                        );
-                                        tracing::debug!(
-                                            peer = %peer_id,
-                                            peer_steps,
-                                            rate = format!("{:.3}", effective_rate),
-                                            "Merged peer transformer weights"
-                                        );
+                                    if weights_resp.status().is_success() {
+                                        if let Ok(weights_data) =
+                                            weights_resp.json::<serde_json::Value>().await
+                                        {
+                                            if let Some(weights_json) =
+                                                weights_data.get("weights").and_then(|v| v.as_str())
+                                            {
+                                                if let Some(peer_model) =
+                                                    x402_model::PlanTransformer::from_json(
+                                                        weights_json,
+                                                    )
+                                                {
+                                                    let local = crate::model::load_model(db);
+                                                    let delta =
+                                                        peer_model.compute_delta(&local, peer_id);
+                                                    crate::model::merge_peer_delta(
+                                                        db,
+                                                        &delta,
+                                                        effective_rate,
+                                                    );
+                                                    tracing::debug!(
+                                                        peer = %peer_id,
+                                                        peer_steps,
+                                                        rate = format!("{:.3}", effective_rate),
+                                                        "Merged peer transformer weights"
+                                                    );
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    _ => {}
                 }
-            }
-        }
-        _ => {}
-    }
 
                 // Update peer activity in hivemind
                 if let Some(activities) = data.get("peer_activities") {

@@ -52,6 +52,9 @@ pub enum ErrorCategory {
     ShellError,
     /// Peer/network operation failed.
     NetworkError,
+    /// LLM rate limit (429) — transient infra issue, NOT a tool/capability failure.
+    /// Must NOT poison durable rules, hivemind, cortex, brain, or capability tracking.
+    RateLimit,
     /// Protected file — tried to edit a guarded file.
     ProtectedFile,
     /// Endpoint creation error (duplicate, max cap, etc).
@@ -77,6 +80,7 @@ impl ErrorCategory {
             Self::ProtectedFile => "protected_file",
             Self::EndpointError => "endpoint_error",
             Self::GitError => "git_error",
+            Self::RateLimit => "rate_limit",
             Self::LlmParseError => "llm_parse_error",
             Self::Unsolvable => "unsolvable",
             Self::Unknown => "unknown",
@@ -147,8 +151,9 @@ pub fn classify_error(error: &str) -> ErrorCategory {
         || e.contains("rate limit")
         || e.contains("resource_exhausted")
         || e.contains("too many requests")
+        || e.contains("exceeded your current quota")
     {
-        ErrorCategory::NetworkError
+        ErrorCategory::RateLimit
     } else if e.contains("replan")
         || e.contains("failed")
         || e.contains("error")
@@ -160,6 +165,17 @@ pub fn classify_error(error: &str) -> ErrorCategory {
     } else {
         ErrorCategory::Unknown
     }
+}
+
+/// Check if an error message indicates a rate limit (429/quota exhaustion).
+/// Rate limits are transient infra issues — they must NOT poison learning systems.
+pub fn is_rate_limit_error(error: &str) -> bool {
+    let e = error.to_lowercase();
+    e.contains("429")
+        || e.contains("rate limit")
+        || e.contains("resource_exhausted")
+        || e.contains("too many requests")
+        || e.contains("exceeded your current quota")
 }
 
 /// Extract a human-readable lesson from a plan outcome.

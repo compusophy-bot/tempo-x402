@@ -333,7 +333,48 @@ fn self_repair(db: &Arc<SoulDatabase>) {
         }
     }
 
-    // 2. Hivemind trail convergence: if top 3 trails are all read-only, the swarm learned passivity
+    // 2. Rate-limit contamination cleanup: remove poisoned repellent pheromones on core tools.
+    // When 429 errors caused failures, the hivemind learned to AVOID think/read_file/run_shell.
+    // These are false signals — rate limits are transient infra issues, not tool failures.
+    {
+        let mut hive = crate::hivemind::load_hivemind(db);
+        let poisoned_actions = [
+            "think",
+            "read_file",
+            "run_shell",
+            "search_code",
+            "generate_code",
+            "edit_code",
+        ];
+        let mut cleared = Vec::new();
+        for trail in &mut hive.trails {
+            if trail.category == crate::hivemind::PheromoneCategory::Action
+                && trail.valence < 0.0
+                && poisoned_actions.iter().any(|a| trail.resource == *a)
+            {
+                cleared.push(format!(
+                    "{}(v={:.2},i={:.0}%)",
+                    trail.resource,
+                    trail.valence,
+                    trail.intensity * 100.0
+                ));
+                trail.valence = 0.0;
+                trail.intensity = 0.0;
+            }
+        }
+        // Remove zeroed trails
+        hive.trails.retain(|t| t.intensity > 0.001);
+        if !cleared.is_empty() {
+            crate::hivemind::save_hivemind(db, &hive);
+            repairs.push(format!(
+                "Rate-limit decontamination: cleared {} poisoned repellent trails: {}",
+                cleared.len(),
+                cleared.join(", ")
+            ));
+        }
+    }
+
+    // 2b. Hivemind trail convergence: if top 3 trails are all read-only, the swarm learned passivity
     {
         let mut hive = crate::hivemind::load_hivemind(db);
         if hive.trails.len() >= 3 {
@@ -369,7 +410,60 @@ fn self_repair(db: &Arc<SoulDatabase>) {
         }
     }
 
-    // 3. Persistent low execution fitness → clear durable rules (they might be blocking progress)
+    // 3. Clean durable rules created from rate-limit errors (they're false signals)
+    {
+        if let Ok(Some(rules_json)) = db.get_state("durable_rules") {
+            if let Ok(mut rules) =
+                serde_json::from_str::<Vec<crate::validation::DurableRule>>(&rules_json)
+            {
+                let before = rules.len();
+                rules.retain(|r| {
+                    let is_rate_limit = r.reason.to_lowercase().contains("429")
+                        || r.reason.to_lowercase().contains("rate limit")
+                        || r.reason.to_lowercase().contains("resource_exhausted")
+                        || r.reason.to_lowercase().contains("too many requests")
+                        || r.reason.to_lowercase().contains("network_error");
+                    !is_rate_limit
+                });
+                let removed = before - rules.len();
+                if removed > 0 {
+                    if let Ok(json) = serde_json::to_string(&rules) {
+                        let _ = db.set_state("durable_rules", &json);
+                    }
+                    repairs.push(format!(
+                        "Removed {} durable rules caused by rate-limit errors",
+                        removed
+                    ));
+                }
+            }
+        }
+
+        // Also clean failure chains caused by rate limits
+        if let Ok(Some(chains_json)) = db.get_state("failure_chains") {
+            if let Ok(mut chains) =
+                serde_json::from_str::<Vec<crate::validation::FailureChain>>(&chains_json)
+            {
+                let before = chains.len();
+                chains.retain(|c| {
+                    !crate::feedback::is_rate_limit_error(&c.error_category)
+                        && !c.error_category.contains("network_error")
+                        && !c.error_category.contains("rate_limit")
+                });
+                let removed = before - chains.len();
+                if removed > 0 {
+                    if let Ok(json) = serde_json::to_string(&chains) {
+                        let _ = db.set_state("failure_chains", &json);
+                    }
+                    repairs.push(format!(
+                        "Removed {} failure chains caused by rate-limit errors",
+                        removed
+                    ));
+                }
+            }
+        }
+    }
+
+    // 3b. Persistent low execution fitness → clear durable rules (they might be blocking progress)
     {
         let trivial_count = db
             .count_plan_outcomes_by_status("completed_trivial")

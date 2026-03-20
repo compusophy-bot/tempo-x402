@@ -180,14 +180,12 @@ pub fn differentiate(db: &SoulDatabase, instance_id: &str) -> Option<String> {
 pub fn prompt_section(db: &SoulDatabase) -> String {
     let status = status(db);
     match status.phase {
-        LifecyclePhase::Fork => {
-            "# Lifecycle: Fork (Phase 1)\n\
+        LifecyclePhase::Fork => "# Lifecycle: Fork (Phase 1)\n\
              You are running identical code to all other clones.\n\
              To differentiate, make SOURCE CODE changes — not just data.\n\
              Your first successful code commit will create your own branch.\n\
              Think about what makes YOU unique. What can you build that no other clone has?"
-                .to_string()
-        }
+            .to_string(),
         LifecyclePhase::Branch => {
             format!(
                 "# Lifecycle: Branch (Phase 2) — DIFFERENTIATING\n\

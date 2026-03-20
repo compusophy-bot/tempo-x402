@@ -164,6 +164,8 @@ fn check_read_before_write(steps: &[PlanStep], violations: &mut Vec<PlanViolatio
 
 /// Rule 2: If there's a commit step, there must be a cargo_check step after the last
 /// code-modifying step and before the commit.
+/// NOTE: This now only warns (Soft). Use `auto_fix_cargo_check()` to auto-insert instead
+/// of forcing the LLM to figure it out (which traps weaker models in rejection loops).
 fn check_cargo_before_commit(steps: &[PlanStep], violations: &mut Vec<PlanViolation>) {
     let mut last_code_step: Option<usize> = None;
     let mut has_cargo_check_after_last_code = false;
@@ -181,8 +183,9 @@ fn check_cargo_before_commit(steps: &[PlanStep], violations: &mut Vec<PlanViolat
                 if last_code_step.is_some() && !has_cargo_check_after_last_code {
                     violations.push(PlanViolation {
                         rule: "cargo-check-before-commit",
-                        severity: Severity::Hard,
-                        detail: "Commit without cargo_check after code changes. Add a cargo_check step before committing.".to_string(),
+                        severity: Severity::Soft, // Downgraded: auto_fix_cargo_check handles this
+                        detail: "Commit without cargo_check after code changes (auto-fixed)."
+                            .to_string(),
                         step_index: Some(i),
                     });
                 }
@@ -190,6 +193,45 @@ fn check_cargo_before_commit(steps: &[PlanStep], violations: &mut Vec<PlanViolat
             _ => {}
         }
     }
+}
+
+/// Auto-insert `CargoCheck` steps before `Commit` when code changes precede it.
+/// This prevents weaker models (Flash Lite) from getting stuck in validation rejection loops.
+pub fn auto_fix_cargo_check(steps: &mut Vec<PlanStep>) -> usize {
+    let mut insertions = 0;
+    let mut i = 0;
+    while i < steps.len() {
+        if matches!(steps[i], PlanStep::Commit { .. }) {
+            // Walk backwards to check if there's a code step without a CargoCheck between
+            let mut has_code = false;
+            let mut has_check = false;
+            let mut j = i;
+            while j > 0 {
+                j -= 1;
+                match &steps[j] {
+                    PlanStep::EditCode { .. } | PlanStep::GenerateCode { .. } => {
+                        has_code = true;
+                        break;
+                    }
+                    PlanStep::CargoCheck { .. } => {
+                        has_check = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if has_code && !has_check {
+                steps.insert(i, PlanStep::CargoCheck { store_as: None });
+                insertions += 1;
+                i += 1; // skip past the inserted CargoCheck
+            }
+        }
+        i += 1;
+    }
+    if insertions > 0 {
+        tracing::info!(insertions, "Auto-inserted CargoCheck steps before Commit");
+    }
+    insertions
 }
 
 /// Rule 3: The first step must be investigative (read_file, list_dir, search_code,
@@ -586,6 +628,13 @@ pub fn extract_durable_rules(outcome: &PlanOutcome, db: &SoulDatabase) -> Vec<Du
         .as_deref()
         .unwrap_or("")
         .to_lowercase();
+
+    // NEVER create durable rules from rate-limit errors — they're transient infra issues,
+    // not real tool failures. Creating rules from 429s permanently poisons the agent.
+    if crate::feedback::is_rate_limit_error(&error) {
+        tracing::info!("Skipping durable rule extraction — error was rate limit (transient)");
+        return rules;
+    }
 
     // Rule: if a specific file caused a protected-file error, block it
     if error.contains("protected") {
@@ -985,7 +1034,8 @@ mod tests {
             },
         ];
         let result = validate_plan(&steps, &db, "test goal");
-        assert!(!result.is_valid());
+        // cargo-check-before-commit is now Soft (auto-fixed), so plan is valid
+        // but a violation should still be recorded
         assert!(result
             .violations
             .iter()

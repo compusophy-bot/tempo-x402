@@ -120,12 +120,16 @@ pub async fn clone_instance(
     }
 
     // 2. Get ordinal designation for this drone
-    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    let designation =
+        db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
     let mut clone_extra = std::collections::HashMap::new();
     clone_extra.insert("DRONE_DESIGNATION".to_string(), designation.clone());
 
     // 3. Spawn clone on Railway (with retry + cleanup-on-failure)
-    let clone_result = match agent.spawn_clone_with_extra_vars(&instance_id, &payer_address, &clone_extra).await {
+    let clone_result = match agent
+        .spawn_clone_with_extra_vars(&instance_id, &payer_address, &clone_extra)
+        .await
+    {
         Ok(result) => result,
         Err(e) => {
             tracing::error!(
@@ -538,11 +542,15 @@ pub async fn clone_self(
         }
     }
 
-    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    let designation =
+        db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
     let mut clone_extra = std::collections::HashMap::new();
     clone_extra.insert("DRONE_DESIGNATION".to_string(), designation.clone());
 
-    let clone_result = match agent.spawn_clone_with_extra_vars(&instance_id, &self_address, &clone_extra).await {
+    let clone_result = match agent
+        .spawn_clone_with_extra_vars(&instance_id, &self_address, &clone_extra)
+        .await
+    {
         Ok(result) => result,
         Err(e) => {
             tracing::error!(instance_id = %instance_id, error = %e, "Self-clone failed");
@@ -648,7 +656,8 @@ pub async fn clone_specialist(
 
     // Build extra env vars for this specialist (thread-safe, no set_var)
     let mut extra_vars = std::collections::HashMap::new();
-    let designation = db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
+    let designation =
+        db::next_designation(&node.gateway.db).unwrap_or_else(|_| "drone".to_string());
     extra_vars.insert("DRONE_DESIGNATION".to_string(), designation.clone());
     extra_vars.insert(
         "SOUL_SPECIALIZATION".to_string(),

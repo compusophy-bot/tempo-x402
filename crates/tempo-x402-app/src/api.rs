@@ -650,7 +650,11 @@ pub async fn clone_instance(wallet: &WalletState) -> Result<CloneResponse, Strin
             continue;
         }
 
-        return Err(format!("Clone failed (HTTP {}): {}", paid_resp.status(), err));
+        return Err(format!(
+            "Clone failed (HTTP {}): {}",
+            paid_resp.status(),
+            err
+        ));
     }
 
     Err("Clone failed after 3 attempts".to_string())

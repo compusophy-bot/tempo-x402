@@ -25,7 +25,6 @@ pub struct ChildInstance {
     pub updated_at: i64,
 }
 
-
 const CHILDREN_SCHEMA: &str = r#"
     CREATE TABLE IF NOT EXISTS children (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

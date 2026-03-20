@@ -79,6 +79,27 @@ impl NodeObserverImpl {
 
         // Siblings (child perspective — ask parent)
         if let Some(ref parent) = parent_url {
+            // Include the PARENT itself as a peer — a clone should always be able to
+            // communicate with its parent. Without this, a lone child with no siblings
+            // sees 0 peers and is permanently isolated from cognitive sync.
+            if let Ok(info) = Self::fetch_peer_info(parent).await {
+                let parent_instance_id = info
+                    .instance_id
+                    .clone()
+                    .unwrap_or_else(|| "parent".to_string());
+                let skip_parent = self_instance_id == Some(parent_instance_id.as_str());
+                if !skip_parent {
+                    peers.push(PeerInfo {
+                        instance_id: parent_instance_id,
+                        url: parent.clone(),
+                        address: info.address.clone(),
+                        version: info.version.clone(),
+                        endpoints: info.endpoints.clone(),
+                    });
+                }
+            }
+
+            // Also discover siblings via parent's /instance/siblings
             let siblings_url = format!("{}/instance/siblings", parent.trim_end_matches('/'));
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -95,6 +116,10 @@ impl NodeObserverImpl {
                                     .unwrap_or_default();
                                 // Skip self
                                 if self_instance_id == Some(inst_id) {
+                                    continue;
+                                }
+                                // Skip if already added (e.g. parent)
+                                if peers.iter().any(|p| p.instance_id == inst_id) {
                                     continue;
                                 }
                                 let url = match sib.get("url").and_then(|v| v.as_str()) {
@@ -143,6 +168,16 @@ impl NodeObserverImpl {
         let resp = client.get(&url).send().await?;
         let json: serde_json::Value = resp.json().await?;
 
+        let instance_id = json
+            .get("identity")
+            .and_then(|v| v.get("instance_id"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let address = json
+            .get("identity")
+            .and_then(|v| v.get("address"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let version = json
             .get("version")
             .and_then(|v| v.as_str())
@@ -169,12 +204,19 @@ impl NodeObserverImpl {
             }
         }
 
-        Ok(PeerInfoResult { version, endpoints })
+        Ok(PeerInfoResult {
+            instance_id,
+            address,
+            version,
+            endpoints,
+        })
     }
 }
 
 /// Extracted peer info from /instance/info.
 struct PeerInfoResult {
+    instance_id: Option<String>,
+    address: Option<String>,
     version: Option<String>,
     endpoints: Vec<x402_soul::observer::PeerEndpoint>,
 }

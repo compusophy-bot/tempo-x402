@@ -126,7 +126,13 @@ impl CloneOrchestrator {
 
         // All subsequent steps run with cleanup-on-failure
         match self
-            .spawn_clone_inner(&service_id, instance_id, &designation, parent_address, extra_vars)
+            .spawn_clone_inner(
+                &service_id,
+                instance_id,
+                &designation,
+                parent_address,
+                extra_vars,
+            )
             .await
         {
             Ok(result) => Ok(result),
