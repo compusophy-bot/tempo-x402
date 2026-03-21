@@ -57,7 +57,7 @@ const W_INTROSPECTION: f64 = 0.10;
 const W_PREDICTION: f64 = 0.20;
 
 /// How many historical scores to keep for trend calculation.
-const HISTORY_SIZE: usize = 50;
+const HISTORY_SIZE: usize = 200;
 
 impl FitnessScore {
     /// Compute fitness from current state.

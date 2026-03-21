@@ -52,8 +52,8 @@ pub fn update_rating(db: &SoulDatabase, pass_at_1: f64) {
         pass_at_1,
         measured_at: chrono::Utc::now().timestamp(),
     });
-    if history.len() > 50 {
-        history.drain(..history.len() - 50);
+    if history.len() > 200 {
+        history.drain(..history.len() - 200);
     }
     if let Ok(json) = serde_json::to_string(&history) {
         let _ = db.set_state("elo_history", &json);

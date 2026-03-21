@@ -77,7 +77,7 @@ use crate::synthesis;
 /// Complexity penalty weight (prevents overfitting).
 const LAMBDA: f64 = 0.01;
 /// History size for free energy trend.
-const HISTORY_SIZE: usize = 200;
+const HISTORY_SIZE: usize = 500;
 /// Free energy threshold above which the agent should explore.
 const EXPLORATION_THRESHOLD: f64 = 0.6;
 /// Free energy threshold below which the agent can exploit.
