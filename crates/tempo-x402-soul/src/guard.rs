@@ -3,24 +3,18 @@
 //! These paths are hardcoded (not env-var based) so the soul cannot bypass
 //! protection by modifying environment variables via shell.
 
-/// Protected path prefixes. Any file starting with one of these cannot be written.
+/// Protected path prefixes — ONLY files that would brick the agent or compromise infra.
+/// Everything else should be editable for self-improvement.
 const PROTECTED_PREFIXES: &[&str] = &[
-    "crates/tempo-x402-soul/src/tools.rs",
-    "crates/tempo-x402-soul/src/llm.rs",
-    "crates/tempo-x402-soul/src/db.rs",
-    "crates/tempo-x402-soul/src/error.rs",
-    "crates/tempo-x402-soul/src/guard.rs",
-    "crates/tempo-x402-soul/src/config.rs",
-    "crates/tempo-x402-soul/src/tool_registry.rs",
-    "crates/tempo-x402-soul/src/brain.rs",
-    "crates/tempo-x402-soul/src/computer_use.rs",
-    "crates/tempo-x402-soul/src/capability.rs",
-    "crates/tempo-x402-soul/src/feedback.rs",
-    "crates/tempo-x402-soul/src/benchmark.rs",
-    "crates/tempo-x402-soul/src/elo.rs",
-    "crates/tempo-x402-soul/src/validation.rs",
+    // Core safety: editing these could brick the agent
+    "crates/tempo-x402-soul/src/guard.rs",   // self-protection bypass
+    "crates/tempo-x402-soul/src/db.rs",      // database corruption
+    "crates/tempo-x402-soul/src/config.rs",  // config corruption
+    "crates/tempo-x402-soul/src/llm.rs",     // API client corruption
+    "crates/tempo-x402-soul/src/tools.rs",   // tool executor corruption
+    "crates/tempo-x402-soul/src/error.rs",   // error type changes break everything
+    // Infrastructure: these affect other systems, not just this agent
     "crates/tempo-x402-identity/",
-    "crates/tempo-x402-node/src/routes/",
     "crates/tempo-x402-node/src/main.rs",
     "crates/tempo-x402-gateway/src/",
     ".github/",
@@ -122,32 +116,38 @@ mod tests {
     }
 
     #[test]
-    fn protects_node_routes_and_gateway() {
-        assert!(is_protected("crates/tempo-x402-node/src/routes/soul.rs"));
-        assert!(is_protected("crates/tempo-x402-node/src/routes/clone.rs"));
+    fn protects_infra_files() {
+        // Node main.rs is protected (startup/deployment)
         assert!(is_protected("crates/tempo-x402-node/src/main.rs"));
+        // Gateway is protected (payment infrastructure)
         assert!(is_protected(
             "crates/tempo-x402-gateway/src/routes/register.rs"
         ));
         assert!(is_protected("crates/tempo-x402-gateway/src/proxy.rs"));
+        // Node routes are NOT protected — agents can improve their own endpoints
+        assert!(!is_protected("crates/tempo-x402-node/src/routes/soul.rs"));
+        assert!(!is_protected("crates/tempo-x402-node/src/routes/clone.rs"));
     }
 
     #[test]
-    fn protects_intelligence_modules() {
-        assert!(is_protected("crates/tempo-x402-soul/src/brain.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/computer_use.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/capability.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/feedback.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/benchmark.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/elo.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/validation.rs"));
-    }
-
-    #[test]
-    fn allows_normal_files() {
+    fn allows_self_improvable_files() {
+        // These were previously protected but agents need to edit them to improve
+        assert!(!is_protected("crates/tempo-x402-soul/src/benchmark.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/brain.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/capability.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/feedback.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/elo.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/validation.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/thinking.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/prompts.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/chat.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/memory.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/temporal.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/cortex.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/genesis.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/hivemind.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/synthesis.rs"));
+        assert!(!is_protected("crates/tempo-x402-node/src/routes/soul.rs"));
         assert!(!is_protected("README.md"));
     }
 

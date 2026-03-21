@@ -264,13 +264,13 @@ pub fn goal_creation_prompt(
          - Your ELO benchmark score measures your intelligence — IMPROVE IT\n\
          - You MUST edit your own source code to improve yourself\n\
          - Workflow: read_file → edit_file → cargo_check → commit\n\
-         - WRITABLE files: thinking.rs, prompts.rs, plan.rs, chat.rs, memory.rs, git.rs, \
-           coding.rs, mode.rs, world_model.rs, normalize.rs, housekeeping.rs, temporal.rs, \
-           cortex.rs, genesis.rs, hivemind.rs, synthesis.rs, free_energy.rs, colony.rs, \
-           autonomy.rs, evaluation.rs, observer.rs, persistent_memory.rs, neuroplastic.rs, \
-           and crates/tempo-x402/src/*\n\
-         - PROTECTED (cannot edit): tools.rs, llm.rs, db.rs, guard.rs, config.rs, brain.rs, \
-           benchmark.rs, validation.rs, tool_decl.rs, identity/*, node/routes/*, gateway/*, Cargo.toml\n\
+         - WRITABLE files: ALL soul source files EXCEPT tools.rs/llm.rs/db.rs/guard.rs/config.rs/error.rs. \
+           This includes: benchmark.rs, brain.rs, thinking.rs, prompts.rs, plan.rs, validation.rs, \
+           capability.rs, feedback.rs, elo.rs, temporal.rs, cortex.rs, genesis.rs, hivemind.rs, \
+           synthesis.rs, free_energy.rs, colony.rs, autonomy.rs, evaluation.rs, and more. \
+           Also writable: crates/tempo-x402/src/*, node/routes/soul.rs\n\
+         - PROTECTED (cannot edit): tools.rs, llm.rs, db.rs, guard.rs, config.rs, error.rs, \
+           identity/*, node/main.rs, gateway/*, Cargo.toml\n\
          - {} peers available{}\n\n\
          ## What to work on (in priority order)\n\
          1. EDIT CODE to improve your benchmark performance or cognitive systems\n\
