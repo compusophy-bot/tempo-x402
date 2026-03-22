@@ -801,6 +801,18 @@ pub async fn run_benchmark_session(
     let mut review_improved = 0u32; // solved BECAUSE peer review caught bugs
     let now = chrono::Utc::now().timestamp();
 
+    // Collect self-play training data for the brain
+    let mut brain_attempts: Vec<crate::brain::BenchmarkAttemptContext> = Vec::new();
+    let current_elo = crate::elo::load_rating(db) as f32;
+    let current_pass_at_1 = db
+        .get_state("benchmark_score")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str::<BenchmarkScore>(&s).ok())
+        .map(|s| s.pass_at_1 as f32)
+        .unwrap_or(0.0);
+    let current_peer_count = load_peer_failures(db).len() as u32; // rough peer signal
+
     // Load peer failures for collaborative solving
     let peer_failures = load_peer_failures(db);
     let peer_failure_task_ids: std::collections::HashSet<&str> =
@@ -1007,6 +1019,34 @@ pub async fn run_benchmark_session(
             }
         }
 
+        // Record brain self-play training data for each attempt
+        // First attempt
+        brain_attempts.push(crate::brain::BenchmarkAttemptContext {
+            difficulty: problem.difficulty.clone(),
+            passed: success && retry_count == 0,
+            retry_number: 0,
+            had_peer_context: has_peer_context,
+            had_peer_review: used_review_fix,
+            compiled: success || !error_output.contains("Compiling") || error_output.contains("test"),
+            elo_rating: current_elo,
+            pass_at_1: current_pass_at_1,
+            peer_count: current_peer_count,
+        });
+        // Record each retry as a separate training example
+        for r in 0..retry_count {
+            brain_attempts.push(crate::brain::BenchmarkAttemptContext {
+                difficulty: problem.difficulty.clone(),
+                passed: success && r + 1 == retry_count,
+                retry_number: r + 1,
+                had_peer_context: has_peer_context,
+                had_peer_review: used_review_fix,
+                compiled: true, // retries only happen after compilation
+                elo_rating: current_elo,
+                pass_at_1: current_pass_at_1,
+                peer_count: current_peer_count,
+            });
+        }
+
         record_run(
             db,
             problem,
@@ -1073,6 +1113,10 @@ pub async fn run_benchmark_session(
 
     // Update benchmark hints from failure analysis — improves future sessions
     update_benchmark_hints(db);
+
+    // Train brain on self-play data — the AlphaZero loop
+    // Each benchmark attempt becomes a training signal for the brain
+    crate::brain::train_on_benchmark_selfplay(db, &brain_attempts);
 
     Ok(weighted_score)
 }

@@ -591,6 +591,121 @@ pub fn events_to_examples(db: &SoulDatabase) -> Vec<TrainingExample> {
     examples
 }
 
+// ── Benchmark self-play training ─────────────────────────────────────
+
+/// Context for a single benchmark attempt — used to generate training data.
+#[derive(Debug, Clone)]
+pub struct BenchmarkAttemptContext {
+    /// "easy", "medium", "hard"
+    pub difficulty: String,
+    /// Did this attempt pass?
+    pub passed: bool,
+    /// Retry number (0 = first attempt, 1 = first retry, etc.)
+    pub retry_number: u32,
+    /// Did we have peer failure context for this problem?
+    pub had_peer_context: bool,
+    /// Did peer review contribute to the solution?
+    pub had_peer_review: bool,
+    /// Did the solution compile? (false = compile error, true = either passed or logic error)
+    pub compiled: bool,
+    /// Current ELO rating
+    pub elo_rating: f32,
+    /// Current pass@1
+    pub pass_at_1: f32,
+    /// Number of peers available
+    pub peer_count: u32,
+}
+
+/// Generate training examples from benchmark self-play attempts.
+/// Each attempt becomes a training example so the brain learns:
+/// - Which difficulty levels it can handle
+/// - Whether retries help (and how many)
+/// - Whether peer context improves success
+/// - Whether peer review catches bugs
+///
+/// This is the AlphaZero-style self-play loop: play games → train → play better.
+pub fn benchmark_attempts_to_examples(attempts: &[BenchmarkAttemptContext]) -> Vec<TrainingExample> {
+    let mut examples = Vec::new();
+
+    for attempt in attempts {
+        let mut features = vec![0.0f32; INPUT_SIZE];
+
+        // Feature 9: GenerateCode step type (benchmark = code generation)
+        features[9] = 1.0;
+        // Feature 14: is LLM step
+        features[14] = 1.0;
+
+        // Feature 15: progress (retry number as progress through attempts)
+        features[15] = (attempt.retry_number as f32 / 3.0).min(1.0);
+
+        // Feature 26: ELO
+        features[26] = ((attempt.elo_rating - 800.0) / 800.0).clamp(0.0, 1.0);
+        // Feature 27: pass@1
+        features[27] = (attempt.pass_at_1 / 100.0).clamp(0.0, 1.0);
+        // Feature 28: peer count
+        features[28] = (attempt.peer_count as f32 / 10.0).min(1.0);
+
+        // Features 36-38: difficulty one-hot
+        match attempt.difficulty.as_str() {
+            "easy" => features[36] = 1.0,
+            "medium" => features[37] = 1.0,
+            "hard" => features[38] = 1.0,
+            _ => features[36] = 1.0,
+        }
+
+        // Feature 39: retry number (normalized)
+        features[39] = (attempt.retry_number as f32 / 3.0).min(1.0);
+
+        // Feature 40: had peer failure context
+        features[40] = if attempt.had_peer_context { 1.0 } else { 0.0 };
+
+        // Feature 41: had peer review
+        features[41] = if attempt.had_peer_review { 1.0 } else { 0.0 };
+
+        // Feature 42: compiled successfully
+        features[42] = if attempt.compiled { 1.0 } else { 0.0 };
+
+        // Determine error category for failed attempts
+        let error_category = if attempt.passed {
+            None
+        } else if !attempt.compiled {
+            Some(crate::feedback::ErrorCategory::CompileError)
+        } else {
+            Some(crate::feedback::ErrorCategory::TestFailure)
+        };
+
+        examples.push(TrainingExample {
+            features,
+            success: attempt.passed,
+            error_category,
+            capability: Capability::CodeGen,
+        });
+    }
+
+    examples
+}
+
+/// Train the brain on benchmark self-play data.
+/// Call this after each benchmark session with the collected attempt contexts.
+pub fn train_on_benchmark_selfplay(db: &SoulDatabase, attempts: &[BenchmarkAttemptContext]) {
+    if attempts.is_empty() {
+        return;
+    }
+
+    let examples = benchmark_attempts_to_examples(attempts);
+    let mut brain = load_brain(db);
+    let loss = brain.train_batch(&examples);
+
+    tracing::info!(
+        examples = examples.len(),
+        loss = format!("{:.4}", loss),
+        train_steps = brain.train_steps,
+        "Brain trained on benchmark self-play data"
+    );
+
+    save_brain(db, &brain);
+}
+
 // ── Persistence ──────────────────────────────────────────────────────
 
 /// Load brain from database (soul_state key: "brain_weights").
