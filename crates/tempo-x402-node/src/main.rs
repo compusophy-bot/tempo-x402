@@ -1069,7 +1069,7 @@ async fn main() -> std::io::Result<()> {
 
             let http = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::none())
+                .redirect(reqwest::redirect::Policy::limited(5))
                 .build()
                 .unwrap_or_default();
 

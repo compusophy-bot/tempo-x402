@@ -178,6 +178,13 @@ pub async fn clone_instance(
         "Clone spawned successfully"
     );
 
+    // Start background probe to promote child to "running" as soon as it boots
+    spawn_post_clone_probe(
+        node.gateway.db.clone(),
+        instance_id.clone(),
+        clone_result.url.clone(),
+    );
+
     Ok(HttpResponse::Created()
         .insert_header((
             "PAYMENT-RESPONSE",
@@ -583,6 +590,13 @@ pub async fn clone_self(
         "Self-clone spawned successfully"
     );
 
+    // Start background probe to promote child to "running" as soon as it boots
+    spawn_post_clone_probe(
+        node.gateway.db.clone(),
+        instance_id.clone(),
+        clone_result.url.clone(),
+    );
+
     Ok(HttpResponse::Created().json(serde_json::json!({
         "success": true,
         "instance_id": instance_id,
@@ -704,6 +718,13 @@ pub async fn clone_specialist(
         "Specialist clone spawned successfully"
     );
 
+    // Start background probe to promote child to "running" as soon as it boots
+    spawn_post_clone_probe(
+        node.gateway.db.clone(),
+        instance_id.clone(),
+        clone_result.url.clone(),
+    );
+
     Ok(HttpResponse::Created().json(serde_json::json!({
         "success": true,
         "instance_id": instance_id,
@@ -714,6 +735,94 @@ pub async fn clone_specialist(
         "initial_goal": body.initial_goal,
         "status": "deploying",
     })))
+}
+
+/// Spawn a background task that polls a newly-deployed child until it responds,
+/// then promotes it from "deploying" to "running" in the parent's DB.
+/// This makes the child appear in /instance/siblings immediately instead of
+/// waiting for the 5-minute health probe cycle.
+fn spawn_post_clone_probe(
+    db: std::sync::Arc<x402_gateway::Database>,
+    instance_id: String,
+    child_url: String,
+) {
+    tokio::spawn(async move {
+        let http = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .build()
+            .unwrap_or_default();
+
+        // Wait for initial boot (Railway takes ~30-60s to deploy)
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+        // Poll every 30s for up to 10 minutes
+        for attempt in 1..=20 {
+            let info_url = format!("{}/instance/info", child_url.trim_end_matches('/'));
+            match http.get(&info_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    // Child is alive — extract address and promote to running
+                    let address = resp
+                        .json::<serde_json::Value>()
+                        .await
+                        .ok()
+                        .and_then(|j| {
+                            j.get("identity")
+                                .and_then(|id| id.get("address"))
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                        });
+
+                    match db::update_child(
+                        &db,
+                        &instance_id,
+                        address.as_deref(),
+                        None, // keep existing URL
+                        Some("running"),
+                    ) {
+                        Ok(_) => {
+                            tracing::info!(
+                                instance_id = %instance_id,
+                                attempt,
+                                address = ?address,
+                                "Post-clone probe: child promoted to running"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                instance_id = %instance_id,
+                                error = %e,
+                                "Post-clone probe: failed to promote child"
+                            );
+                        }
+                    }
+                    return; // Done — child is linked
+                }
+                Ok(resp) => {
+                    tracing::debug!(
+                        instance_id = %instance_id,
+                        attempt,
+                        status = %resp.status(),
+                        "Post-clone probe: child not ready yet"
+                    );
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        instance_id = %instance_id,
+                        attempt,
+                        error = %e,
+                        "Post-clone probe: child unreachable"
+                    );
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+
+        tracing::warn!(
+            instance_id = %instance_id,
+            "Post-clone probe: gave up after 10 minutes — child never responded"
+        );
+    });
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

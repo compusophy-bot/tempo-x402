@@ -5,10 +5,10 @@
 //! - Capability events → predict step success before execution
 //! - Error patterns → classify and route around known failure modes
 //!
-//! The brain is a small feedforward network (~50K parameters) with:
-//! - Input: encoded plan/step features
-//! - Hidden layers: 2 × 128 neurons with ReLU
-//! - Output heads: success probability, error category, recommended action
+//! The brain is a feedforward network (~91K parameters, v2) with:
+//! - Input: 64-dim encoded features (step type, context, benchmark state, peer state)
+//! - Hidden layers: 2 × 256 neurons with ReLU
+//! - Output heads: success probability, error category, per-capability confidence
 //!
 //! Weights are stored as a flat f32 vector in SQLite (soul_state key: "brain_weights").
 //! Distributed weight sharing: nodes can export/import weight deltas via peer protocol.
@@ -24,15 +24,22 @@ use crate::plan::PlanStep;
 // ── Architecture constants ───────────────────────────────────────────
 
 /// Input feature vector size.
-const INPUT_SIZE: usize = 32;
+/// v1 was 32, v2 is 64 — extra features for benchmark context, ELO,
+/// peer state, and problem category encoding.
+const INPUT_SIZE: usize = 64;
 /// Hidden layer size.
-const HIDDEN_SIZE: usize = 128;
+/// v1 was 128, v2 is 256 — 4x parameter budget for richer representations.
+const HIDDEN_SIZE: usize = 256;
 /// Output size: 1 (success prob) + 11 (error category logits) + 11 (capability confidence).
 const OUTPUT_SIZE: usize = 23;
 /// Learning rate for SGD.
 const LEARNING_RATE: f32 = 0.01;
 /// L2 regularization strength.
 const WEIGHT_DECAY: f32 = 0.0001;
+/// Previous architecture input size (for migration detection).
+const LEGACY_INPUT_SIZE: usize = 32;
+/// Previous architecture hidden size (for migration detection).
+const LEGACY_HIDDEN_SIZE: usize = 128;
 
 // ── Core types ───────────────────────────────────────────────────────
 
@@ -332,8 +339,23 @@ impl Brain {
     }
 
     /// Deserialize weights from JSON.
+    /// If the loaded brain has a different architecture (legacy size), returns None
+    /// so the caller creates a fresh brain with the current architecture.
     pub fn from_json(json: &str) -> Option<Self> {
-        serde_json::from_str(json).ok()
+        let brain: Self = serde_json::from_str(json).ok()?;
+        // Validate architecture matches current constants
+        let expected_w1 = INPUT_SIZE * HIDDEN_SIZE;
+        if brain.w1.len() != expected_w1 {
+            tracing::info!(
+                loaded_w1 = brain.w1.len(),
+                expected_w1,
+                old_steps = brain.train_steps,
+                "Brain architecture mismatch — migrating to v2 ({}→{} input, {}→{} hidden)",
+                LEGACY_INPUT_SIZE, INPUT_SIZE, LEGACY_HIDDEN_SIZE, HIDDEN_SIZE
+            );
+            return None; // Caller will create fresh Brain::new()
+        }
+        Some(brain)
     }
 }
 
@@ -413,8 +435,39 @@ pub fn encode_step(step: &PlanStep, context: &StepContext) -> Vec<f32> {
     // Feature 25: fitness score
     features[25] = context.fitness_score;
 
-    // Features 26-31: reserved for future use
-    // (zero-initialized by default)
+    // Feature 26: current ELO (normalized: 800=0, 1600=1)
+    features[26] = ((context.elo_rating - 800.0) / 800.0).clamp(0.0, 1.0);
+
+    // Feature 27: pass@1 (normalized 0-1)
+    features[27] = (context.pass_at_1 / 100.0).clamp(0.0, 1.0);
+
+    // Feature 28: peer count (normalized)
+    features[28] = (context.peer_count as f32 / 10.0).min(1.0);
+
+    // Feature 29: collective pass@1 (what the swarm has solved, normalized)
+    features[29] = (context.collective_pass_at_1 / 100.0).clamp(0.0, 1.0);
+
+    // Feature 30: trivial completion ratio (signal for stuck-ness)
+    features[30] = context.trivial_ratio.clamp(0.0, 1.0);
+
+    // Feature 31: benchmark problems attempted (normalized)
+    features[31] = (context.benchmark_attempts as f32 / 100.0).min(1.0);
+
+    // Feature 32: problems solved count (normalized)
+    features[32] = (context.problems_solved as f32 / 100.0).min(1.0);
+
+    // Feature 33: multiagent contribution % (how much peers help)
+    features[33] = (context.multiagent_pct / 100.0).clamp(0.0, 1.0);
+
+    // Feature 34: brain maturity (log of train steps, normalized)
+    features[34] = (1.0 + context.brain_train_steps as f32).ln() / 15.0;
+
+    // Feature 35: generation (clone depth)
+    features[35] = (context.generation as f32 / 5.0).min(1.0);
+
+    // Features 36-63: reserved for future use
+    // (zero-initialized by default — available for problem category encoding,
+    // per-problem difficulty features, prompt strategy selection, etc.)
 
     features
 }
@@ -433,6 +486,17 @@ pub struct StepContext {
     pub steps_remaining: u32,
     pub endpoint_count: u32,
     pub fitness_score: f32,
+    // v2 fields: benchmark and peer context
+    pub elo_rating: f32,
+    pub pass_at_1: f32,
+    pub peer_count: u32,
+    pub collective_pass_at_1: f32,
+    pub trivial_ratio: f32,
+    pub benchmark_attempts: u32,
+    pub problems_solved: u32,
+    pub multiagent_pct: f32,
+    pub brain_train_steps: u64,
+    pub generation: u32,
 }
 
 // ── Experience data → training examples ──────────────────────────────
@@ -1082,9 +1146,28 @@ mod tests {
         assert_eq!(brain.w2.len(), HIDDEN_SIZE * HIDDEN_SIZE);
         assert_eq!(brain.w3.len(), HIDDEN_SIZE * OUTPUT_SIZE);
         assert_eq!(brain.train_steps, 0);
-        // ~24K params (INPUT=32, HIDDEN=128, OUTPUT=23)
-        assert!(brain.param_count() > 20_000);
-        assert!(brain.param_count() < 30_000);
+        // v2: ~91K params (INPUT=64, HIDDEN=256, OUTPUT=23)
+        // 64*256 + 256 + 256*256 + 256 + 256*23 + 23 = 88,599
+        assert!(brain.param_count() > 80_000, "got {}", brain.param_count());
+        assert!(brain.param_count() < 100_000, "got {}", brain.param_count());
+    }
+
+    #[test]
+    fn test_brain_migration_rejects_legacy() {
+        // Simulate a legacy brain with old architecture
+        let legacy = Brain {
+            w1: vec![0.0; 32 * 128],  // old INPUT_SIZE * old HIDDEN_SIZE
+            b1: vec![0.0; 128],
+            w2: vec![0.0; 128 * 128],
+            b2: vec![0.0; 128],
+            w3: vec![0.0; 128 * 23],
+            b3: vec![0.0; 23],
+            train_steps: 10000,
+            running_loss: 0.5,
+        };
+        let json = serde_json::to_string(&legacy).unwrap();
+        // from_json should reject due to architecture mismatch
+        assert!(Brain::from_json(&json).is_none());
     }
 
     #[test]

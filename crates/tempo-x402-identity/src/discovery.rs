@@ -71,7 +71,7 @@ pub async fn discover_peers<P: Provider>(
 
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| X402Error::ChainError(format!("failed to create HTTP client: {e}")))?;
 

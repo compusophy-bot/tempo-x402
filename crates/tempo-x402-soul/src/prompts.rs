@@ -270,7 +270,7 @@ pub fn goal_creation_prompt(
            synthesis.rs, free_energy.rs, colony.rs, autonomy.rs, evaluation.rs, and more. \
            Also writable: crates/tempo-x402/src/*, node/routes/soul.rs\n\
          - PROTECTED (cannot edit): tools.rs, llm.rs, db.rs, guard.rs, config.rs, error.rs, \
-           identity/*, node/main.rs, gateway/*, Cargo.toml\n\
+           identity/*, node/main.rs, gateway/*, Cargo.toml (NOT Cargo.lock — it's auto-generated)\n\
          - {} peers available{}\n\n\
          ## What to work on (in priority order)\n\
          1. EDIT CODE to improve your benchmark performance or cognitive systems\n\
@@ -509,7 +509,7 @@ pub fn planning_prompt(
          - PROTECTED files that CANNOT be modified (writes WILL fail):\n\
            tools.rs, llm.rs, db.rs, error.rs, guard.rs, config.rs, tool_registry.rs,\n\
            brain.rs, computer_use.rs, capability.rs, feedback.rs, benchmark.rs, elo.rs, validation.rs,\n\
-           ALL files in identity/, node/routes/, gateway/, .github/, and ALL Cargo.toml/Cargo.lock\n\
+           ALL files in identity/, node/routes/, gateway/, .github/, and ALL Cargo.toml (NOT Cargo.lock — it's auto-generated)\n\
          - Files you CAN edit: thinking.rs, prompts.rs, plan.rs, chat.rs, memory.rs, git.rs,\n\
            coding.rs, mode.rs, neuroplastic.rs, persistent_memory.rs, world_model.rs,\n\
            and ANY files in crates/tempo-x402/src/ (core lib)\n\

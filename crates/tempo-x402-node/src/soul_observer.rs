@@ -103,7 +103,7 @@ impl NodeObserverImpl {
             let siblings_url = format!("{}/instance/siblings", parent.trim_end_matches('/'));
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::none())
+                .redirect(reqwest::redirect::Policy::limited(5))
                 .build();
             if let Ok(client) = client {
                 if let Ok(resp) = client.get(&siblings_url).send().await {
@@ -163,7 +163,7 @@ impl NodeObserverImpl {
         let url = format!("{}/instance/info", peer_url.trim_end_matches('/'));
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()?;
         let resp = client.get(&url).send().await?;
         let json: serde_json::Value = resp.json().await?;

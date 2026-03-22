@@ -379,7 +379,7 @@ impl CloneOrchestrator {
 async fn create_github_branch(token: &str, repo: &str, branch: &str) -> Result<(), CloneError> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
 
@@ -448,7 +448,7 @@ pub async fn update_github_branch_to_main(
 ) -> Result<(), CloneError> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
 
@@ -514,7 +514,7 @@ pub async fn update_github_branch_to_main(
 pub async fn delete_github_branch(token: &str, repo: &str, branch: &str) -> Result<(), CloneError> {
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
 

@@ -184,7 +184,7 @@ const EXERCISM_API: &str = "https://api.github.com/repos/exercism/rust/contents/
 async fn fetch_exercise_list() -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
@@ -234,7 +234,7 @@ async fn fetch_exercise_list() -> Result<Vec<String>, String> {
 async fn fetch_exercise(slug: &str) -> Result<ExercismProblem, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
@@ -600,7 +600,7 @@ pub async fn review_solution(
 pub async fn request_peer_review(peer_url: &str, req: &ReviewRequest) -> Option<ReviewResponse> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .ok()?;
 
@@ -906,37 +906,46 @@ pub async fn run_benchmark_session(
         let (mut success, mut error_output) =
             validate_solution(problem, &final_solution, workspace_root).await;
 
-        // Self-play retry: if first attempt fails, try once more with the error as context.
+        // Self-play retry: if attempt fails, retry up to 3 times with accumulated error context.
+        // Each retry sees ALL previous failures for this problem, building understanding.
         // This is how the swarm outperforms a single model call — iterative refinement.
-        if !success && !error_output.is_empty() {
+        let max_retries = 3;
+        let mut retry_count = 0;
+        let mut last_solution = final_solution.clone();
+        let mut retry_context = all_failures.clone();
+        while !success && !error_output.is_empty() && retry_count < max_retries {
+            retry_count += 1;
             tracing::info!(
                 slug = %problem.slug,
-                "Benchmark: first attempt failed, retrying with error context (self-play)"
+                retry = retry_count,
+                max_retries,
+                "Benchmark: attempt failed, retrying with error context (self-play)"
             );
-            let retry_failure = vec![SharedFailure {
+            retry_context.push(SharedFailure {
                 task_id: task_id.clone(),
                 entry_point: problem.slug.clone(),
-                failed_solution: final_solution.clone(),
+                failed_solution: last_solution.clone(),
                 error_output: error_output.clone(),
-                attempted_by: "self (just failed)".to_string(),
-            }];
-            // Combine with existing failures for maximum context
-            let mut retry_context = all_failures.clone();
-            retry_context.extend(retry_failure);
+                attempted_by: format!("self (retry {})", retry_count),
+            });
             if let Ok(retry_solution) = generate_solution(llm, db, problem, &retry_context).await {
                 let (retry_ok, retry_err) =
                     validate_solution(problem, &retry_solution, workspace_root).await;
                 if retry_ok {
                     tracing::info!(
                         slug = %problem.slug,
-                        "Benchmark: PASS on retry (self-play worked!)"
+                        retry = retry_count,
+                        "Benchmark: PASS on retry {} (self-play worked!)",
+                        retry_count
                     );
                     success = true;
                     error_output = String::new();
                 } else {
-                    // Use the retry error for recording
                     error_output = retry_err;
+                    last_solution = retry_solution;
                 }
+            } else {
+                break; // LLM call failed, no point retrying
             }
         }
 

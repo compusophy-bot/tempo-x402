@@ -1272,7 +1272,7 @@ impl ToolExecutor {
         });
 
         let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default();
         match client
@@ -1416,7 +1416,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -1472,7 +1472,7 @@ impl ToolExecutor {
             .map_err(|_| "EVM_PRIVATE_KEY not set — cannot sign payment".to_string())?;
 
         let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default();
 
@@ -1598,7 +1598,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -1646,7 +1646,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("HTTP client error: {e}"))?;
 
@@ -1845,7 +1845,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
         let mut body = serde_json::json!({
@@ -1922,7 +1922,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
         let url = format!("https://api.github.com/repos/{owner}/{repo}/forks");
@@ -2039,7 +2039,7 @@ impl ToolExecutor {
         let url = format!("{}/clone/self", gateway_url.trim_end_matches('/'));
 
         let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default();
         let resp = client
@@ -2085,7 +2085,7 @@ impl ToolExecutor {
         }
 
         let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default();
         let resp = client
@@ -2141,7 +2141,7 @@ impl ToolExecutor {
                 .unwrap_or_else(|_| "http://localhost:8080".to_string());
             let peers_url = format!("{}/instance/children", gateway_url.trim_end_matches('/'));
             let client = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
+                .redirect(reqwest::redirect::Policy::limited(5))
                 .build()
                 .unwrap_or_default();
             let resp = client
@@ -2187,7 +2187,7 @@ impl ToolExecutor {
         });
 
         let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .unwrap_or_default();
         let resp = client
@@ -2292,7 +2292,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 
@@ -3026,7 +3026,7 @@ impl ToolExecutor {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
 

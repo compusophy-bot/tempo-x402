@@ -505,11 +505,11 @@ fn check_plan_quality(steps: &[PlanStep], db: &SoulDatabase, violations: &mut Ve
         )
     });
     if reads_only && steps.len() > 3 {
-        // Escalate to Hard after 10+ trivial completions — agent is stuck in read-only loop
+        // Escalate to Hard after 5+ trivial completions — agent is stuck in read-only loop
         let trivial_count = db
             .count_plan_outcomes_by_status("completed_trivial")
             .unwrap_or(0);
-        let severity = if trivial_count >= 10 {
+        let severity = if trivial_count >= 5 {
             Severity::Hard
         } else {
             Severity::Soft

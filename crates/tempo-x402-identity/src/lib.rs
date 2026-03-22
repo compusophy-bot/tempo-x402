@@ -324,7 +324,7 @@ pub fn save_agent_token_id(
 /// errors since funding is not critical for bootstrap.
 pub async fn request_faucet_funds(rpc_url: &str, address: Address) -> Result<(), IdentityError> {
     let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .expect("failed to create HTTP client");
     let address_str = format!("{:#x}", address);
@@ -388,7 +388,7 @@ pub async fn register_with_parent(
     self_url: &str,
 ) -> Result<(), IdentityError> {
     let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
         .expect("failed to create HTTP client");
     let url = format!("{}/instance/register", parent_url.trim_end_matches('/'));

@@ -60,7 +60,7 @@ impl RailwayClient {
     pub fn new(token: String, project_id: String) -> Self {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .expect("failed to create HTTP client");
 

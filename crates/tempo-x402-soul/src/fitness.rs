@@ -160,8 +160,9 @@ fn compute_execution(db: &SoulDatabase) -> f64 {
         .count_plan_outcomes_by_status("completed_trivial")
         .unwrap_or(0) as f64;
     let failed = db.count_plan_outcomes_by_status("failed").unwrap_or(0) as f64;
-    // Trivial completions count at 10% — they're not real successes
-    let effective_completed = completed + completed_trivial * 0.1;
+    // Trivial completions count as 0% — they're not real successes.
+    // Previously 10%, but agents exploited this by doing trivial loops for free fitness.
+    let effective_completed = completed;
     let total = completed + completed_trivial + failed;
     if total < 1.0 {
         return 0.15; // no data — you haven't proven anything

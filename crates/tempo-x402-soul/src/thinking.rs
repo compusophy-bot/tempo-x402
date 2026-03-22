@@ -477,7 +477,7 @@ impl ThinkingLoop {
 
                             let http_client = reqwest::Client::builder()
                                 .timeout(std::time::Duration::from_secs(15))
-                                .redirect(reqwest::redirect::Policy::none())
+                                .redirect(reqwest::redirect::Policy::limited(5))
                                 .build()
                                 .unwrap_or_default();
                             let mut synced = 0u32;
@@ -825,6 +825,73 @@ impl ThinkingLoop {
                     step_type: StepType::Observe,
                     entered_code: false,
                     summary: format!("abandoned goal after {} retries", goal.retry_count),
+                });
+            }
+        }
+
+        // Circuit breaker 3: goal has too many consecutive trivial completions
+        // If the last N plans for this goal were all trivial, the goal is stuck and
+        // the agent is just looping reads/thinks without producing real work.
+        if let Ok(Some(goal)) = self.db.get_goal(&plan.goal_id) {
+            let recent_outcomes = self.db.get_recent_plan_outcomes(10).unwrap_or_default();
+            let consecutive_trivial = recent_outcomes
+                .iter()
+                .take_while(|o| o.goal_id == plan.goal_id && o.status == "completed_trivial")
+                .count();
+            if consecutive_trivial >= 3 {
+                tracing::warn!(
+                    goal_id = %plan.goal_id,
+                    consecutive_trivial,
+                    "Goal stuck in trivial completion loop — abandoning"
+                );
+                let _ = self.db.update_goal(
+                    &plan.goal_id,
+                    Some("abandoned"),
+                    None,
+                    Some(chrono::Utc::now().timestamp()),
+                );
+                plan.status = PlanStatus::Failed;
+                let _ = self.db.update_plan(&plan);
+                let _ = self.db.set_state("active_plan_id", "");
+                let trivial_err = format!(
+                    "{} consecutive trivial completions — goal is stuck in read-only loop",
+                    consecutive_trivial
+                );
+                feedback::record_outcome(&self.db, &plan, &goal.description, Some(&trivial_err));
+                crate::events::emit_event(
+                    &self.db,
+                    "warn",
+                    "goal.trivial_loop",
+                    &format!(
+                        "Goal abandoned after {} trivial completions: {}",
+                        consecutive_trivial, goal.description
+                    ),
+                    Some(serde_json::json!({"consecutive_trivial": consecutive_trivial})),
+                    crate::events::EventRefs {
+                        plan_id: Some(plan.id.clone()),
+                        goal_id: Some(plan.goal_id.clone()),
+                        ..Default::default()
+                    },
+                );
+                let desc_preview: String = goal.description.chars().take(80).collect();
+                let _ = self.db.insert_nudge(
+                    "stagnation",
+                    &format!(
+                        "Goal '{}' completed trivially {} times in a row — it only did reads/thinks. \
+                         Pick a goal that requires CONCRETE actions: editing code, creating endpoints, \
+                         running shell commands, or making commits.",
+                        desc_preview, consecutive_trivial
+                    ),
+                    4,
+                );
+                self.increment_cycle_count()?;
+                return Ok(CycleResult {
+                    step_type: StepType::Observe,
+                    entered_code: false,
+                    summary: format!(
+                        "abandoned goal after {} consecutive trivial completions",
+                        consecutive_trivial
+                    ),
                 });
             }
         }

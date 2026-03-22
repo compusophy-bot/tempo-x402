@@ -474,8 +474,8 @@ fn self_repair(db: &Arc<SoulDatabase>) {
             .unwrap_or(0);
         let completed_count = db.count_plan_outcomes_by_status("completed").unwrap_or(0);
         let total = trivial_count + completed_count;
-        // If >80% of completions are trivial and we have enough data, clear durable rules
-        if total >= 10 && trivial_count as f64 / total as f64 > 0.8 {
+        // If >60% of completions are trivial and we have enough data, clear durable rules
+        if total >= 5 && trivial_count as f64 / total as f64 > 0.6 {
             let _ = db.set_state("durable_rules", "[]");
             let _ = db.set_state("failure_chains", "[]");
             repairs.push(format!(

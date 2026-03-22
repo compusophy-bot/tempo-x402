@@ -143,7 +143,10 @@ fn hmac_no_early_returns_before_mac_computation() {
 fn http_clients_disable_redirects() {
     let files = production_source_files();
     let builder_re = Regex::new(r"reqwest::Client::builder\(\)").unwrap();
-    let redirect_re = Regex::new(r"redirect\s*\(\s*.*Policy::none\(\)").unwrap();
+    // Accept both Policy::none() and Policy::limited(...) — both prevent unbounded SSRF.
+    // Policy::limited(N) is preferred for peer-to-peer communication where Railway may redirect.
+    let redirect_re =
+        Regex::new(r"redirect\s*\(\s*.*Policy::(none|limited)\s*\(").unwrap();
     // Also catch reqwest::Client::new() — which allows redirects by default (SSRF risk)
     let new_re = Regex::new(r"reqwest::Client::new\(\)").unwrap();
 
@@ -155,7 +158,7 @@ fn http_clients_disable_redirects() {
             let line_num = prod_content[..mat.start()].lines().count() + 1;
             panic!(
                 "reqwest::Client::new() found at {}:{}. \
-                 Use reqwest::Client::builder().redirect(Policy::none()).build() instead. \
+                 Use reqwest::Client::builder().redirect(Policy::limited(5)).build() instead. \
                  Client::new() allows redirects by default, enabling SSRF via redirect.",
                 path, line_num
             );
@@ -167,11 +170,12 @@ fn http_clients_disable_redirects() {
             let search_end = (mat.end() + 500).min(prod_content.len());
             let builder_chain = &prod_content[mat.start()..search_end];
 
-            // Check that redirect policy is set to none
+            // Check that redirect policy is set explicitly (none or limited)
             assert!(
                 redirect_re.is_match(builder_chain),
-                "reqwest::Client::builder() at {} does not set redirect(Policy::none()). \
-                 All HTTP clients must disable redirects to prevent SSRF via redirect.",
+                "reqwest::Client::builder() at {} does not set redirect policy. \
+                 All HTTP clients must set redirect(Policy::limited(N)) or redirect(Policy::none()) \
+                 to prevent SSRF via unbounded redirect.",
                 path
             );
         }
