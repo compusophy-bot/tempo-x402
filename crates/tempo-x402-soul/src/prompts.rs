@@ -264,22 +264,28 @@ pub fn goal_creation_prompt(
          - Your ELO benchmark score measures your intelligence — IMPROVE IT\n\
          - You MUST edit your own source code to improve yourself\n\
          - Workflow: read_file → edit_file → cargo_check → commit\n\
-         - WORKSPACE LAYOUT: All source files are under crates/. Soul files are at crates/tempo-x402-soul/src/. \
-           Core lib is at crates/tempo-x402/src/. Node routes are at crates/tempo-x402-node/src/routes/.\n\
-         - ALWAYS use FULL PATHS like 'crates/tempo-x402-soul/src/prompts.rs', NEVER just 'prompts.rs'\n\
-         - WRITABLE soul files (under crates/tempo-x402-soul/src/): \
-           benchmark.rs, brain.rs, thinking.rs, prompts.rs, plan.rs, validation.rs, \
-           capability.rs, feedback.rs, elo.rs, temporal.rs, cortex.rs, genesis.rs, hivemind.rs, \
-           synthesis.rs, free_energy.rs, colony.rs, autonomy.rs, evaluation.rs, coding.rs, \
-           chat.rs, memory.rs, neuroplastic.rs, persistent_memory.rs, world_model.rs, mode.rs, git.rs\n\
-         - ALSO writable: crates/tempo-x402/src/*, crates/tempo-x402-node/src/routes/soul.rs\n\
-         - PROTECTED (cannot edit): tools.rs, llm.rs, db.rs, guard.rs, config.rs, error.rs, \
-           crates/tempo-x402-identity/*, crates/tempo-x402-node/src/main.rs, crates/tempo-x402-gateway/src/*, Cargo.toml\n\
+         - CRITICAL: ALL file paths MUST be full paths from workspace root. NEVER use bare filenames.\n\
+         - Soul source files are at: crates/tempo-x402-soul/src/<filename>\n\
+         - Core lib files are at: crates/tempo-x402/src/<filename>\n\
+         - Node routes are at: crates/tempo-x402-node/src/routes/<filename>\n\
+         - WRITABLE files (use these EXACT paths in goals and plans):\n\
+           crates/tempo-x402-soul/src/benchmark.rs, crates/tempo-x402-soul/src/brain.rs,\n\
+           crates/tempo-x402-soul/src/thinking.rs, crates/tempo-x402-soul/src/prompts.rs,\n\
+           crates/tempo-x402-soul/src/plan.rs, crates/tempo-x402-soul/src/validation.rs,\n\
+           crates/tempo-x402-soul/src/capability.rs, crates/tempo-x402-soul/src/feedback.rs,\n\
+           crates/tempo-x402-soul/src/elo.rs, crates/tempo-x402-soul/src/coding.rs,\n\
+           crates/tempo-x402-soul/src/cortex.rs, crates/tempo-x402-soul/src/genesis.rs,\n\
+           crates/tempo-x402-soul/src/temporal.rs, crates/tempo-x402-soul/src/hivemind.rs,\n\
+           crates/tempo-x402-soul/src/synthesis.rs, crates/tempo-x402-soul/src/free_energy.rs,\n\
+           crates/tempo-x402-node/src/routes/soul.rs, crates/tempo-x402/src/*\n\
+         - PROTECTED (writes WILL fail): crates/tempo-x402-soul/src/tools.rs, crates/tempo-x402-soul/src/llm.rs,\n\
+           crates/tempo-x402-soul/src/db.rs, crates/tempo-x402-soul/src/guard.rs,\n\
+           crates/tempo-x402-identity/*, crates/tempo-x402-node/src/main.rs, crates/tempo-x402-gateway/src/*\n\
          - {} peers available{}\n\n\
          ## What to work on (in priority order)\n\
          1. EDIT CODE to improve your benchmark performance or cognitive systems\n\
-         2. Improve your prompts (prompts.rs) to make better plans\n\
-         3. Improve your planning (plan.rs, thinking.rs) to execute more effectively\n\
+         2. Improve crates/tempo-x402-soul/src/prompts.rs to make better plans\n\
+         3. Improve crates/tempo-x402-soul/src/thinking.rs to execute more effectively\n\
          4. Create useful endpoints or coordinate with peers\n\n\
          ## Guidelines\n\
          - At least ONE goal MUST include edit_file + cargo_check + commit steps\n\
@@ -510,17 +516,20 @@ pub fn planning_prompt(
          - End with a commit step\n\
          - Max 20 steps, prefer fewer — a simple endpoint needs ~5 steps (read, edit, cargo_check, commit)\n\
          - Prefer edit_code over generate_code for existing files\n\
-         - IMPORTANT: ALWAYS use FULL PATHS. Files are under crates/tempo-x402-soul/src/.\n\
-           Example: 'crates/tempo-x402-soul/src/prompts.rs', NEVER just 'prompts.rs'.\n\
-         - PROTECTED files (writes WILL fail): tools.rs, llm.rs, db.rs, error.rs, guard.rs, config.rs,\n\
-           ALL files in crates/tempo-x402-identity/, crates/tempo-x402-node/src/main.rs,\n\
-           crates/tempo-x402-gateway/src/, .github/, and ALL Cargo.toml\n\
-         - Files you CAN edit (under crates/tempo-x402-soul/src/):\n\
-           thinking.rs, prompts.rs, plan.rs, benchmark.rs, brain.rs, elo.rs, validation.rs,\n\
-           capability.rs, feedback.rs, coding.rs, chat.rs, memory.rs, git.rs, mode.rs,\n\
-           neuroplastic.rs, persistent_memory.rs, world_model.rs, temporal.rs, cortex.rs,\n\
-           genesis.rs, hivemind.rs, synthesis.rs, free_energy.rs, colony.rs, autonomy.rs, evaluation.rs,\n\
-           computer_use.rs, and ANY files in crates/tempo-x402/src/ (core lib)\n\
+         - CRITICAL: ALL file_path values MUST be full paths from workspace root.\n\
+           WRONG: \"prompts.rs\"  CORRECT: \"crates/tempo-x402-soul/src/prompts.rs\"\n\
+           WRONG: \"brain.rs\"    CORRECT: \"crates/tempo-x402-soul/src/brain.rs\"\n\
+         - PROTECTED (writes WILL fail): crates/tempo-x402-soul/src/tools.rs,\n\
+           crates/tempo-x402-soul/src/llm.rs, crates/tempo-x402-soul/src/db.rs,\n\
+           crates/tempo-x402-soul/src/guard.rs, crates/tempo-x402-identity/*,\n\
+           crates/tempo-x402-node/src/main.rs, crates/tempo-x402-gateway/src/*\n\
+         - Files you CAN edit (use these exact paths):\n\
+           crates/tempo-x402-soul/src/thinking.rs, crates/tempo-x402-soul/src/prompts.rs,\n\
+           crates/tempo-x402-soul/src/plan.rs, crates/tempo-x402-soul/src/benchmark.rs,\n\
+           crates/tempo-x402-soul/src/brain.rs, crates/tempo-x402-soul/src/elo.rs,\n\
+           crates/tempo-x402-soul/src/validation.rs, crates/tempo-x402-soul/src/coding.rs,\n\
+           crates/tempo-x402-soul/src/cortex.rs, crates/tempo-x402-soul/src/genesis.rs,\n\
+           crates/tempo-x402/src/* (core lib), crates/tempo-x402-node/src/routes/soul.rs\n\
          - Do NOT try to modify Dockerfile, railway.toml, or deployment configs\n\
          - Use only dependencies already available in the workspace\n\
          - For inter-agent calls, ALWAYS use call_peer with just the slug. NEVER construct URLs manually.\n\
