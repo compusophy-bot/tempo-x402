@@ -5,10 +5,11 @@
 //! - Capability events → predict step success before execution
 //! - Error patterns → classify and route around known failure modes
 //!
-//! The brain is a feedforward network (~91K parameters, v2) with:
-//! - Input: 64-dim encoded features (step type, context, benchmark state, peer state)
-//! - Hidden layers: 2 × 256 neurons with ReLU
+//! The brain is a feedforward network (~1.2M parameters, v3) with:
+//! - Input: 128-dim encoded features (step type, context, benchmark state, peer state, problem category)
+//! - Hidden layers: 2 × 1024 neurons with ReLU
 //! - Output heads: success probability, error category, per-capability confidence
+//! - Trained via online SGD + self-play from benchmark attempts (AlphaZero-style)
 //!
 //! Weights are stored as a flat f32 vector in SQLite (soul_state key: "brain_weights").
 //! Distributed weight sharing: nodes can export/import weight deltas via peer protocol.
@@ -24,22 +25,18 @@ use crate::plan::PlanStep;
 // ── Architecture constants ───────────────────────────────────────────
 
 /// Input feature vector size.
-/// v1 was 32, v2 is 64 — extra features for benchmark context, ELO,
-/// peer state, and problem category encoding.
-const INPUT_SIZE: usize = 64;
+/// v1=32, v2=64, v3=128 — full feature encoding: step type, context,
+/// benchmark state, peer state, problem category, prompt strategy.
+const INPUT_SIZE: usize = 128;
 /// Hidden layer size.
-/// v1 was 128, v2 is 256 — 4x parameter budget for richer representations.
-const HIDDEN_SIZE: usize = 256;
+/// v1=128, v2=256, v3=1024 — 1.2M parameter budget for deep representations.
+const HIDDEN_SIZE: usize = 1024;
 /// Output size: 1 (success prob) + 11 (error category logits) + 11 (capability confidence).
 const OUTPUT_SIZE: usize = 23;
-/// Learning rate for SGD.
-const LEARNING_RATE: f32 = 0.01;
-/// L2 regularization strength.
-const WEIGHT_DECAY: f32 = 0.0001;
-/// Previous architecture input size (for migration detection).
-const LEGACY_INPUT_SIZE: usize = 32;
-/// Previous architecture hidden size (for migration detection).
-const LEGACY_HIDDEN_SIZE: usize = 128;
+/// Learning rate for SGD — lower for larger model to prevent instability.
+const LEARNING_RATE: f32 = 0.003;
+/// L2 regularization strength — slightly higher for larger model.
+const WEIGHT_DECAY: f32 = 0.0002;
 
 // ── Core types ───────────────────────────────────────────────────────
 
@@ -350,8 +347,8 @@ impl Brain {
                 loaded_w1 = brain.w1.len(),
                 expected_w1,
                 old_steps = brain.train_steps,
-                "Brain architecture mismatch — migrating to v2 ({}→{} input, {}→{} hidden)",
-                LEGACY_INPUT_SIZE, INPUT_SIZE, LEGACY_HIDDEN_SIZE, HIDDEN_SIZE
+                "Brain architecture mismatch — migrating to v3 (input={}, hidden={})",
+                INPUT_SIZE, HIDDEN_SIZE
             );
             return None; // Caller will create fresh Brain::new()
         }
@@ -465,9 +462,39 @@ pub fn encode_step(step: &PlanStep, context: &StepContext) -> Vec<f32> {
     // Feature 35: generation (clone depth)
     features[35] = (context.generation as f32 / 5.0).min(1.0);
 
-    // Features 36-63: reserved for future use
-    // (zero-initialized by default — available for problem category encoding,
-    // per-problem difficulty features, prompt strategy selection, etc.)
+    // Features 36-42: benchmark self-play encoding (used by benchmark_attempts_to_examples)
+    // 36: easy difficulty, 37: medium, 38: hard
+    // 39: retry number, 40: had peer context, 41: had peer review, 42: compiled
+
+    // Features 43-56: problem category one-hot (14 categories)
+    if context.problem_category < 14 {
+        features[43 + context.problem_category as usize] = 1.0;
+    }
+
+    // Feature 57: solution length (normalized, log scale)
+    features[57] = (1.0 + context.solution_length as f32).ln() / 10.0;
+
+    // Feature 58: test count (normalized)
+    features[58] = (context.test_count as f32 / 50.0).min(1.0);
+
+    // Feature 59: has starter code (some problems have scaffolding)
+    features[59] = if context.has_starter_code { 1.0 } else { 0.0 };
+
+    // Feature 60: colony fitness mean
+    features[60] = context.colony_fitness_mean.clamp(0.0, 1.0);
+
+    // Feature 61: hours since last benchmark
+    features[61] = (context.hours_since_benchmark / 24.0).min(1.0);
+
+    // Feature 62: benchmark session count (how experienced are we)
+    features[62] = (context.benchmark_sessions as f32 / 20.0).min(1.0);
+
+    // Feature 63: economic fitness (revenue signal)
+    features[63] = context.economic_fitness.clamp(0.0, 1.0);
+
+    // Features 64-127: reserved for future use
+    // (zero-initialized — available for: solution embedding, error pattern hash,
+    // per-problem historical pass rate, prompt template ID, etc.)
 
     features
 }
@@ -475,6 +502,7 @@ pub fn encode_step(step: &PlanStep, context: &StepContext) -> Vec<f32> {
 /// Context needed to encode a step into features.
 #[derive(Debug, Clone, Default)]
 pub struct StepContext {
+    // v1 fields: basic step context
     pub plan_progress: f32,
     pub replan_count: u32,
     pub overall_success_rate: f32,
@@ -497,6 +525,15 @@ pub struct StepContext {
     pub multiagent_pct: f32,
     pub brain_train_steps: u64,
     pub generation: u32,
+    // v3 fields: problem-level context + colony state
+    pub problem_category: u32,
+    pub solution_length: u32,
+    pub test_count: u32,
+    pub has_starter_code: bool,
+    pub colony_fitness_mean: f32,
+    pub hours_since_benchmark: f32,
+    pub benchmark_sessions: u32,
+    pub economic_fitness: f32,
 }
 
 // ── Experience data → training examples ──────────────────────────────
@@ -1261,17 +1298,17 @@ mod tests {
         assert_eq!(brain.w2.len(), HIDDEN_SIZE * HIDDEN_SIZE);
         assert_eq!(brain.w3.len(), HIDDEN_SIZE * OUTPUT_SIZE);
         assert_eq!(brain.train_steps, 0);
-        // v2: ~91K params (INPUT=64, HIDDEN=256, OUTPUT=23)
-        // 64*256 + 256 + 256*256 + 256 + 256*23 + 23 = 88,599
-        assert!(brain.param_count() > 80_000, "got {}", brain.param_count());
-        assert!(brain.param_count() < 100_000, "got {}", brain.param_count());
+        // v3: ~1.2M params (INPUT=128, HIDDEN=1024, OUTPUT=23)
+        // 128*1024 + 1024 + 1024*1024 + 1024 + 1024*23 + 23 = 1,205,271
+        assert!(brain.param_count() > 1_000_000, "got {}", brain.param_count());
+        assert!(brain.param_count() < 1_500_000, "got {}", brain.param_count());
     }
 
     #[test]
     fn test_brain_migration_rejects_legacy() {
-        // Simulate a legacy brain with old architecture
-        let legacy = Brain {
-            w1: vec![0.0; 32 * 128],  // old INPUT_SIZE * old HIDDEN_SIZE
+        // v1 brain (32×128)
+        let v1 = Brain {
+            w1: vec![0.0; 32 * 128],
             b1: vec![0.0; 128],
             w2: vec![0.0; 128 * 128],
             b2: vec![0.0; 128],
@@ -1280,9 +1317,20 @@ mod tests {
             train_steps: 10000,
             running_loss: 0.5,
         };
-        let json = serde_json::to_string(&legacy).unwrap();
-        // from_json should reject due to architecture mismatch
-        assert!(Brain::from_json(&json).is_none());
+        assert!(Brain::from_json(&serde_json::to_string(&v1).unwrap()).is_none());
+
+        // v2 brain (64×256)
+        let v2 = Brain {
+            w1: vec![0.0; 64 * 256],
+            b1: vec![0.0; 256],
+            w2: vec![0.0; 256 * 256],
+            b2: vec![0.0; 256],
+            w3: vec![0.0; 256 * 23],
+            b3: vec![0.0; 23],
+            train_steps: 5000,
+            running_loss: 0.3,
+        };
+        assert!(Brain::from_json(&serde_json::to_string(&v2).unwrap()).is_none());
     }
 
     #[test]

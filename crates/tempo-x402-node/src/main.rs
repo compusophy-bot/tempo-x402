@@ -585,7 +585,7 @@ async fn main() -> std::io::Result<()> {
                     // Check for cognitive architecture changes (brain size, etc.)
                     // This wipes ALL learned state — brain weights, cortex, genesis, etc.
                     // Preserves benchmark solutions and ELO history.
-                    const COGNITIVE_VERSION: &str = "v2-brain89k-input64-hidden256";
+                    const COGNITIVE_VERSION: &str = "v3-brain1.2m-input128-hidden1024";
                     if db.reset_cognitive_architecture(COGNITIVE_VERSION) {
                         tracing::warn!("Cognitive architecture reset to {COGNITIVE_VERSION}");
                         x402_soul::emit_event(
