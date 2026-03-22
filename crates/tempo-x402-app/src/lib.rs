@@ -3165,17 +3165,19 @@ fn ChatWidget() -> impl IntoView {
     }
 }
 
-/// Footer with version
+/// Footer with version and external links
 #[component]
 fn Footer() -> impl IntoView {
     view! {
         <footer class="footer">
             <p>
-                "Built with "
-                <a href="https://github.com/compusophy/tempo-x402">"tempo-x402"</a>
-                " on Tempo Moderato"
+                <a href="https://docs.rs/tempo-x402" target="_blank">"docs"</a>
+                " \u{00B7} "
+                <a href="https://crates.io/crates/tempo-x402" target="_blank">"crates"</a>
+                " \u{00B7} "
+                <a href="https://github.com/compusophy/tempo-x402" target="_blank">"github"</a>
             </p>
-            <p class="footer-version">{concat!("v", env!("CARGO_PKG_VERSION"))}</p>
+            <p class="footer-version">{concat!("tempo-x402 v", env!("CARGO_PKG_VERSION"))}</p>
         </footer>
     }
 }
