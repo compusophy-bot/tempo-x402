@@ -388,14 +388,13 @@ pub fn planning_prompt(
             extra_context.push_str(&format!("- {err}\n"));
         }
         extra_context.push_str(
-            "\n[CRITICAL]: If you encounter 429 Too Many Requests errors, you must use the following \
-             structured retry block in your plans:\n\
-             ```json\n\
-             { \"type\": \"wait\", \"seconds\": 10 },\n\
-             { \"type\": \"retry_previous_step\" }\n\
-             ```\n\
-             Do NOT fail immediately. When designing your plan, if a step involves external API calls, \
-             always plan for potential rate-limiting."
+            "\n[CRITICAL]: If you encounter HTTP 429 Too Many Requests errors, you must suggest cooling off \
+             or retrying after a delay in your plan. If a step fails with 429, incorporate these steps \
+             into your revised plan:\n\
+             1. Add a 'wait' step for a duration based on the 'Retry-After' header (if available) or a \
+             default exponential backoff (e.g., 30s, 60s, 120s).\n\
+             2. Repeat the failed action immediately after the wait.\n\
+             Do NOT give up or abandon the goal immediately on 429 errors.\n"
         );
     }
 
