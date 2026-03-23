@@ -27,6 +27,33 @@ use crate::tools::{self, ToolExecutor};
 use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, ModelUpdate};
 use crate::{capability, feedback, validation};
 
+/// State of the thinking loop, including resilience tracking.
+pub struct ThinkState {
+    pub last_failures: Vec<chrono::DateTime<chrono::Utc>>,
+}
+
+impl ThinkState {
+    pub fn new() -> Self {
+        Self { last_failures: Vec::new() }
+    }
+
+    pub fn record_failure(&mut self) {
+        self.last_failures.push(chrono::Utc::now());
+        if self.last_failures.len() > 3 {
+            self.last_failures.remove(0);
+        }
+    }
+
+    pub fn backoff_multiplier(&self) -> f64 {
+        match self.last_failures.len() {
+            0 => 1.0,
+            1 => 2.0,
+            2 => 4.0,
+            _ => 8.0,
+        }
+    }
+}
+
 /// Simplified adaptive pacing for plan-driven execution.
 struct AdaptivePacer {
     prev_snapshot: Option<NodeSnapshot>,
@@ -82,6 +109,7 @@ pub struct ThinkingLoop {
     llm: Option<LlmClient>,
     observer: Arc<dyn NodeObserver>,
     tool_executor: ToolExecutor,
+    state: std::sync::Mutex<ThinkState>,
 }
 
 impl ThinkingLoop {
@@ -143,6 +171,7 @@ impl ThinkingLoop {
             llm,
             observer,
             tool_executor,
+            state: std::sync::Mutex::new(ThinkState::new()),
         }
     }
 
