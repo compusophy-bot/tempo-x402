@@ -467,6 +467,8 @@ pub enum StepResult {
     Failed(String),
     /// Step needs the plan to be adjusted.
     NeedsReplan(String),
+    /// Step failed due to rate limiting (429).
+    RateLimited(String),
 }
 
 /// Executes plan steps — mechanical steps directly, LLM steps via tool loop.
@@ -602,7 +604,7 @@ impl<'a> PlanExecutor<'a> {
                     .await;
                 let peers_json = match &discover_result {
                     StepResult::Success(output) => output.clone(),
-                    StepResult::Failed(err) | StepResult::NeedsReplan(err) => {
+                    StepResult::Failed(err) | StepResult::NeedsReplan(err) | StepResult::RateLimited(err) => {
                         return StepResult::Failed(format!("peer discovery failed: {err}"));
                     }
                 };
@@ -837,7 +839,7 @@ impl<'a> PlanExecutor<'a> {
             .await;
         let diff = match &diff_result {
             StepResult::Success(output) => output.clone(),
-            StepResult::Failed(err) | StepResult::NeedsReplan(err) => {
+            StepResult::Failed(err) | StepResult::NeedsReplan(err) | StepResult::RateLimited(err) => {
                 return StepResult::Failed(format!("failed to fetch PR #{pr_number} diff: {err}"));
             }
         };
@@ -899,7 +901,7 @@ impl<'a> PlanExecutor<'a> {
         let think_result = self.execute_think_step(&review_prompt, &plan_context).await;
         let review_output = match &think_result {
             StepResult::Success(output) => output.clone(),
-            StepResult::Failed(err) | StepResult::NeedsReplan(err) => {
+            StepResult::Failed(err) | StepResult::NeedsReplan(err) | StepResult::RateLimited(err) => {
                 return StepResult::Failed(format!("LLM review failed: {err}"));
             }
         };

@@ -1051,6 +1051,17 @@ impl ThinkingLoop {
 
             // ── Handle result ──
             match result {
+                StepResult::RateLimited(msg) => {
+                    tracing::warn!(reason = %msg, "Rate limited, slowing down");
+                    // Implement exponential backoff by artificially increasing sleep
+                    let sleep_duration = 300; // 5 minutes backoff
+                    tokio::time::sleep(std::time::Duration::from_secs(sleep_duration)).await;
+                    return Ok(CycleResult {
+                        step_type: StepType::Mechanical,
+                        entered_code: false,
+                        summary: format!("Rate limited, retrying later: {msg}"),
+                    });
+                }
                 StepResult::Success(output) => {
                     // Track capability success
                     capability::record_step_result(&self.db, &step, true, &step_summary);
