@@ -101,12 +101,14 @@ pub async fn validated_commit(
         Err(e) => format!("committed {sha} but push failed: {e}"),
     };
 
-    // 9. Clean up cargo build artifacts to prevent volume bloat
-    // (target/ can be 2-4 GB for this workspace)
-    let target_dir = format!("{workspace_root}/target");
-    if tokio::fs::metadata(&target_dir).await.is_ok() {
-        tracing::info!("Cleaning workspace target/ after commit");
-        let _ = tokio::fs::remove_dir_all(&target_dir).await;
+    // Build artifacts go to /tmp/x402_cargo_target (not the volume).
+    // Clean up after commit to free /tmp space for the next operation.
+    let _ = tokio::fs::remove_dir_all("/tmp/x402_cargo_target").await;
+    // Also clean any legacy target/ on the volume from old code
+    let legacy_target = format!("{workspace_root}/target");
+    if tokio::fs::metadata(&legacy_target).await.is_ok() {
+        tracing::info!("Cleaning legacy workspace target/ from volume");
+        let _ = tokio::fs::remove_dir_all(&legacy_target).await;
     }
 
     Ok(CommitResult {
@@ -123,6 +125,7 @@ pub async fn validated_commit(
 const MAX_ERROR_OUTPUT: usize = 4096;
 
 /// Run `cargo check --workspace`. Returns (passed, error_output).
+/// Uses /tmp for target dir to avoid bloating the persistent volume.
 pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
     tracing::info!("running cargo check...");
     let result = tokio::time::timeout(
@@ -130,6 +133,7 @@ pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
         tokio::process::Command::new("cargo")
             .args(["check", "--workspace"])
             .current_dir(workspace_root)
+            .env("CARGO_TARGET_DIR", "/tmp/x402_cargo_target")
             .output(),
     )
     .await;
@@ -157,6 +161,7 @@ pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
 }
 
 /// Run `cargo test --workspace`. Returns (passed, error_output).
+/// Uses /tmp for target dir to avoid bloating the persistent volume.
 async fn run_cargo_test(workspace_root: &str) -> (bool, Option<String>) {
     tracing::info!("running cargo test...");
     let result = tokio::time::timeout(
@@ -164,6 +169,7 @@ async fn run_cargo_test(workspace_root: &str) -> (bool, Option<String>) {
         tokio::process::Command::new("cargo")
             .args(["test", "--workspace"])
             .current_dir(workspace_root)
+            .env("CARGO_TARGET_DIR", "/tmp/x402_cargo_target")
             .output(),
     )
     .await;
