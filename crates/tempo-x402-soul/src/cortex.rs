@@ -44,9 +44,24 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tracing::info;
 
 use crate::db::SoulDatabase;
 use crate::plan::PlanStep;
+
+// ── Logging ──────────────────────────────────────────────────────────
+
+/// Logs a cortex prediction event for analysis.
+pub fn log_cortex_prediction(context: &str, action: &str, predicted_outcome: &str, confidence: f32) {
+    info!(
+        target: "cortex_prediction",
+        context = context,
+        action = action,
+        predicted_outcome = predicted_outcome,
+        confidence = confidence,
+        "Cortex prediction made"
+    );
+}
 
 // ── Constants ────────────────────────────────────────────────────────
 
