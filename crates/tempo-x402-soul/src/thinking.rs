@@ -579,6 +579,21 @@ impl ThinkingLoop {
         snapshot: &NodeSnapshot,
         pacer: &AdaptivePacer,
     ) -> Result<CycleResult, SoulError> {
+        // --- LOG STATE SNAPSHOT ---
+        let cycle_count: u64 = self
+            .db
+            .get_state("total_think_cycles")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        tracing::debug!(
+            node_id = %self.config.instance_id.as_deref().unwrap_or("unknown"),
+            cycle_count,
+            "Thinking cycle snapshot"
+        );
+
         // ── Step 1: Observe — record snapshot, sync auto-beliefs ──
         self.observe(snapshot, pacer)?;
 
