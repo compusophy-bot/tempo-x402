@@ -1161,8 +1161,8 @@ async fn abandon_goal(
     }
 }
 
-/// POST /soul/reset — clear historical dead weight (thoughts, failed plans, counters).
-/// Keeps active goals, beliefs, and active plans.
+/// POST /soul/reset — clear historical dead weight (thoughts, ALL plans, counters).
+/// Keeps active goals and beliefs. Clears stuck active plans.
 async fn soul_reset(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,
@@ -1180,7 +1180,7 @@ async fn soul_reset(state: web::Data<NodeState>) -> HttpResponse {
                 "plans": plans,
                 "nudges": nudges,
             },
-            "kept": "active goals, active beliefs, active plans"
+            "kept": "active goals, active beliefs"
         })),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": format!("reset failed: {e}")

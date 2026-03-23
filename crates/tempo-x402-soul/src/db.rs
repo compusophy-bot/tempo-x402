@@ -1516,15 +1516,18 @@ impl SoulDatabase {
             .try_into()
             .unwrap_or(0);
 
-        // Delete completed, failed, and abandoned plans (keep active ones)
+        // Delete ALL plans — including active ones that may be stuck.
+        // A stuck active plan can trap the thinking loop indefinitely.
         let plans_deleted: u64 = conn
-            .execute(
-                "DELETE FROM plans WHERE status IN ('completed', 'failed', 'abandoned')",
-                [],
-            )
+            .execute("DELETE FROM plans", [])
             .unwrap_or(0)
             .try_into()
             .unwrap_or(0);
+        // Clear the active plan pointer
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO soul_state (key, value) VALUES ('active_plan_id', '')",
+            [],
+        );
 
         // Delete processed nudges
         let nudges_deleted: u64 = conn
