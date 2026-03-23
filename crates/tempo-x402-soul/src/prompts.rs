@@ -532,9 +532,9 @@ pub fn planning_prompt(
            crates/tempo-x402/src/* (core lib), crates/tempo-x402-node/src/routes/soul.rs\n\
          - Do NOT try to modify Dockerfile, railway.toml, or deployment configs\n\
          - Use only dependencies already available in the workspace\n\
-         - For inter-agent calls, ALWAYS use call_peer with just the slug. NEVER construct URLs manually.\n\
-         - EVERY plan that involves peers MUST include at least one call_peer step. This is x402 — paid endpoints are the product.\n\
-         - If you have peers, include a call_peer step with slug 'info' or 'soul' — this generates real x402 payment transactions.\n\
+         - For inter-agent calls, use call_peer with just the slug. NEVER construct URLs manually.\n\
+         - Peer calls are OPTIONAL — only include them when they serve the goal. Do NOT add peer calls just because peers exist.\n\
+         - PRIORITY: editing code and running benchmarks is MORE important than peer interaction.\n\
          - For large files (>64KB), use read_file with offset and limit parameters (e.g. offset: 0, limit: 500 for first 500 lines).\n\n\
          Respond with ONLY a JSON array of steps, no other text.",
         goal.description,
