@@ -124,14 +124,15 @@ pub async fn validated_commit(
 /// Max error output to capture (4KB) — enough to see the error, not flood LLM context.
 const MAX_ERROR_OUTPUT: usize = 4096;
 
-/// Run `cargo check --workspace`. Returns (passed, error_output).
+/// Run `cargo check` on the soul crate only (not --workspace).
+/// The agents only edit soul files — no need to compile all 8 crates.
 /// Uses /tmp for target dir to avoid bloating the persistent volume.
 pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
-    tracing::info!("running cargo check...");
+    tracing::info!("running cargo check -p tempo-x402-soul...");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(300),
         tokio::process::Command::new("cargo")
-            .args(["check", "--workspace"])
+            .args(["check", "-p", "tempo-x402-soul"])
             .current_dir(workspace_root)
             .env("CARGO_TARGET_DIR", "/tmp/x402_cargo_target")
             .output(),
@@ -160,14 +161,14 @@ pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
     }
 }
 
-/// Run `cargo test --workspace`. Returns (passed, error_output).
+/// Run `cargo test` on the soul crate only (not --workspace).
 /// Uses /tmp for target dir to avoid bloating the persistent volume.
 async fn run_cargo_test(workspace_root: &str) -> (bool, Option<String>) {
-    tracing::info!("running cargo test...");
+    tracing::info!("running cargo test -p tempo-x402-soul...");
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(600),
+        std::time::Duration::from_secs(300),
         tokio::process::Command::new("cargo")
-            .args(["test", "--workspace"])
+            .args(["test", "-p", "tempo-x402-soul"])
             .current_dir(workspace_root)
             .env("CARGO_TARGET_DIR", "/tmp/x402_cargo_target")
             .output(),

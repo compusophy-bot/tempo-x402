@@ -25,7 +25,7 @@ pub struct SoulConfig {
     pub tools_enabled: bool,
     /// Max tool calls per think cycle (default: 5).
     pub max_tool_calls: u32,
-    /// Per-command timeout in seconds (default: 120).
+    /// Per-command timeout in seconds (default: 300).
     pub tool_timeout_secs: u64,
     /// Workspace root directory (default: /app).
     pub workspace_root: String,
@@ -178,7 +178,7 @@ impl SoulConfig {
         let tool_timeout_secs: u64 = std::env::var("SOUL_TOOL_TIMEOUT_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(120);
+            .unwrap_or(300);
 
         let workspace_root =
             std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/data/workspace".to_string());

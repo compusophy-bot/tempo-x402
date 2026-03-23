@@ -764,14 +764,17 @@ impl ToolExecutor {
             .map(|l| (start_line + l).min(lines.len()))
             .unwrap_or(lines.len());
 
+        // Return raw content WITHOUT line numbers.
+        // Previously used `cat -n` style formatting ({:>6}\t{line}) but the LLM
+        // copied line numbers into edit_file's old_string, causing every edit to fail.
         let mut output = String::new();
-        for (i, line) in lines
+        for line in lines
             .iter()
-            .enumerate()
             .skip(start_line)
             .take(end_line - start_line)
         {
-            output.push_str(&format!("{:>6}\t{}\n", i + 1, line));
+            output.push_str(line);
+            output.push('\n');
         }
 
         // Truncate if still too large (char-safe to avoid panicking on multi-byte boundaries)
