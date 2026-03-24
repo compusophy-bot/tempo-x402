@@ -869,7 +869,7 @@ async fn notify_siblings_of_new_peer(
 
         let nudge_url = format!("{}/soul/nudge", sib_url.trim_end_matches('/'));
         let nudge_body = serde_json::json!({
-            "content": format!(
+            "message": format!(
                 "New peer joined the colony: {} at {}. Run discover_peers to sync.",
                 new_instance_id, new_url
             ),
