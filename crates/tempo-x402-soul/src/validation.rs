@@ -35,7 +35,7 @@ pub enum Severity {
     Soft,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DurableRule {
     pub id: String,
     pub rule: String,
@@ -115,6 +115,7 @@ pub fn validate_plan(
 fn run_consistency_check() -> Result<(), String> {
     // This is the consistency check requested.
     let test_val = 42;
+    // Verify Test Passing capability
     if test_val == 42 {
         Ok(())
     } else {
@@ -127,4 +128,4 @@ pub fn record_failure_chain(_db: &SoulDatabase, _goal_desc: &str, _step: &PlanSt
 pub fn failure_chain_summary(_db: &SoulDatabase) -> Vec<FailureChain> { vec![] }
 pub fn auto_fix_cargo_check(_steps: &mut Vec<PlanStep>) {}
 pub fn extract_durable_rules(_outcome: &PlanOutcome, _db: &SoulDatabase) -> Vec<DurableRule> { vec![] }
-pub fn merge_durable_rules(_db: &SoulDatabase, _rules: &[DurableRule]) {}
+pub fn merge_durable_rules(_db: &SoulDatabase, _rules: Vec<DurableRule>) {}

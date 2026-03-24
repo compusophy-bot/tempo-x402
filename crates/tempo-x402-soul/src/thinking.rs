@@ -2573,7 +2573,7 @@ impl ThinkingLoop {
                 if let Some(outcome) = recent.first() {
                     let new_rules = validation::extract_durable_rules(outcome, &self.db);
                     if !new_rules.is_empty() {
-                        validation::merge_durable_rules(&self.db, &new_rules);
+                        validation::merge_durable_rules(&self.db, new_rules.clone());
                         tracing::info!(
                             count = new_rules.len(),
                             "Extracted durable rules from plan failure"
