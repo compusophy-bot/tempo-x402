@@ -310,24 +310,53 @@ impl ThinkingLoop {
                     let _ = self
                         .db
                         .set_state("last_benchmark_cycle", &current_cycle.to_string());
-                    match crate::benchmark::run_benchmark_session(
-                        llm,
-                        &self.db,
-                        &self.config.workspace_root,
-                        crate::benchmark::DEFAULT_SAMPLE_SIZE,
-                    )
-                    .await
-                    {
-                        Ok(pass_at_1) => {
-                            crate::elo::update_rating(&self.db, pass_at_1);
-                            tracing::info!(
-                                pass_at_1 = format!("{:.1}%", pass_at_1),
-                                elo = crate::elo::rating_display(&self.db),
-                                "Exercism Rust benchmark complete"
-                            );
+                    let bench_mode = crate::benchmark::BenchmarkMode::from_env();
+                    match bench_mode {
+                        crate::benchmark::BenchmarkMode::Opus => {
+                            match crate::benchmark::run_opus_benchmark_session(
+                                llm,
+                                &self.db,
+                                &self.config.workspace_root,
+                                crate::benchmark::DEFAULT_SAMPLE_SIZE,
+                            )
+                            .await
+                            {
+                                Ok(weighted_score) => {
+                                    let iq = crate::opus_bench::weighted_score_to_iq(weighted_score);
+                                    crate::elo::update_rating(&self.db, weighted_score);
+                                    tracing::info!(
+                                        weighted = format!("{:.1}%", weighted_score),
+                                        iq = format!("{:.0}", iq),
+                                        elo = crate::elo::rating_display(&self.db),
+                                        "Opus IQ benchmark complete"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Opus IQ benchmark failed");
+                                }
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Exercism Rust benchmark failed");
+                        crate::benchmark::BenchmarkMode::Exercism => {
+                            match crate::benchmark::run_benchmark_session(
+                                llm,
+                                &self.db,
+                                &self.config.workspace_root,
+                                crate::benchmark::DEFAULT_SAMPLE_SIZE,
+                            )
+                            .await
+                            {
+                                Ok(pass_at_1) => {
+                                    crate::elo::update_rating(&self.db, pass_at_1);
+                                    tracing::info!(
+                                        pass_at_1 = format!("{:.1}%", pass_at_1),
+                                        elo = crate::elo::rating_display(&self.db),
+                                        "Exercism Rust benchmark complete"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "Exercism Rust benchmark failed");
+                                }
+                            }
                         }
                     }
                 }
@@ -2111,10 +2140,13 @@ impl ThinkingLoop {
         };
         let cap_guidance = capability::capability_guidance(&self.db);
         let benchmark_summary = crate::benchmark::benchmark_summary_for_prompt(&self.db);
+        let opus_summary = crate::benchmark::opus_summary_for_prompt(&self.db);
         let brain_summary = crate::brain::brain_summary(&self.db);
         let cap_with_benchmark = {
             let mut s = cap_guidance;
-            if !benchmark_summary.is_empty() {
+            if !opus_summary.is_empty() {
+                s = format!("{s}\n\n{opus_summary}");
+            } else if !benchmark_summary.is_empty() {
                 s = format!("{s}\n\n{benchmark_summary}");
             }
             if !brain_summary.is_empty() {
