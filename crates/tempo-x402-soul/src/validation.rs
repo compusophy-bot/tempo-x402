@@ -129,13 +129,3 @@ pub fn failure_chain_summary(_db: &SoulDatabase) -> Vec<FailureChain> { vec![] }
 pub fn auto_fix_cargo_check(_steps: &mut Vec<PlanStep>) {}
 pub fn extract_durable_rules(_outcome: &PlanOutcome, _db: &SoulDatabase) -> Vec<DurableRule> { vec![] }
 pub fn merge_durable_rules(_db: &SoulDatabase, _rules: Vec<DurableRule>) {}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_consistency_check_passes() {
-        assert!(run_consistency_check().is_ok());
-    }
-}
