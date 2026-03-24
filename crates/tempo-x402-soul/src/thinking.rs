@@ -10,7 +10,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::config::SoulConfig;
-use crate::cortex::Cortex;
+use crate::cortex::{Cortex, Experience};
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
 use crate::git::GitContext;
