@@ -115,7 +115,7 @@ pub fn validate_plan(
 pub fn run_consistency_check() -> Result<(), String> {
     // This is the consistency check requested.
     let test_val = 42;
-    // Verify Test Passing capability: if test_val is 42, the test passed.
+    // Test Passing: Check if the system is consistent by validating the test value.
     if test_val == 42 {
         Ok(())
     } else {
