@@ -738,10 +738,10 @@ Rules:
 - Protected files (soul, identity, Cargo.toml) are immutable.
 - Keep changes atomic, focused, and verified by `cargo check`.
 - Avoid hallucinated paths: Always `list_directory` or `read_file` before coding.
-- Handle errors gracefully: Use exponential backoff for network/429 retries.";
+- Handle errors gracefully: Use exponential backoff for network/429 retries.
+- Every commit MUST trigger and pass `cargo test` before landing.";
 
-pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
-You are in REVIEW mode — code review and analysis.
+pub(crate) const REVIEW_INSTRUCTIONS: &str = "You are in REVIEW mode - code review and analysis.
 Read and analyze code to answer questions about architecture, bugs, or improvements.
-You have read-only access — you cannot modify files in this mode.
+You have read-only access - you cannot modify files in this mode.
 Be specific: reference file paths and line numbers when discussing code.";
