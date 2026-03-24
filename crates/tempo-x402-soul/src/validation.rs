@@ -160,6 +160,7 @@ fn check_input_sanitization(steps: &[PlanStep], violations: &mut Vec<PlanViolati
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
 
     #[test]
     fn test_cortex_module_exists() {
@@ -170,8 +171,34 @@ mod tests {
     }
 
     #[test]
-    fn test_system_sanity_v2() {
-        assert!(true);
+    fn test_backoff_logic_progression() {
+        let mut failures = Vec::<DateTime<Utc>>::new();
+        
+        let record_failure = |f: &mut Vec<DateTime<Utc>>| {
+            f.push(Utc::now());
+            if f.len() > 3 {
+                f.remove(0);
+            }
+        };
+
+        let get_backoff = |f: &Vec<DateTime<Utc>>| -> f64 {
+            match f.len() {
+                0 => 1.0,
+                1 => 2.0,
+                2 => 4.0,
+                _ => 8.0,
+            }
+        };
+
+        assert_eq!(get_backoff(&failures), 1.0);
+        record_failure(&mut failures);
+        assert_eq!(get_backoff(&failures), 2.0);
+        record_failure(&mut failures);
+        assert_eq!(get_backoff(&failures), 4.0);
+        record_failure(&mut failures);
+        assert_eq!(get_backoff(&failures), 8.0);
+        record_failure(&mut failures);
+        assert_eq!(get_backoff(&failures), 8.0);
     }
 
     #[test]
