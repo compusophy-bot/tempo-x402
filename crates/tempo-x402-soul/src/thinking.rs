@@ -1736,19 +1736,13 @@ impl ThinkingLoop {
                 exp = format!("{exp}\n\n{peer_lessons}");
             }
             if !failure_chains.is_empty() {
-                exp = format!("{exp}\n\n{failure_chains}");
+                let wrapper = validation::FailureChainWrapper(failure_chains);
+                exp = format!("{exp}\n\n{wrapper}");
             }
             exp
         };
-        let cap_guidance = {
-            let mut cg = capability::capability_guidance(&self.db);
-            let brain_intel = crate::brain::brain_summary(&self.db);
-            if !brain_intel.is_empty() {
-                cg = format!("{cg}\n\n{brain_intel}");
-            }
-            cg
-        };
-        let role_guide = String::new(); // Removed hardcoded roles — colony.rs handles differentiation
+        let cap_guidance = capability::capability_guidance(&self.db);
+        let role_guide = crate::colony::prompt_section(&self.db);
         let peer_catalog = self
             .db
             .get_state("peer_endpoint_catalog")
@@ -2165,7 +2159,8 @@ impl ThinkingLoop {
                 exp = format!("{exp}\n\n{peer_lessons}");
             }
             if !failure_chains.is_empty() {
-                exp = format!("{exp}\n\n{failure_chains}");
+                let wrapper = validation::FailureChainWrapper(failure_chains);
+                exp = format!("{exp}\n\n{wrapper}");
             }
             exp
         };

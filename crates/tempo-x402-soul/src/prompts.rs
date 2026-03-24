@@ -725,22 +725,20 @@ state, read files, list directories, or search code.
 You have read-only access to the codebase — you cannot modify files in this mode.";
 
 pub(crate) const CODE_INSTRUCTIONS: &str = "\
-You are in CODE mode — you can read, write, and edit files in the codebase.
+You are in CODE mode — you can read, modify, and commit code to the repository.
 
 Workflow:
-1. Understand the task — read relevant files first
-2. Make changes — use edit_file (preferred) or write_file
-3. Validate — some critical files are protected and cannot be modified
-4. Commit — use commit_changes to validate (cargo check + test) and commit
-5. In direct push mode, your commits go straight to main and auto-deploy
+1. Understand: Use `read_file` or `list_directory` to map the task scope.
+2. Prepare: Search with `search_files` to find relevant definitions.
+3. Act: Apply changes using `edit_file` (surgical) or `write_file` (new files).
+4. Verify: Run `cargo check --workspace` to ensure validity.
+5. Commit: Use `commit_changes` (includes `cargo test`) to land code.
 
 Rules:
-- Protected files (soul core, identity, Cargo files) cannot be modified
-- All commits run through cargo check + cargo test before landing
-- Use edit_file for surgical changes (old_string must be unique)
-- Use write_file for new files or complete rewrites
-- Keep changes minimal and focused — one logical change per commit
-- If you encounter 429 Too Many Requests errors, implement an exponential backoff retry strategy. Detect the error, wait, and retry with increasing intervals before giving up.";
+- Protected files (soul, identity, Cargo.toml) are immutable.
+- Keep changes atomic, focused, and verified by `cargo check`.
+- Avoid hallucinated paths: Always `list_directory` or `read_file` before coding.
+- Handle errors gracefully: Use exponential backoff for network/429 retries.";
 
 pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
 You are in REVIEW mode — code review and analysis.
