@@ -43,6 +43,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
 use crate::db::SoulDatabase;
 use crate::plan::PlanStep;
 
@@ -702,10 +703,7 @@ impl Cortex {
     /// counterfactuals, and prune stale edges.
     ///
     /// Returns the number of insights generated.
-    pub fn dream(&mut self, db: &SoulDatabase) -> usize {
-        // Log fitness trends at start of dream
-        crate::capability::log_fitness_trends(db);
-
+    pub fn dream(&mut self) -> usize {
         if self.experiences.is_empty() {
             return 0;
         }
@@ -1532,9 +1530,8 @@ mod tests {
             );
         }
 
-        // Dream should process without panic
-        let db = SoulDatabase::new(":memory:").unwrap();
-        let insights = cortex.dream(&db);
+        let insights = cortex.dream();
+        // Should have extracted some patterns
         assert!(
             true, // Dream should process without panic
             "Dream should process without panic"

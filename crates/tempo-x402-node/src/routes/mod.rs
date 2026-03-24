@@ -5,6 +5,4 @@ pub mod instance;
 pub mod scripts;
 #[cfg(feature = "soul")]
 pub mod soul;
-#[cfg(feature = "soul")]
-pub mod validation;
 pub mod wallet;

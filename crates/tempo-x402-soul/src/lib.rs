@@ -93,7 +93,6 @@ pub mod tool_decl;
 pub mod tool_registry;
 pub mod tools;
 pub mod validation;
-pub mod validation_tests;
 pub mod world_model;
 
 pub use chat::{handle_chat, ChatReply};
