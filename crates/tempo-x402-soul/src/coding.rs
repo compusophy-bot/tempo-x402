@@ -1,7 +1,7 @@
-//! Coding orchestration: stage → validate → commit → push pipeline.
+//! Coding orchestration: stage → validate → peer review → commit → push pipeline.
 //!
-//! Wraps git operations with cargo validation to ensure commits
-//! don't break the build.
+//! Wraps git operations with cargo validation and colony peer review
+//! to ensure commits don't break the build AND aren't destructive.
 
 use crate::git::GitContext;
 use crate::guard;
@@ -84,7 +84,35 @@ pub async fn validated_commit(
         });
     }
 
-    // 6. Commit
+    // 6. Destruction guard — block commits that delete >50% of any file
+    let destruction = check_destruction_guard(workspace_root, files).await;
+    if let Err(reason) = destruction {
+        let _ = git.revert_changes().await;
+        return Ok(CommitResult {
+            success: false,
+            commit_sha: None,
+            message: format!("BLOCKED by destruction guard — changes reverted.\n{reason}"),
+            cargo_check_passed: true,
+            cargo_test_passed: true,
+            error_output: Some(reason),
+        });
+    }
+
+    // 7. Colony peer review — send diff to peers, require majority approval
+    let peer_review = request_colony_review(workspace_root, message).await;
+    if let Err(reason) = peer_review {
+        let _ = git.revert_changes().await;
+        return Ok(CommitResult {
+            success: false,
+            commit_sha: None,
+            message: format!("REJECTED by colony peer review — changes reverted.\n{reason}"),
+            cargo_check_passed: true,
+            cargo_test_passed: true,
+            error_output: Some(reason),
+        });
+    }
+
+    // 8. Commit
     let commit_result = git.commit(message).await?;
     if !commit_result.success {
         return Err(format!("commit failed: {}", commit_result.output));
@@ -119,6 +147,222 @@ pub async fn validated_commit(
         cargo_test_passed: true,
         error_output: None,
     })
+}
+
+// ── Destruction Guard ─────────────────────────────────────────────────
+
+/// Block commits that delete more than 50% of any existing file's content.
+/// This prevents the "lobotomy" failure mode where an agent guts a critical file.
+async fn check_destruction_guard(
+    workspace_root: &str,
+    _files: &[&str],
+) -> Result<(), String> {
+    // Get the staged diff with stats
+    let output = tokio::process::Command::new("git")
+        .args(["diff", "--cached", "--numstat"])
+        .current_dir(workspace_root)
+        .output()
+        .await
+        .map_err(|e| format!("failed to get diff stats: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let added: usize = parts[0].parse().unwrap_or(0);
+        let deleted: usize = parts[1].parse().unwrap_or(0);
+        let file_path = parts[2];
+
+        // Skip new files (all additions, no deletions)
+        if deleted == 0 {
+            continue;
+        }
+
+        // If we're deleting more than we're adding, and deletions are >50% of total change,
+        // check the original file size
+        if deleted > added && deleted > 20 {
+            // Get the original file line count
+            let orig = tokio::process::Command::new("git")
+                .args(["show", &format!("HEAD:{file_path}")])
+                .current_dir(workspace_root)
+                .output()
+                .await;
+
+            if let Ok(orig_output) = orig {
+                if orig_output.status.success() {
+                    let orig_lines = String::from_utf8_lossy(&orig_output.stdout)
+                        .lines()
+                        .count();
+                    if orig_lines > 0 {
+                        let deletion_pct = (deleted as f64 / orig_lines as f64) * 100.0;
+                        if deletion_pct > 50.0 {
+                            return Err(format!(
+                                "DESTRUCTION BLOCKED: '{file_path}' would lose {deleted}/{orig_lines} lines ({deletion_pct:.0}%). \
+                                 Deleting >50% of a file is not allowed. Make targeted edits instead of rewriting."
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── Colony Peer Review ──────────────────────────────────────────────
+
+/// Review request sent to peers before committing code changes.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CodeReviewRequest {
+    /// The commit message describing the change.
+    pub message: String,
+    /// The unified diff of all staged changes.
+    pub diff: String,
+    /// Instance ID of the requesting agent.
+    pub requester: String,
+}
+
+/// Review response from a peer.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CodeReviewResponse {
+    /// Whether the peer approves the change.
+    pub approved: bool,
+    /// Reason for approval or rejection.
+    pub reason: String,
+    /// Instance ID of the reviewer.
+    pub reviewer: String,
+}
+
+/// Send staged diff to all known peers for review. Requires majority approval.
+/// If no peers are reachable, the commit proceeds (graceful degradation).
+async fn request_colony_review(
+    workspace_root: &str,
+    message: &str,
+) -> Result<(), String> {
+    // Get the staged diff
+    let diff_output = tokio::process::Command::new("git")
+        .args(["diff", "--cached"])
+        .current_dir(workspace_root)
+        .output()
+        .await
+        .map_err(|e| format!("failed to get diff: {e}"))?;
+
+    let diff = String::from_utf8_lossy(&diff_output.stdout);
+    if diff.is_empty() {
+        return Ok(()); // nothing to review
+    }
+
+    // Truncate diff for network transfer (max 32KB)
+    let diff_truncated: String = diff.chars().take(32768).collect();
+
+    let requester = std::env::var("INSTANCE_ID").unwrap_or_else(|_| "unknown".into());
+
+    let review_req = CodeReviewRequest {
+        message: message.to_string(),
+        diff: diff_truncated,
+        requester: requester.clone(),
+    };
+
+    // Get peer URLs
+    let peer_urls = get_peer_urls_for_review();
+    if peer_urls.is_empty() {
+        tracing::info!("No peers available for code review — proceeding with commit");
+        return Ok(());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .map_err(|e| format!("HTTP client error: {e}"))?;
+
+    let mut approvals = 0u32;
+    let mut rejections = 0u32;
+    let mut rejection_reasons: Vec<String> = Vec::new();
+    let total_peers = peer_urls.len() as u32;
+
+    for peer_url in &peer_urls {
+        let url = format!("{}/soul/code-review", peer_url.trim_end_matches('/'));
+        let resp = client.post(&url).json(&review_req).send().await;
+
+        match resp {
+            Ok(r) if r.status().is_success() => {
+                if let Ok(review) = r.json::<CodeReviewResponse>().await {
+                    if review.approved {
+                        approvals += 1;
+                        tracing::info!(reviewer = %review.reviewer, "Peer approved code change");
+                    } else {
+                        rejections += 1;
+                        rejection_reasons.push(format!("{}: {}", review.reviewer, review.reason));
+                        tracing::warn!(
+                            reviewer = %review.reviewer,
+                            reason = %review.reason,
+                            "Peer REJECTED code change"
+                        );
+                    }
+                }
+            }
+            Ok(r) => {
+                tracing::debug!(peer = %peer_url, status = %r.status(), "Peer review endpoint unavailable");
+                // Non-responsive peers don't count — graceful degradation
+            }
+            Err(e) => {
+                tracing::debug!(peer = %peer_url, error = %e, "Peer unreachable for review");
+            }
+        }
+    }
+
+    let total_votes = approvals + rejections;
+
+    // If no peers responded at all, proceed (graceful degradation)
+    if total_votes == 0 {
+        tracing::info!(
+            peers_tried = total_peers,
+            "No peers responded to code review — proceeding"
+        );
+        return Ok(());
+    }
+
+    // Require majority approval among responding peers
+    if approvals > rejections {
+        tracing::info!(
+            approvals,
+            rejections,
+            "Colony approved code change ({approvals}/{total_votes})"
+        );
+        Ok(())
+    } else {
+        let reasons = rejection_reasons.join("\n");
+        Err(format!(
+            "Colony rejected code change ({rejections}/{total_votes} rejected).\nReasons:\n{reasons}"
+        ))
+    }
+}
+
+/// Get peer URLs from PEER_URLS env var (the static mesh list).
+fn get_peer_urls_for_review() -> Vec<String> {
+    let our_domain = std::env::var("RAILWAY_PUBLIC_DOMAIN")
+        .ok()
+        .map(|d| format!("https://{d}"));
+
+    std::env::var("PEER_URLS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .filter(|s| {
+            // Skip self
+            if let Some(ref our) = our_domain {
+                s.trim_end_matches('/') != our.trim_end_matches('/')
+            } else {
+                true
+            }
+        })
+        .collect()
 }
 
 /// Max error output to capture (4KB) — enough to see the error, not flood LLM context.

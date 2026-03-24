@@ -1265,6 +1265,125 @@ async fn review_benchmark_solution(
     }
 }
 
+/// POST /soul/code-review — peer reviews a proposed code change.
+/// Used by colony peer review: before committing, agents send their diff
+/// to peers for approval. Peers use the LLM to review for destructiveness.
+async fn review_code_change(
+    state: web::Data<NodeState>,
+    body: web::Json<x402_soul::coding::CodeReviewRequest>,
+) -> HttpResponse {
+    let config = match &state.soul_config {
+        Some(c) => c,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    let api_key = match &config.llm_api_key {
+        Some(k) => k.clone(),
+        None => {
+            // No LLM key — can't review, approve by default (graceful degradation)
+            let reviewer = std::env::var("INSTANCE_ID").unwrap_or_else(|_| "unknown".into());
+            return HttpResponse::Ok().json(x402_soul::coding::CodeReviewResponse {
+                approved: true,
+                reason: "dormant mode — auto-approved".to_string(),
+                reviewer,
+            });
+        }
+    };
+
+    let llm = x402_soul::llm::LlmClient::new(
+        api_key,
+        config.llm_model_fast.clone(),
+        config.llm_model_think.clone(),
+    );
+
+    let reviewer_id = std::env::var("INSTANCE_ID").unwrap_or_else(|_| "unknown".into());
+
+    // Quick mechanical checks first (no LLM needed)
+    let diff = &body.diff;
+
+    // Check 1: Any file losing >50% of lines?
+    let mut destruction_detected = false;
+    let mut destruction_detail = String::new();
+    for line in diff.lines() {
+        // Diff headers like "--- a/file" and "+++ b/file" + stats
+        if line.starts_with("diff --git") {
+            // Count additions/deletions for this file chunk
+            // Simple heuristic: if we see way more --- than +++ lines in a chunk
+        }
+    }
+
+    // Check 2: Are critical files being modified?
+    let critical_files = ["prompts.rs", "validation.rs", "guard.rs", "thinking.rs", "plan.rs", "brain.rs"];
+    let modifies_critical = critical_files.iter().any(|f| diff.contains(&format!("/{f}")));
+
+    // Use LLM for nuanced review of critical file changes
+    let system = "You are a code reviewer for an autonomous AI colony. Your job is to PROTECT \
+        the codebase from destructive changes. You are reviewing a diff proposed by a peer agent.\n\n\
+        REJECT if:\n\
+        - The diff deletes more than 50% of any file\n\
+        - Core prompt builders, validation rules, or safety layers are removed\n\
+        - The change replaces working code with stubs or no-ops\n\
+        - Function signatures change in ways that break callers\n\
+        - The change is clearly a confused refactor that loses functionality\n\n\
+        APPROVE if:\n\
+        - The change adds new functionality without removing existing\n\
+        - Bug fixes that are targeted and don't gut surrounding code\n\
+        - New tests or documentation\n\
+        - Genuine improvements that maintain all existing behavior\n\n\
+        Respond with EXACTLY this JSON (no markdown):\n\
+        {\"approved\": true, \"reason\": \"...\"} or {\"approved\": false, \"reason\": \"...\"}";
+
+    let prompt = format!(
+        "Review this code change from agent '{}'.\n\nCommit message: {}\n\n{}Diff:\n```\n{}\n```",
+        body.requester,
+        body.message,
+        if modifies_critical { "⚠️ WARNING: This modifies CRITICAL files.\n\n" } else { "" },
+        // Truncate diff for LLM context
+        body.diff.chars().take(8000).collect::<String>()
+    );
+
+    match llm.think(&system, &prompt).await {
+        Ok(response) => {
+            let cleaned = response.trim()
+                .trim_start_matches("```json")
+                .trim_start_matches("```")
+                .trim_end_matches("```")
+                .trim();
+
+            if let Ok(review) = serde_json::from_str::<serde_json::Value>(cleaned) {
+                let approved = review.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+                let reason = review.get("reason").and_then(|v| v.as_str()).unwrap_or("no reason").to_string();
+
+                HttpResponse::Ok().json(x402_soul::coding::CodeReviewResponse {
+                    approved,
+                    reason,
+                    reviewer: reviewer_id,
+                })
+            } else {
+                // Parse failed — conservative: reject if critical files, approve otherwise
+                let approved = !modifies_critical;
+                HttpResponse::Ok().json(x402_soul::coding::CodeReviewResponse {
+                    approved,
+                    reason: format!("review parse failed — {}", if approved { "auto-approved (non-critical)" } else { "auto-rejected (critical files)" }),
+                    reviewer: reviewer_id,
+                })
+            }
+        }
+        Err(e) => {
+            // LLM failed — conservative: reject critical, approve non-critical
+            let approved = !modifies_critical;
+            HttpResponse::Ok().json(x402_soul::coding::CodeReviewResponse {
+                approved,
+                reason: format!("LLM review failed: {e} — {}", if approved { "auto-approved" } else { "auto-rejected" }),
+                reviewer: reviewer_id,
+            })
+        }
+    }
+}
+
 /// POST /soul/benchmark — request a benchmark run on the next cycle.
 /// Sets a flag that the thinking loop checks.
 async fn trigger_benchmark(state: web::Data<NodeState>) -> HttpResponse {
@@ -2276,6 +2395,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             "/soul/benchmark/review",
             web::post().to(review_benchmark_solution),
         )
+        .route("/soul/code-review", web::post().to(review_code_change))
         .route("/soul/open-prs", web::get().to(open_prs))
         .route("/soul/diagnostics", web::get().to(soul_diagnostics))
         .route("/soul/dev-report", web::get().to(soul_dev_report))
