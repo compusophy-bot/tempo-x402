@@ -34,14 +34,15 @@ pub fn pass_at_1_to_elo(pass_at_1: f64) -> f64 {
     800.0 + (pass_at_1 / 100.0) * 800.0
 }
 
-/// Update the stored ELO rating based on a new benchmark score.
-pub fn update_rating(db: &SoulDatabase, pass_at_1: f64) {
+/// Update the stored ELO rating based on a new benchmark score and task complexity.
+pub fn update_rating(db: &SoulDatabase, pass_at_1: f64, complexity: f64) {
     let current = load_rating(db);
     let new_from_score = pass_at_1_to_elo(pass_at_1);
 
     // Smooth update: blend current rating with new measurement
-    // This prevents wild swings from small sample sizes
-    let updated = current + K_FACTOR * ((new_from_score - current) / 400.0);
+    // Scale K_FACTOR by complexity: harder tasks have more impact
+    let dynamic_k = K_FACTOR * complexity;
+    let updated = current + dynamic_k * ((new_from_score - current) / 400.0);
 
     let _ = db.set_state("elo_rating", &format!("{:.1}", updated));
 
@@ -50,6 +51,7 @@ pub fn update_rating(db: &SoulDatabase, pass_at_1: f64) {
     history.push(EloSnapshot {
         rating: updated,
         pass_at_1,
+        complexity,
         measured_at: chrono::Utc::now().timestamp(),
     });
     if history.len() > 200 {
@@ -73,6 +75,7 @@ pub fn load_rating(db: &SoulDatabase) -> f64 {
 pub struct EloSnapshot {
     pub rating: f64,
     pub pass_at_1: f64,
+    pub complexity: f64,
     pub measured_at: i64,
 }
 

@@ -387,6 +387,27 @@ pub fn planning_prompt(
         for err in recent_errors.iter().take(3) {
             extra_context.push_str(&format!("- {err}\n"));
         }
+        extra_context.push_str(
+            "\n[CRITICAL]: If you encounter HTTP 429 Too Many Requests errors, you must suggest cooling off \
+             or retrying after a delay in your plan. If a step fails with 429, incorporate these steps \
+             into your revised plan:\n\
+             1. Add a 'wait' step for a duration based on the 'Retry-After' header (if available) or a \
+             default exponential backoff (e.g., 30s, 60s, 120s).\n\
+             2. Repeat the failed action immediately after the wait.\n\
+             Do NOT give up or abandon the goal immediately on 429 errors.\n\n\
+             [DEPENDENCY MANAGEMENT]: When planning, do NOT hallucinate external libraries, 
+             imports, or dependencies not listed in the 'Available Dependencies' section of your 
+             system instructions. If you need functionality, use the existing codebase tools or 
+             implement it yourself within the current repo's constraints. Do not suggest adding 
+             new dependencies to Cargo.toml without explicit prior approval or specialized 
+             tooling.
+
+             [PLANNING RULES]:
+             1. Strictly adhere to the 'Available Dependencies' list.
+             2. Never import a module not in `Cargo.toml`.
+             3. If unsure about a dependency, search the code for current usage or use only standard library.
+             4. All plans must be deterministic sequences of `PlanStep` variants."
+        );
     }
 
     // Structured health from events system
@@ -475,6 +496,7 @@ pub fn planning_prompt(
          ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
          Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
          EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\
+         If you encounter 429 Too Many Requests errors, implement an exponential backoff retry strategy. Detect the error, wait, and retry with increasing intervals before giving up.\n\
          Standard slugs: 'info', 'soul', 'chat', 'clone'. Peers also have custom script-* endpoints — check the Peer Endpoints section above!\n\
          YOU HAVE A WALLET WITH pathUSD — SPEND IT BY CALLING PEERS. This is the entire point of x402.\n\
          The x402 economy works when agents PAY each other for services. No free rides.\n\n\
@@ -703,21 +725,20 @@ state, read files, list directories, or search code.
 You have read-only access to the codebase — you cannot modify files in this mode.";
 
 pub(crate) const CODE_INSTRUCTIONS: &str = "\
-You are in CODE mode — you can read, write, and edit files in the codebase.
+You are in CODE mode — you can read, modify, and commit code to the repository.
 
 Workflow:
-1. Understand the task — read relevant files first
-2. Make changes — use edit_file (preferred) or write_file
-3. Validate — some critical files are protected and cannot be modified
-4. Commit — use commit_changes to validate (cargo check + test) and commit
-5. In direct push mode, your commits go straight to main and auto-deploy
+1. Understand: Use `read_file` or `list_directory` to map the task scope.
+2. Prepare: Search with `search_files` to find relevant definitions.
+3. Act: Apply changes using `edit_file` (surgical) or `write_file` (new files).
+4. Verify: Run `cargo check --workspace` to ensure validity.
+5. Commit: Use `commit_changes` (includes `cargo test`) to land code.
 
 Rules:
-- Protected files (soul core, identity, Cargo files) cannot be modified
-- All commits run through cargo check + cargo test before landing
-- Use edit_file for surgical changes (old_string must be unique)
-- Use write_file for new files or complete rewrites
-- Keep changes minimal and focused — one logical change per commit";
+- Protected files (soul, identity, Cargo.toml) are immutable.
+- Keep changes atomic, focused, and verified by `cargo check`.
+- Avoid hallucinated paths: Always `list_directory` or `read_file` before coding.
+- Handle errors gracefully: Use exponential backoff for network/429 retries.";
 
 pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
 You are in REVIEW mode — code review and analysis.

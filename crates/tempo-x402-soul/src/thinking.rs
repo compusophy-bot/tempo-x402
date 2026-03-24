@@ -10,6 +10,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::config::SoulConfig;
+use crate::cortex::{Cortex, Experience};
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
 use crate::git::GitContext;
@@ -26,6 +27,39 @@ use crate::tool_registry::ToolRegistry;
 use crate::tools::{self, ToolExecutor};
 use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, ModelUpdate};
 use crate::{capability, feedback, validation};
+
+/// State of the thinking loop, including resilience and performance tracking.
+pub struct ThinkState {
+    pub last_failures: Vec<chrono::DateTime<chrono::Utc>>,
+    pub total_cycles: u64,
+    pub last_step_type: Option<StepType>,
+}
+
+impl ThinkState {
+    pub fn new() -> Self {
+        Self {
+            last_failures: Vec::new(),
+            total_cycles: 0,
+            last_step_type: None,
+        }
+    }
+
+    pub fn record_failure(&mut self) {
+        self.last_failures.push(chrono::Utc::now());
+        if self.last_failures.len() > 3 {
+            self.last_failures.remove(0);
+        }
+    }
+
+    pub fn backoff_multiplier(&self) -> f64 {
+        match self.last_failures.len() {
+            0 => 1.0,
+            1 => 2.0,
+            2 => 4.0,
+            _ => 8.0,
+        }
+    }
+}
 
 /// Simplified adaptive pacing for plan-driven execution.
 struct AdaptivePacer {
@@ -44,7 +78,9 @@ impl AdaptivePacer {
     }
 
     /// Determine next sleep interval based on what happened.
-    fn next_interval(&mut self, snapshot: &NodeSnapshot, step_type: StepType) -> u64 {
+    fn next_interval(&mut self, state: &mut ThinkState, snapshot: &NodeSnapshot, step_type: StepType) -> u64 {
+        state.total_cycles += 1;
+        state.last_step_type = Some(step_type);
         self.prev_snapshot = Some(snapshot.clone());
         let base = match step_type {
             StepType::Mechanical => 30,     // fast, keep making progress
@@ -53,12 +89,13 @@ impl AdaptivePacer {
             StepType::NoGoals => 600,       // idle
             StepType::Observe => 60,        // quick observation only
         };
-        (base as f64 * self.multiplier) as u64
+        (base as f64 * self.multiplier * state.backoff_multiplier()) as u64
     }
 }
 
 /// What kind of step was executed (for pacing).
-enum StepType {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StepType {
     Mechanical,
     Llm,
     PlanCompleted,
@@ -82,6 +119,8 @@ pub struct ThinkingLoop {
     llm: Option<LlmClient>,
     observer: Arc<dyn NodeObserver>,
     tool_executor: ToolExecutor,
+    state: std::sync::Mutex<ThinkState>,
+    cortex: std::sync::Mutex<Cortex>,
 }
 
 impl ThinkingLoop {
@@ -139,10 +178,12 @@ impl ThinkingLoop {
 
         Self {
             config,
-            db,
+            db: db.clone(),
             llm,
             observer,
             tool_executor,
+            state: std::sync::Mutex::new(ThinkState::new()),
+            cortex: std::sync::Mutex::new(crate::cortex::load_cortex(&db)),
         }
     }
 
@@ -323,7 +364,7 @@ impl ThinkingLoop {
                             {
                                 Ok(weighted_score) => {
                                     let iq = crate::opus_bench::weighted_score_to_iq(weighted_score);
-                                    crate::elo::update_rating(&self.db, weighted_score);
+                                    crate::elo::update_rating(&self.db, weighted_score, 1.0);
                                     tracing::info!(
                                         weighted = format!("{:.1}%", weighted_score),
                                         iq = format!("{:.0}", iq),
@@ -346,7 +387,7 @@ impl ThinkingLoop {
                             .await
                             {
                                 Ok(pass_at_1) => {
-                                    crate::elo::update_rating(&self.db, pass_at_1);
+                                    crate::elo::update_rating(&self.db, pass_at_1, 1.0);
                                     tracing::info!(
                                         pass_at_1 = format!("{:.1}%", pass_at_1),
                                         elo = crate::elo::rating_display(&self.db),
@@ -387,7 +428,7 @@ impl ThinkingLoop {
             // Cortex dream consolidation (driven by temporal binding — independent from brain training)
             if fired_ops.contains(&crate::temporal::OP_CORTEX_DREAMING.to_string()) {
                 let mut cortex = crate::cortex::load_cortex(&self.db);
-                let insights = cortex.dream();
+                let insights = cortex.dream(&self.db);
                 if insights > 0 {
                     tracing::info!(
                         insights,
@@ -567,7 +608,10 @@ impl ThinkingLoop {
                 }
             }
 
-            let next_secs = pacer.next_interval(&snapshot, cycle_result.step_type);
+            let next_secs = {
+                let mut state = self.state.lock().unwrap();
+                pacer.next_interval(&mut state, &snapshot, cycle_result.step_type)
+            };
 
             // Persist cycle health metrics
             let _ = self.db.set_state(
@@ -608,6 +652,21 @@ impl ThinkingLoop {
         snapshot: &NodeSnapshot,
         pacer: &AdaptivePacer,
     ) -> Result<CycleResult, SoulError> {
+        // --- LOG STATE SNAPSHOT ---
+        let cycle_count: u64 = self
+            .db
+            .get_state("total_think_cycles")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        tracing::debug!(
+            node_id = %self.config.instance_id.as_deref().unwrap_or("unknown"),
+            cycle_count,
+            "Thinking cycle snapshot"
+        );
+
         // ── Step 1: Observe — record snapshot, sync auto-beliefs ──
         self.observe(snapshot, pacer)?;
 
@@ -1080,6 +1139,17 @@ impl ThinkingLoop {
 
             // ── Handle result ──
             match result {
+                StepResult::RateLimited(msg) => {
+                    tracing::warn!(reason = %msg, "Rate limited, slowing down");
+                    // Implement exponential backoff by artificially increasing sleep
+                    let sleep_duration = 300; // 5 minutes backoff
+                    tokio::time::sleep(std::time::Duration::from_secs(sleep_duration)).await;
+                    return Ok(CycleResult {
+                        step_type: StepType::Mechanical,
+                        entered_code: false,
+                        summary: format!("Rate limited, retrying later: {msg}"),
+                    });
+                }
                 StepResult::Success(output) => {
                     // Track capability success
                     capability::record_step_result(&self.db, &step, true, &step_summary);
@@ -1359,16 +1429,6 @@ impl ThinkingLoop {
                     return self
                         .handle_step_failure(llm, &mut plan, &step_summary, &error)
                         .await;
-                }
-                StepResult::RateLimited(msg) => {
-                    tracing::warn!(step = %step_summary, reason = %msg, "Rate limited — backing off");
-                    // Don't poison learning systems with rate-limit failures
-                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
-                    return Ok(CycleResult {
-                        step_type: StepType::Mechanical,
-                        entered_code: false,
-                        summary: format!("Rate limited, retrying later: {msg}"),
-                    });
                 }
                 StepResult::NeedsReplan(reason) => {
                     tracing::info!(step = %step_summary, reason = %reason, "Step needs replan");
@@ -1705,19 +1765,13 @@ impl ThinkingLoop {
                 exp = format!("{exp}\n\n{peer_lessons}");
             }
             if !failure_chains.is_empty() {
-                exp = format!("{exp}\n\n{failure_chains}");
+                let wrapper = validation::FailureChainWrapper(failure_chains);
+                exp = format!("{exp}\n\n{wrapper}");
             }
             exp
         };
-        let cap_guidance = {
-            let mut cg = capability::capability_guidance(&self.db);
-            let brain_intel = crate::brain::brain_summary(&self.db);
-            if !brain_intel.is_empty() {
-                cg = format!("{cg}\n\n{brain_intel}");
-            }
-            cg
-        };
-        let role_guide = String::new(); // Removed hardcoded roles — colony.rs handles differentiation
+        let cap_guidance = capability::capability_guidance(&self.db);
+        let role_guide = crate::colony::prompt_section(&self.db);
         let peer_catalog = self
             .db
             .get_state("peer_endpoint_catalog")
@@ -2134,7 +2188,8 @@ impl ThinkingLoop {
                 exp = format!("{exp}\n\n{peer_lessons}");
             }
             if !failure_chains.is_empty() {
-                exp = format!("{exp}\n\n{failure_chains}");
+                let wrapper = validation::FailureChainWrapper(failure_chains);
+                exp = format!("{exp}\n\n{wrapper}");
             }
             exp
         };

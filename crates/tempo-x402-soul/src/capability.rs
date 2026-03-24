@@ -91,7 +91,7 @@ impl Capability {
             PlanStep::CargoCheck { .. } => Self::CodeCompile,
             PlanStep::CheckSelf { .. } => Self::ShellExec,
             PlanStep::CreateScriptEndpoint { .. } => Self::EndpointCreate,
-            PlanStep::TestScriptEndpoint { .. } => Self::EndpointCreate,
+            PlanStep::TestScriptEndpoint { .. } => Self::TestPass,
             PlanStep::Think { .. } => Self::CodeGen,
             PlanStep::CallPaidEndpoint { .. }
             | PlanStep::DiscoverPeers { .. }
@@ -137,6 +137,18 @@ pub struct CapabilityScore {
     pub attempts: u32,
     pub successes: u32,
     pub success_rate: f64,
+}
+
+/// Periodically called by the orchestration layer or cortex consolidation
+pub fn log_fitness_trends(db: &SoulDatabase) {
+    let profile = compute_profile(db);
+    tracing::info!(
+        target: "fitness_trends",
+        overall_success_rate = profile.overall_success_rate,
+        strongest = ?profile.strongest,
+        weakest = ?profile.weakest,
+        "Fitness trend snapshot logged"
+    );
 }
 
 /// Record a capability attempt.
