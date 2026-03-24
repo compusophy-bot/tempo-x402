@@ -2763,6 +2763,75 @@ impl ToolExecutor {
                     }
                 }
 
+                // ── PEER_URLS: static peer list (ensures full mesh) ──
+                // Comma-separated URLs. Every node probes every URL.
+                // This prevents partial mesh (e.g., child can't find siblings).
+                if let Ok(peer_urls_env) = std::env::var("PEER_URLS") {
+                    for peer_url in peer_urls_env.split(',') {
+                        let peer_trimmed = peer_url.trim().trim_end_matches('/');
+                        if peer_trimmed.is_empty() { continue; }
+                        // Skip self (check against our public domain)
+                        let our_domain = std::env::var("RAILWAY_PUBLIC_DOMAIN")
+                            .ok()
+                            .map(|d| format!("https://{d}"))
+                            .unwrap_or_default();
+                        if !our_domain.is_empty() && peer_trimmed == our_domain.trim_end_matches('/') { continue; }
+                        // Skip if already discovered
+                        let already = enriched_peers.iter().any(|p| {
+                            p.get("url").and_then(|v| v.as_str()).map(|u| u == peer_trimmed).unwrap_or(false)
+                        });
+                        if already { continue; }
+                        // Probe this peer
+                        let info_url = format!("{}/instance/info", peer_trimmed);
+                        if let Ok(r) = client.get(&info_url).send().await {
+                            if r.status().is_success() {
+                                if let Ok(info) = r.json::<serde_json::Value>().await {
+                                    let identity = info.get("identity");
+                                    let p_inst = identity
+                                        .and_then(|i| i.get("instance_id"))
+                                        .and_then(|v| v.as_str())
+                                        .or_else(|| info.get("instance_id").and_then(|v| v.as_str()))
+                                        .unwrap_or("peer");
+                                    let p_addr = identity
+                                        .and_then(|i| i.get("address"))
+                                        .and_then(|v| v.as_str())
+                                        .or_else(|| info.get("address").and_then(|v| v.as_str()));
+                                    let p_version = info.get("version").and_then(|v| v.as_str());
+                                    let p_endpoints = info
+                                        .get("endpoints")
+                                        .and_then(|v| v.as_array())
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    let is_self = p_inst == self_instance_id
+                                        || p_addr.map(|a| a.to_lowercase() == self_address).unwrap_or(false);
+                                    if !is_self {
+                                        let callable: Vec<serde_json::Value> = p_endpoints
+                                            .iter()
+                                            .map(|ep| {
+                                                let slug = ep.get("slug").and_then(|s| s.as_str()).unwrap_or("");
+                                                let mut ep_clone = ep.clone();
+                                                if let Some(obj) = ep_clone.as_object_mut() {
+                                                    obj.insert("callable_url".to_string(),
+                                                        serde_json::Value::String(format!("{}/g/{}", peer_trimmed, slug)));
+                                                }
+                                                ep_clone
+                                            })
+                                            .collect();
+                                        tracing::info!(peer_id = %p_inst, url = %peer_trimmed, "Added peer from PEER_URLS");
+                                        enriched_peers.push(serde_json::json!({
+                                            "instance_id": p_inst,
+                                            "url": peer_trimmed,
+                                            "address": p_addr,
+                                            "version": p_version,
+                                            "endpoints": callable,
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Always add parent as peer if PARENT_URL is set.
                 // The parent isn't in its own siblings list, so children
                 // must explicitly include it. Check even if we found siblings
