@@ -91,7 +91,7 @@ impl Capability {
             PlanStep::CargoCheck { .. } => Self::CodeCompile,
             PlanStep::CheckSelf { .. } => Self::ShellExec,
             PlanStep::CreateScriptEndpoint { .. } => Self::EndpointCreate,
-            PlanStep::TestScriptEndpoint { .. } => Self::EndpointCreate,
+            PlanStep::TestScriptEndpoint { .. } => Self::TestPass,
             PlanStep::Think { .. } => Self::CodeGen,
             PlanStep::CallPaidEndpoint { .. }
             | PlanStep::DiscoverPeers { .. }
