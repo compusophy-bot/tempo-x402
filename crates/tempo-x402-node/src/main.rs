@@ -807,6 +807,131 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
+    // ── One-time startup peer discovery ─────────────────────────────────
+    // Ask parent for siblings, store in soul_state. Runs ONCE at boot.
+    // This ensures the peer mesh is established before the first thinking cycle.
+    if let Some(ref soul_db) = node_state.soul_db {
+        let parent_url = std::env::var("PARENT_URL").ok();
+        let peer_urls_env = std::env::var("PEER_URLS").ok();
+        let self_instance = std::env::var("INSTANCE_ID").unwrap_or_default();
+        let soul_db_clone = soul_db.clone();
+
+        tokio::spawn(async move {
+            // Wait a moment for the server to be ready
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::limited(5))
+                .build()
+                .unwrap_or_default();
+
+            let mut all_peer_urls: Vec<String> = Vec::new();
+
+            // Source 1: Parent's siblings list
+            if let Some(ref parent) = parent_url {
+                let url = format!("{}/instance/siblings", parent.trim_end_matches('/'));
+                if let Ok(resp) = client.get(&url).send().await {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        if let Some(siblings) = body.get("siblings").and_then(|v| v.as_array()) {
+                            for sib in siblings {
+                                if let Some(sib_url) = sib.get("url").and_then(|v| v.as_str()) {
+                                    all_peer_urls.push(sib_url.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+                // Parent itself is a peer
+                all_peer_urls.push(parent.trim_end_matches('/').to_string());
+            }
+
+            // Source 2: PEER_URLS env var
+            if let Some(ref peers) = peer_urls_env {
+                for p in peers.split(',') {
+                    let trimmed = p.trim().trim_end_matches('/').to_string();
+                    if !trimmed.is_empty() && !all_peer_urls.contains(&trimmed) {
+                        all_peer_urls.push(trimmed);
+                    }
+                }
+            }
+
+            // Remove self
+            let our_domain = std::env::var("RAILWAY_PUBLIC_DOMAIN")
+                .ok()
+                .map(|d| format!("https://{d}"));
+            all_peer_urls.retain(|u| {
+                if let Some(ref ours) = our_domain {
+                    u.trim_end_matches('/') != ours.trim_end_matches('/')
+                } else {
+                    true
+                }
+            });
+
+            if all_peer_urls.is_empty() {
+                tracing::info!("No peers discovered at startup (no parent, no PEER_URLS)");
+                return;
+            }
+
+            // Probe each peer and build catalog
+            let mut catalog: Vec<serde_json::Value> = Vec::new();
+            for peer_url in &all_peer_urls {
+                let info_url = format!("{}/instance/info", peer_url);
+                if let Ok(resp) = client.get(&info_url).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(info) = resp.json::<serde_json::Value>().await {
+                            let identity = info.get("identity");
+                            let inst_id = identity
+                                .and_then(|i| i.get("instance_id"))
+                                .and_then(|v| v.as_str())
+                                .or_else(|| info.get("instance_id").and_then(|v| v.as_str()))
+                                .unwrap_or("unknown");
+
+                            // Skip self
+                            if inst_id == self_instance { continue; }
+
+                            let endpoints = info.get("endpoints")
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let slugs: Vec<String> = endpoints.iter()
+                                .filter_map(|ep| ep.get("slug").and_then(|s| s.as_str()).map(String::from))
+                                .collect();
+
+                            catalog.push(serde_json::json!({
+                                "peer": inst_id,
+                                "url": peer_url,
+                                "slugs": slugs,
+                            }));
+                        }
+                    }
+                }
+            }
+
+            if !catalog.is_empty() {
+                if let Ok(json) = serde_json::to_string(&catalog) {
+                    let _ = soul_db_clone.set_state("peer_endpoint_catalog", &json);
+                }
+                // Also store as discovered_peers for /instance/info
+                let discovered: Vec<serde_json::Value> = catalog.iter().map(|c| {
+                    serde_json::json!({
+                        "instance_id": c.get("peer").and_then(|v| v.as_str()).unwrap_or("?"),
+                        "url": c.get("url").and_then(|v| v.as_str()).unwrap_or("?"),
+                    })
+                }).collect();
+                if let Ok(json) = serde_json::to_string(&discovered) {
+                    let _ = soul_db_clone.set_state("discovered_peers", &json);
+                }
+                tracing::info!(
+                    peers = catalog.len(),
+                    "Startup peer discovery complete — mesh established"
+                );
+            } else {
+                tracing::info!("Startup peer discovery found no reachable peers");
+            }
+        });
+    }
+
     // ── Background tasks ────────────────────────────────────────────────
     if let Some(ref id) = identity {
         let rpc = rpc_url.clone();
