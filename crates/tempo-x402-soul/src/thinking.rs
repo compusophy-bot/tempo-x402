@@ -10,6 +10,7 @@ use std::sync::Arc;
 use serde::Serialize;
 
 use crate::config::SoulConfig;
+use crate::cortex::Cortex;
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
 use crate::git::GitContext;
@@ -119,6 +120,7 @@ pub struct ThinkingLoop {
     observer: Arc<dyn NodeObserver>,
     tool_executor: ToolExecutor,
     state: std::sync::Mutex<ThinkState>,
+    cortex: std::sync::Mutex<Cortex>,
 }
 
 impl ThinkingLoop {
@@ -176,11 +178,12 @@ impl ThinkingLoop {
 
         Self {
             config,
-            db,
+            db: db.clone(),
             llm,
             observer,
             tool_executor,
             state: std::sync::Mutex::new(ThinkState::new()),
+            cortex: std::sync::Mutex::new(crate::cortex::load_cortex(&db)),
         }
     }
 
@@ -396,7 +399,7 @@ impl ThinkingLoop {
             // Cortex dream consolidation (driven by temporal binding — independent from brain training)
             if fired_ops.contains(&crate::temporal::OP_CORTEX_DREAMING.to_string()) {
                 let mut cortex = crate::cortex::load_cortex(&self.db);
-                let insights = cortex.dream();
+                let insights = cortex.dream(&self.db);
                 if insights > 0 {
                     tracing::info!(
                         insights,

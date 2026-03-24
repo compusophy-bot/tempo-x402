@@ -702,7 +702,10 @@ impl Cortex {
     /// counterfactuals, and prune stale edges.
     ///
     /// Returns the number of insights generated.
-    pub fn dream(&mut self) -> usize {
+    pub fn dream(&mut self, db: &SoulDatabase) -> usize {
+        // Log fitness trends at start of dream
+        crate::capability::log_fitness_trends(db);
+
         if self.experiences.is_empty() {
             return 0;
         }
@@ -1529,8 +1532,9 @@ mod tests {
             );
         }
 
-        let insights = cortex.dream();
-        // Should have extracted some patterns
+        // Dream should process without panic
+        let db = SoulDatabase::new(":memory:").unwrap();
+        let insights = cortex.dream(&db);
         assert!(
             true, // Dream should process without panic
             "Dream should process without panic"

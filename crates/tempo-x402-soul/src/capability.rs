@@ -139,6 +139,18 @@ pub struct CapabilityScore {
     pub success_rate: f64,
 }
 
+/// Periodically called by the orchestration layer or cortex consolidation
+pub fn log_fitness_trends(db: &SoulDatabase) {
+    let profile = compute_profile(db);
+    tracing::info!(
+        target: "fitness_trends",
+        overall_success_rate = profile.overall_success_rate,
+        strongest = ?profile.strongest,
+        weakest = ?profile.weakest,
+        "Fitness trend snapshot logged"
+    );
+}
+
 /// Record a capability attempt.
 pub fn record_event(db: &SoulDatabase, capability: &Capability, succeeded: bool, context: &str) {
     let event = CapabilityEvent {
