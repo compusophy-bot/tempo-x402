@@ -79,6 +79,7 @@ pub mod llm;
 pub mod memory;
 pub mod mode;
 pub mod model;
+pub mod moe;
 pub mod neuroplastic;
 pub mod normalize;
 pub mod observer;

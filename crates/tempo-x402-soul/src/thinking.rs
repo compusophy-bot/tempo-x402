@@ -534,11 +534,41 @@ impl ThinkingLoop {
                                 synced += 1;
                             }
                             if synced > 0 {
+                                // Update MoE router with peer expertise data
+                                for (peer_id, peer_url) in &peer_urls {
+                                    let cap_profile = crate::capability::compute_profile(&self.db);
+                                    // Fetch peer's capability profile
+                                    let profile_url = format!("{}/soul/lessons", peer_url.trim_end_matches('/'));
+                                    if let Ok(resp) = http_client.get(&profile_url).send().await {
+                                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                                            if let Some(profile) = body.get("capability_profile") {
+                                                let mut cap_scores: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                                                if let Some(obj) = profile.as_object() {
+                                                    for (k, v) in obj {
+                                                        if let Some(rate) = v.get("success_rate").and_then(|r| r.as_f64()) {
+                                                            cap_scores.insert(k.clone(), rate);
+                                                        }
+                                                    }
+                                                }
+                                                let overall = cap_scores.values().sum::<f64>()
+                                                    / cap_scores.len().max(1) as f64;
+                                                let brain_steps = body.get("brain_steps")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                crate::moe::update_from_peer_sync(
+                                                    &self.db, peer_id, peer_url,
+                                                    &cap_scores, overall, brain_steps,
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
                                 crate::events::emit_info(
                                     &self.db,
                                     "colony.sync",
                                     &format!(
-                                        "Cognitive sync with {} peers complete (cortex/genesis/hivemind)",
+                                        "Cognitive sync with {} peers complete (cortex/genesis/hivemind/moe)",
                                         synced
                                     ),
                                 );
@@ -1001,7 +1031,12 @@ impl ThinkingLoop {
                 cycle_count,
                 ..Default::default()
             };
-            let prediction = crate::brain::predict_step(&self.db, &step, &brain_ctx);
+            let local_prediction = crate::brain::predict_step(&self.db, &step, &brain_ctx);
+
+            // Combine local prediction with colony expertise (MoE)
+            let capability = crate::moe::step_to_capability(&step);
+            let router = crate::moe::load_router(&self.db);
+            let prediction = router.combine_prediction(&local_prediction, capability);
 
             // ── Brain-gated execution ──
             // Instead of just logging brain predictions, actually gate execution.
@@ -2151,6 +2186,11 @@ impl ThinkingLoop {
             }
             if !brain_summary.is_empty() {
                 s = format!("{s}\n\n{brain_summary}");
+            }
+            // Inject MoE expertise map — shows which peers are best at what
+            let moe_section = crate::moe::load_router(&self.db).prompt_section();
+            if !moe_section.is_empty() {
+                s = format!("{s}\n\n{moe_section}");
             }
             s
         };
