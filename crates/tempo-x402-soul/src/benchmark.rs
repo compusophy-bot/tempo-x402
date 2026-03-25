@@ -1392,10 +1392,15 @@ pub enum BenchmarkMode {
 
 impl BenchmarkMode {
     pub fn from_env() -> Self {
-        match std::env::var("SOUL_BENCHMARK_MODE").as_deref() {
-            Ok("opus") | Ok("Opus") | Ok("OPUS") => BenchmarkMode::Opus,
-            _ => BenchmarkMode::Exercism, // default for backwards compat
-        }
+        let raw = std::env::var("SOUL_BENCHMARK_MODE").unwrap_or_default();
+        let trimmed = raw.trim().to_lowercase();
+        let mode = if trimmed == "opus" {
+            BenchmarkMode::Opus
+        } else {
+            BenchmarkMode::Exercism
+        };
+        tracing::info!(raw = %raw, mode = ?mode, "Benchmark mode selected");
+        mode
     }
 }
 

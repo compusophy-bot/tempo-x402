@@ -1236,11 +1236,14 @@ async fn main() -> std::io::Result<()> {
                     }
                 };
 
-                // Children with a URL that we can probe (running OR stuck deploying)
+                // Children with a URL that we can probe (running, deploying, or unreachable)
                 let probeworthy: Vec<_> = children
                     .into_iter()
                     .filter(|c| {
-                        c.url.is_some() && (c.status == "running" || c.status == "deploying")
+                        c.url.is_some()
+                            && (c.status == "running"
+                                || c.status == "deploying"
+                                || c.status == "unreachable")
                     })
                     .collect();
 
@@ -1248,6 +1251,16 @@ async fn main() -> std::io::Result<()> {
                     tracing::debug!("Version check: no children to check");
                     tokio::time::sleep(probe_interval).await;
                     continue;
+                }
+
+                // Prune children that have been unreachable for over 1 hour
+                match db::prune_unreachable_children(
+                    &version_check_state.gateway.db,
+                    3600, // 1 hour
+                ) {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(count = n, "Pruned stale unreachable children"),
+                    Err(e) => tracing::warn!(error = %e, "Failed to prune unreachable children"),
                 }
 
                 for child in &probeworthy {
@@ -1268,37 +1281,17 @@ async fn main() -> std::io::Result<()> {
                                     "Health probe: failed to parse response"
                                 );
 
-                                // Mark children returning bad health responses as failed after timeout
-                                let age_secs = chrono::Utc::now().timestamp() - child.created_at;
-                                let stale = match child.status.as_str() {
-                                    "deploying" => age_secs > 600, // 10 min
-                                    "running" => age_secs > 300,   // 5 min
-                                    _ => false,
-                                };
-                                if stale {
-                                    if child.railway_service_id.is_none() {
-                                        tracing::info!(
-                                            instance_id = %child.instance_id,
-                                            status = %child.status,
-                                            age_secs = age_secs,
-                                            "Deleting ghost child (bad health + no Railway service ID)"
-                                        );
-                                        let _ = db::delete_child(
-                                            &version_check_state.gateway.db,
-                                            &child.instance_id,
-                                        );
-                                    } else {
-                                        tracing::info!(
-                                            instance_id = %child.instance_id,
-                                            status = %child.status,
-                                            age_secs = age_secs,
-                                            "Marking child with bad health response as failed"
-                                        );
-                                        let _ = db::mark_child_failed(
-                                            &version_check_state.gateway.db,
-                                            &child.instance_id,
-                                        );
-                                    }
+                                // Mark as unreachable (will be pruned after 1 hour)
+                                if child.status != "unreachable" {
+                                    tracing::info!(
+                                        instance_id = %child.instance_id,
+                                        status = %child.status,
+                                        "Marking child as unreachable (bad health response)"
+                                    );
+                                    let _ = db::mark_child_unreachable(
+                                        &version_check_state.gateway.db,
+                                        &child.instance_id,
+                                    );
                                 }
 
                                 continue;
@@ -1311,46 +1304,17 @@ async fn main() -> std::io::Result<()> {
                                 "Health probe: failed to reach child"
                             );
 
-                            // Mark unreachable children as failed if they've been around long enough
-                            let age_secs = chrono::Utc::now().timestamp() - child.created_at;
-                            let stale = match child.status.as_str() {
-                                "deploying" => age_secs > 600, // 10 min for deploying
-                                "running" => age_secs > 300, // 5 min for running (was reachable before)
-                                _ => false,
-                            };
-
-                            if stale {
-                                // If child has no Railway service ID, it can never be
-                                // redeployed — delete it entirely instead of just marking failed.
-                                if child.railway_service_id.is_none() {
-                                    tracing::info!(
-                                        instance_id = %child.instance_id,
-                                        status = %child.status,
-                                        age_secs = age_secs,
-                                        "Deleting ghost child (unreachable + no Railway service ID)"
-                                    );
-                                    let _ = db::delete_child(
-                                        &version_check_state.gateway.db,
-                                        &child.instance_id,
-                                    );
-                                } else {
-                                    tracing::info!(
-                                        instance_id = %child.instance_id,
-                                        status = %child.status,
-                                        age_secs = age_secs,
-                                        "Marking unreachable child as failed"
-                                    );
-                                    if let Err(mark_err) = db::mark_child_failed(
-                                        &version_check_state.gateway.db,
-                                        &child.instance_id,
-                                    ) {
-                                        tracing::warn!(
-                                            instance_id = %child.instance_id,
-                                            error = %mark_err,
-                                            "Failed to mark unreachable child as failed"
-                                        );
-                                    }
-                                }
+                            // Mark as unreachable (will be pruned after 1 hour)
+                            if child.status != "unreachable" {
+                                tracing::info!(
+                                    instance_id = %child.instance_id,
+                                    status = %child.status,
+                                    "Marking child as unreachable"
+                                );
+                                let _ = db::mark_child_unreachable(
+                                    &version_check_state.gateway.db,
+                                    &child.instance_id,
+                                );
                             }
 
                             continue;
@@ -1367,6 +1331,19 @@ async fn main() -> std::io::Result<()> {
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
+
+                    // ── Recover unreachable children that are alive again ────
+                    if child.status == "unreachable" {
+                        tracing::info!(
+                            instance_id = %child.instance_id,
+                            "Previously unreachable child is alive — recovering to running"
+                        );
+                        let _ = db::update_child_status(
+                            &version_check_state.gateway.db,
+                            &child.instance_id,
+                            "running",
+                        );
+                    }
 
                     // ── Fix stuck "deploying" children ──────────────────────
                     // Child is alive but parent DB still says "deploying".

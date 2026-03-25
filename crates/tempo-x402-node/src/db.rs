@@ -492,6 +492,33 @@ pub fn link_peer(
     })
 }
 
+/// Mark a child as unreachable (soft failure — may recover on next probe).
+pub fn mark_child_unreachable(db: &Database, instance_id: &str) -> Result<(), GatewayError> {
+    let now = chrono::Utc::now().timestamp();
+
+    db.with_connection(|conn| {
+        conn.execute(
+            "UPDATE children SET status = 'unreachable', updated_at = ?1 WHERE instance_id = ?2",
+            params![now, instance_id],
+        )?;
+        Ok(())
+    })
+}
+
+/// Delete children that have been unreachable for longer than `max_age_secs`.
+/// Returns the number of rows deleted.
+pub fn prune_unreachable_children(db: &Database, max_age_secs: i64) -> Result<u32, GatewayError> {
+    let cutoff = chrono::Utc::now().timestamp() - max_age_secs;
+
+    db.with_connection(|conn| {
+        let rows = conn.execute(
+            "DELETE FROM children WHERE status = 'unreachable' AND updated_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(rows as u32)
+    })
+}
+
 /// Count children from a direct rusqlite connection.
 #[allow(dead_code)]
 pub fn query_children_count(conn: &rusqlite::Connection) -> Result<u32, rusqlite::Error> {

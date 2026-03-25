@@ -243,19 +243,60 @@ pub async fn register(
     }
 }
 
-/// GET /instance/siblings — returns list of active sibling instances with their URLs and endpoints
+/// GET /instance/siblings — returns list of reachable sibling instances with their URLs and endpoints.
+/// Pings each child's /health endpoint. Unreachable children are marked in the DB and excluded
+/// unless they were last seen within the last 10 minutes.
 pub async fn siblings(state: web::Data<NodeState>) -> HttpResponse {
     let children = db::list_children_active(&state.gateway.db).unwrap_or_default();
 
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .unwrap_or_default();
+
+    let now = chrono::Utc::now().timestamp();
+    let recency_window_secs: i64 = 600; // 10 minutes
+
     let mut siblings = Vec::new();
     for child in &children {
-        // Include children that are running or deploying (if they have a URL, they're likely reachable)
-        if child.status != "running" && child.status != "deploying" {
+        // Only consider children that have a URL and are in a live-ish status
+        if child.status != "running" && child.status != "deploying" && child.status != "unreachable"
+        {
             continue;
         }
         let Some(url) = child.url.as_ref() else {
             continue;
         };
+
+        // Ping the child to check liveness
+        let health_url = format!("{url}/health");
+        let reachable = match http.get(&health_url).send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        };
+
+        if reachable {
+            // If it was unreachable before, promote back to running
+            if child.status == "unreachable" {
+                let _ = db::update_child_status(
+                    &state.gateway.db,
+                    &child.instance_id,
+                    "running",
+                );
+            }
+        } else {
+            // Mark as unreachable if it was running/deploying
+            if child.status == "running" || child.status == "deploying" {
+                let _ = db::mark_child_unreachable(&state.gateway.db, &child.instance_id);
+            }
+
+            // Still include if it was seen recently (within 10 min)
+            let since_update = now - child.updated_at;
+            if since_update > recency_window_secs {
+                continue;
+            }
+        }
 
         // Include known endpoint slugs for this child (from gateway DB)
         let endpoints: Vec<String> = state
@@ -268,11 +309,17 @@ pub async fn siblings(state: web::Data<NodeState>) -> HttpResponse {
             .map(|ep| ep.slug)
             .collect();
 
+        let effective_status = if reachable {
+            "running".to_string()
+        } else {
+            "unreachable".to_string()
+        };
+
         siblings.push(serde_json::json!({
             "instance_id": child.instance_id,
             "url": url,
             "address": child.address,
-            "status": child.status,
+            "status": effective_status,
             "endpoints": endpoints,
         }));
     }

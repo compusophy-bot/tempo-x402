@@ -386,35 +386,64 @@ async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         capability_profile,
         plan_outcomes,
         benchmark: {
-            let score = x402_soul::benchmark::load_score(soul_db);
+            let mode = x402_soul::benchmark::BenchmarkMode::from_env();
+            let exercism_score = x402_soul::benchmark::load_score(soul_db);
+            let opus_score = soul_db.get_state("opus_benchmark_score")
+                .ok().flatten()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+            let opus_iq = soul_db.get_state("opus_iq").ok().flatten();
             let elo = x402_soul::elo::load_rating(soul_db);
             let elo_history = x402_soul::elo::load_history(soul_db);
             let (collective_pass, collective_solved, collective_total) =
                 x402_soul::benchmark::collective_score(soul_db);
-            score.map(|s| {
-                serde_json::json!({
+
+            // Show whichever benchmark is active, with both available
+            let active_score = match mode {
+                x402_soul::benchmark::BenchmarkMode::Opus => {
+                    opus_score.clone().or_else(|| exercism_score.as_ref().map(|s| serde_json::json!({
+                        "pass_at_1": s.pass_at_1,
+                        "problems_attempted": s.problems_attempted,
+                    })))
+                }
+                x402_soul::benchmark::BenchmarkMode::Exercism => {
+                    exercism_score.as_ref().map(|s| serde_json::json!({
+                        "pass_at_1": s.pass_at_1,
+                        "problems_attempted": s.problems_attempted,
+                    }))
+                }
+            };
+
+            Some(serde_json::json!({
+                "mode": format!("{:?}", mode),
+                "pass_at_1": active_score.as_ref()
+                    .and_then(|s| s.get("pass_at_1")).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                "problems_attempted": active_score.as_ref()
+                    .and_then(|s| s.get("problems_attempted")).and_then(|v| v.as_u64()).unwrap_or(0),
+                "opus_iq": opus_iq,
+                "opus": opus_score,
+                "exercism": exercism_score.map(|s| serde_json::json!({
                     "pass_at_1": s.pass_at_1,
                     "problems_attempted": s.problems_attempted,
                     "problems_passed": s.problems_passed,
                     "measured_at": s.measured_at,
-                    "elo_rating": elo,
-                    "elo_display": x402_soul::elo::rating_display(soul_db),
                     "history": s.history,
-                    "elo_history": elo_history,
-                    "collective": {
-                        "pass_at_1": collective_pass,
-                        "unique_solved": collective_solved,
-                        "total_problems": collective_total,
-                    },
-                    "reference_scores": x402_soul::benchmark::REFERENCE_SCORES
-                        .iter()
-                        .map(|(name, score)| serde_json::json!({"model": name, "pass_at_1": score}))
-                        .collect::<Vec<_>>(),
-                    "multiagent": soul_db.get_state("benchmark_multiagent")
-                        .ok().flatten()
-                        .and_then(|v| serde_json::from_str::<serde_json::Value>(&v).ok()),
-                })
-            })
+                })),
+                "elo_rating": elo,
+                "elo_display": x402_soul::elo::rating_display(soul_db),
+                "elo_history": elo_history,
+                "collective": {
+                    "pass_at_1": collective_pass,
+                    "unique_solved": collective_solved,
+                    "total_problems": collective_total,
+                },
+                "reference_scores": x402_soul::benchmark::REFERENCE_SCORES
+                    .iter()
+                    .map(|(name, score)| serde_json::json!({"model": name, "pass_at_1": score}))
+                    .collect::<Vec<_>>(),
+                "multiagent": soul_db.get_state("benchmark_multiagent")
+                    .ok().flatten()
+                    .and_then(|v| serde_json::from_str::<serde_json::Value>(&v).ok()),
+            }))
         },
         brain: {
             let brain = x402_soul::brain::load_brain(soul_db);
