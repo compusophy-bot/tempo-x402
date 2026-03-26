@@ -1430,13 +1430,55 @@ pub async fn run_opus_benchmark_session(
         .filter(|r| r.passed)
         .map(|r| r.entry_point.clone())
         .collect();
-    let sample = sample_problems_smart(&problems, sample_size, &solved_slugs);
+    // Stratified sampling: guarantee at least 1 problem from EACH tier,
+    // then fill remaining slots randomly. This ensures harder tiers are always tested.
+    let sample = {
+        let mut by_tier: std::collections::HashMap<String, Vec<&ExercismProblem>> =
+            std::collections::HashMap::new();
+        for p in &problems {
+            by_tier.entry(p.difficulty.clone()).or_default().push(p);
+        }
+
+        let mut selected = Vec::new();
+        let seed = chrono::Utc::now().timestamp() as usize;
+        let mut rng = seed;
+
+        // Phase 1: one from each tier (guaranteed representation)
+        let mut tiers: Vec<String> = by_tier.keys().cloned().collect();
+        tiers.sort(); // deterministic order
+        for tier in &tiers {
+            if let Some(tier_problems) = by_tier.get(tier) {
+                if !tier_problems.is_empty() {
+                    rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1)) % tier_problems.len();
+                    selected.push(tier_problems[rng].clone());
+                }
+            }
+        }
+
+        // Phase 2: fill remaining slots, preferring unsolved + higher tiers
+        let selected_slugs: std::collections::HashSet<String> =
+            selected.iter().map(|p| p.slug.clone()).collect();
+        let mut remaining: Vec<&ExercismProblem> = problems
+            .iter()
+            .filter(|p| !selected_slugs.contains(&p.slug) && !solved_slugs.contains(&p.slug))
+            .collect();
+        // Sort by tier descending (harder first)
+        remaining.sort_by(|a, b| b.difficulty.cmp(&a.difficulty));
+
+        let slots_left = sample_size.saturating_sub(selected.len());
+        for p in remaining.iter().take(slots_left) {
+            selected.push((*p).clone());
+        }
+
+        selected
+    };
 
     tracing::info!(
         total_problems = problems.len(),
         solved = solved_slugs.len(),
         sampled = sample.len(),
-        "Opus IQ: smart sampling"
+        tiers = sample.iter().map(|p| p.difficulty.as_str()).collect::<Vec<_>>().join(","),
+        "Opus IQ: stratified sampling (all tiers guaranteed)"
     );
 
     let mut total_weight = 0.0f64;
@@ -1504,7 +1546,9 @@ pub async fn run_opus_benchmark_session(
         let (mut success, mut error_output) =
             validate_solution(problem, &solution, workspace_root).await;
 
-        let max_retries = 3;
+        // Only 1 retry for Opus — 3 retries made tiers 1-5 trivially easy.
+        // One retry catches compilation typos; more than that inflates scores.
+        let max_retries = 1;
         let mut retry_count = 0;
         let mut last_solution = solution.clone();
         let mut retry_context = all_failures.clone();
