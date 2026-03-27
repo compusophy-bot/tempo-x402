@@ -54,6 +54,9 @@ pub struct CloneResult {
     pub volume_id: Option<String>,
     /// Borg-style ordinal designation: "one", "two", etc.
     pub designation: String,
+    /// Clone's own GitHub repo (e.g., "compusophy-bot/borg-0-2").
+    /// None if repo creation failed (falls back to shared source).
+    pub clone_repo: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -183,11 +186,33 @@ impl CloneOrchestrator {
         // 2. Get default environment
         let env_id = self.railway.get_default_environment().await?;
 
-        // Determine deployment mode: source-based or Docker.
-        // Phase 1 ("Fork"): deploy from main — clone is identical to parent.
-        // The clone's own branch (clone/{id}) is only created later when the
-        // soul starts making code changes (Phase 2: "Differentiate").
-        let use_source = self.config.source_repo.is_some();
+        // ── Stem cell differentiation: create dedicated GitHub repo for clone ──
+        // Each clone gets its own repo, mirrored from the colony baseline.
+        // This enables independent code evolution: clone pushes to its own repo,
+        // Railway auto-rebuilds from it, and good changes flow upstream via PRs.
+        let clone_repo = if let (Some(ref source_repo), Some(ref token)) =
+            (&self.config.source_repo, &self.config.github_token)
+        {
+            match create_clone_repo(token, source_repo, designation).await {
+                Ok(repo) => {
+                    tracing::info!(repo = %repo, designation = %designation, "Clone repo ready");
+                    Some(repo)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Failed to create clone repo — falling back to shared source"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Determine deployment source: clone's own repo (preferred) or shared source
+        let deploy_repo = clone_repo.as_deref().or(self.config.source_repo.as_deref());
+        let use_source = deploy_repo.is_some();
         let branch_name = if use_source {
             Some("main".to_string())
         } else {
@@ -217,14 +242,24 @@ impl CloneOrchestrator {
             env_map.insert(key.clone(), value.clone().into());
         }
 
+        // Override SOUL_FORK_REPO with clone's own repo if created
+        // This makes the clone push to its own repo instead of the shared colony fork
+        if let Some(ref repo) = clone_repo {
+            env_map.insert("SOUL_FORK_REPO".into(), repo.clone().into());
+            // SOUL_UPSTREAM_REPO stays as the colony fork — PRs flow upstream
+            if let Some(ref source) = self.config.source_repo {
+                env_map.insert("SOUL_UPSTREAM_REPO".into(), source.clone().into());
+            }
+        }
+
         let env_vars = serde_json::Value::Object(env_map);
         self.railway
             .set_variables(service_id, &env_id, env_vars)
             .await?;
         tracing::info!("Environment variables configured");
 
-        // 5. Set deployment source (Docker image OR repo+branch)
-        if let (Some(ref repo), Some(ref branch)) = (&self.config.source_repo, &branch_name) {
+        // 5. Set deployment source (clone's own repo > shared source > Docker)
+        if let (Some(repo), Some(ref branch)) = (deploy_repo, &branch_name) {
             self.railway
                 .connect_repo(service_id, &env_id, repo, branch)
                 .await?;
@@ -308,6 +343,7 @@ impl CloneOrchestrator {
             branch: branch_name,
             volume_id,
             designation: designation.to_string(),
+            clone_repo,
         })
     }
 
@@ -370,6 +406,138 @@ impl CloneOrchestrator {
     pub fn config(&self) -> &CloneConfig {
         &self.config
     }
+}
+
+/// Create a dedicated GitHub repo for a clone — the stem cell differentiation model.
+///
+/// Each clone gets its own repo (e.g., `compusophy-bot/borg-0-2`), initialized
+/// from the colony baseline. The clone pushes to its own repo, Railway builds
+/// from it, and the clone evolves independently. Good changes flow upstream via PRs.
+///
+/// Returns the new repo's full name (e.g., "compusophy-bot/borg-0-2").
+pub async fn create_clone_repo(
+    token: &str,
+    source_repo: &str,
+    designation: &str,
+) -> Result<String, CloneError> {
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|e| CloneError::Other(format!("HTTP client error: {e}")))?;
+
+    // Extract the org from source_repo (e.g., "compusophy-bot" from "compusophy-bot/tempo-x402")
+    let org = source_repo
+        .split('/')
+        .next()
+        .ok_or_else(|| CloneError::Other("invalid source_repo format".to_string()))?;
+
+    let repo_name = designation.to_string();
+    let full_name = format!("{org}/{repo_name}");
+
+    // 1. Create the repo under the org (or user)
+    // Try org endpoint first, fall back to user endpoint
+    let create_url = format!("https://api.github.com/orgs/{org}/repos");
+    let body = serde_json::json!({
+        "name": repo_name,
+        "description": format!("x402 autonomous agent: {designation}"),
+        "private": false,
+        "auto_init": false,
+    });
+
+    let resp = http
+        .post(&create_url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "x402-node")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| CloneError::Other(format!("GitHub create repo error: {e}")))?;
+
+    if !resp.status().is_success() {
+        // Maybe it's a user account, not an org — try user endpoint
+        let user_url = "https://api.github.com/user/repos";
+        let resp2 = http
+            .post(user_url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "x402-node")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| CloneError::Other(format!("GitHub create repo (user) error: {e}")))?;
+
+        if !resp2.status().is_success() {
+            let status = resp2.status();
+            let body = resp2.text().await.unwrap_or_default();
+            // 422 = repo already exists — that's fine, we can reuse it
+            if status.as_u16() == 422 && body.contains("already exists") {
+                tracing::info!(repo = %full_name, "Clone repo already exists — reusing");
+                // Continue to push code below
+            } else {
+                return Err(CloneError::Other(format!(
+                    "GitHub create repo failed (HTTP {status}): {}",
+                    body.chars().take(200).collect::<String>()
+                )));
+            }
+        }
+    }
+
+    tracing::info!(repo = %full_name, "Created clone repo");
+
+    // 2. Mirror the source repo into the new repo
+    // Use git CLI since it handles auth via the token in the URL
+    let source_url = format!("https://x-access-token:{token}@github.com/{source_repo}.git");
+    let target_url = format!("https://x-access-token:{token}@github.com/{full_name}.git");
+
+    // Clone bare from source
+    let tmp_dir = format!("/tmp/clone-mirror-{designation}");
+    let _ = tokio::fs::remove_dir_all(&tmp_dir).await; // clean up any previous attempt
+
+    let clone_result = tokio::process::Command::new("git")
+        .args(["clone", "--bare", &source_url, &tmp_dir])
+        .output()
+        .await
+        .map_err(|e| CloneError::Other(format!("git clone --bare failed: {e}")))?;
+
+    if !clone_result.status.success() {
+        let stderr = String::from_utf8_lossy(&clone_result.stderr);
+        let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+        return Err(CloneError::Other(format!(
+            "git clone --bare failed: {}",
+            stderr.chars().take(200).collect::<String>()
+        )));
+    }
+
+    // Push mirror to new repo
+    let push_result = tokio::process::Command::new("git")
+        .args(["push", "--mirror", &target_url])
+        .current_dir(&tmp_dir)
+        .output()
+        .await
+        .map_err(|e| CloneError::Other(format!("git push --mirror failed: {e}")))?;
+
+    // Clean up temp dir
+    let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+
+    if !push_result.status.success() {
+        let stderr = String::from_utf8_lossy(&push_result.stderr);
+        return Err(CloneError::Other(format!(
+            "git push --mirror failed: {}",
+            stderr.chars().take(200).collect::<String>()
+        )));
+    }
+
+    tracing::info!(
+        source = %source_repo,
+        target = %full_name,
+        "Mirrored colony baseline into clone repo"
+    );
+
+    Ok(full_name)
 }
 
 /// Create a branch on a GitHub repo via the REST API.
