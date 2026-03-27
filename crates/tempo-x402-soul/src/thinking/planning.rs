@@ -255,7 +255,12 @@ impl ThinkingLoop {
                 // ── Mechanical plan validation ──
                 // Hard checks that reject bad plans BEFORE execution.
                 // This is server-side enforcement, not prompt injection.
-                let validation = validation::validate_plan(&steps, &self.db, &goal.description);
+                let validation = validation::validate_plan_with_coding(
+                    &steps,
+                    &self.db,
+                    &goal.description,
+                    self.config.coding_enabled,
+                );
                 if !validation.is_valid() {
                     let rejection = validation.rejection_reason();
                     tracing::warn!(

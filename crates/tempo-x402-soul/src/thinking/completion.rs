@@ -366,7 +366,12 @@ impl ThinkingLoop {
 
                 // Validate replanned steps too
                 let goal_desc = goal.description.clone();
-                let replan_validation = validation::validate_plan(&new_steps, &self.db, &goal_desc);
+                let replan_validation = validation::validate_plan_with_coding(
+                    &new_steps,
+                    &self.db,
+                    &goal_desc,
+                    self.config.coding_enabled,
+                );
                 if !replan_validation.is_valid() {
                     tracing::warn!(
                         plan_id = %plan.id,

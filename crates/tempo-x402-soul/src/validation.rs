@@ -77,7 +77,43 @@ pub fn validate_plan(
     db: &SoulDatabase,
     goal_description: &str,
 ) -> ValidationResult {
+    validate_plan_with_coding(steps, db, goal_description, true)
+}
+
+/// Validate a plan, optionally rejecting code-modification steps.
+pub fn validate_plan_with_coding(
+    steps: &[PlanStep],
+    db: &SoulDatabase,
+    goal_description: &str,
+    coding_enabled: bool,
+) -> ValidationResult {
     let mut violations = Vec::new();
+
+    // ── Rule 0: No code modification when coding is disabled ──
+    if !coding_enabled {
+        for (i, step) in steps.iter().enumerate() {
+            let is_code_step = matches!(
+                step,
+                PlanStep::EditCode { .. } | PlanStep::GenerateCode { .. } | PlanStep::Commit { .. }
+            );
+            if is_code_step {
+                let kind = match step {
+                    PlanStep::EditCode { .. } => "edit_code",
+                    PlanStep::GenerateCode { .. } => "generate_code",
+                    PlanStep::Commit { .. } => "commit",
+                    _ => "code_modification",
+                };
+                violations.push(PlanViolation {
+                    rule: "coding-disabled",
+                    step_index: Some(i),
+                    detail: format!(
+                        "{kind} step not allowed — SOUL_CODING_ENABLED=false. Use only read/search/shell/think steps."
+                    ),
+                    severity: Severity::Hard,
+                });
+            }
+        }
+    }
 
     // ── Rule 1: No editing without reading first ──
     // Plans that edit/generate files without reading them first almost always fail.
