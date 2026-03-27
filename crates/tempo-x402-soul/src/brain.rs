@@ -348,7 +348,8 @@ impl Brain {
                 expected_w1,
                 old_steps = brain.train_steps,
                 "Brain architecture mismatch — migrating to v3 (input={}, hidden={})",
-                INPUT_SIZE, HIDDEN_SIZE
+                INPUT_SIZE,
+                HIDDEN_SIZE
             );
             return None; // Caller will create fresh Brain::new()
         }
@@ -661,7 +662,9 @@ pub struct BenchmarkAttemptContext {
 /// - Whether peer review catches bugs
 ///
 /// This is the AlphaZero-style self-play loop: play games → train → play better.
-pub fn benchmark_attempts_to_examples(attempts: &[BenchmarkAttemptContext]) -> Vec<TrainingExample> {
+pub fn benchmark_attempts_to_examples(
+    attempts: &[BenchmarkAttemptContext],
+) -> Vec<TrainingExample> {
     let mut examples = Vec::new();
 
     for attempt in attempts {
@@ -780,7 +783,12 @@ fn recover_brain_from_peer() -> Option<Brain> {
     // Build peer URL list from env vars
     let mut urls: Vec<String> = Vec::new();
     if let Ok(peer_urls) = std::env::var("PEER_URLS") {
-        urls.extend(peer_urls.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
+        urls.extend(
+            peer_urls
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+        );
     }
     if let Ok(parent) = std::env::var("PARENT_URL") {
         if !parent.is_empty() && !urls.contains(&parent) {
@@ -1396,8 +1404,16 @@ mod tests {
         assert_eq!(brain.train_steps, 0);
         // v3: ~1.2M params (INPUT=128, HIDDEN=1024, OUTPUT=23)
         // 128*1024 + 1024 + 1024*1024 + 1024 + 1024*23 + 23 = 1,205,271
-        assert!(brain.param_count() > 1_000_000, "got {}", brain.param_count());
-        assert!(brain.param_count() < 1_500_000, "got {}", brain.param_count());
+        assert!(
+            brain.param_count() > 1_000_000,
+            "got {}",
+            brain.param_count()
+        );
+        assert!(
+            brain.param_count() < 1_500_000,
+            "got {}",
+            brain.param_count()
+        );
     }
 
     #[test]

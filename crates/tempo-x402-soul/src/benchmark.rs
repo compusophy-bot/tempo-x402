@@ -479,9 +479,12 @@ pub async fn generate_solution(
     let system = if peer_failures.is_empty() {
         base_system
     } else {
-        format!("{}\n\nIMPORTANT: Previous attempt(s) at this problem FAILED. \
+        format!(
+            "{}\n\nIMPORTANT: Previous attempt(s) at this problem FAILED. \
                  Study the failed solution(s) and error output below carefully. \
-                 Your solution MUST take a DIFFERENT approach to avoid the same mistake.", base_system)
+                 Your solution MUST take a DIFFERENT approach to avoid the same mistake.",
+            base_system
+        )
     };
 
     let mut prompt = format!(
@@ -1096,7 +1099,9 @@ pub async fn run_benchmark_session(
             retry_number: 0,
             had_peer_context: has_peer_context,
             had_peer_review: used_review_fix,
-            compiled: success || !error_output.contains("Compiling") || error_output.contains("test"),
+            compiled: success
+                || !error_output.contains("Compiling")
+                || error_output.contains("test"),
             elo_rating: current_elo,
             pass_at_1: current_pass_at_1,
             peer_count: current_peer_count,
@@ -1449,7 +1454,8 @@ pub async fn run_opus_benchmark_session(
         for tier in &tiers {
             if let Some(tier_problems) = by_tier.get(tier) {
                 if !tier_problems.is_empty() {
-                    rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1)) % tier_problems.len();
+                    rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1))
+                        % tier_problems.len();
                     selected.push(tier_problems[rng].clone());
                 }
             }
@@ -1477,7 +1483,11 @@ pub async fn run_opus_benchmark_session(
         total_problems = problems.len(),
         solved = solved_slugs.len(),
         sampled = sample.len(),
-        tiers = sample.iter().map(|p| p.difficulty.as_str()).collect::<Vec<_>>().join(","),
+        tiers = sample
+            .iter()
+            .map(|p| p.difficulty.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
         "Opus IQ: stratified sampling (all tiers guaranteed)"
     );
 
@@ -1605,7 +1615,14 @@ pub async fn run_opus_benchmark_session(
             peer_count: 0,
         });
 
-        record_run(db, problem, success, &last_solution, &error_output, elapsed_ms);
+        record_run(
+            db,
+            problem,
+            success,
+            &last_solution,
+            &error_output,
+            elapsed_ms,
+        );
     }
 
     let weighted_score = if total_weight > 0.0 {
@@ -2029,7 +2046,10 @@ fn load_benchmark_hints(db: &SoulDatabase) -> String {
 /// Called after each benchmark session to update the hint cache.
 pub fn update_benchmark_hints(db: &SoulDatabase) {
     let runs = db.get_all_benchmark_runs().unwrap_or_default();
-    let failures: Vec<&BenchmarkRun> = runs.iter().filter(|r| !r.passed && !r.error_output.is_empty()).collect();
+    let failures: Vec<&BenchmarkRun> = runs
+        .iter()
+        .filter(|r| !r.passed && !r.error_output.is_empty())
+        .collect();
 
     if failures.len() < 3 {
         return; // Not enough data to extract patterns
@@ -2040,7 +2060,9 @@ pub fn update_benchmark_hints(db: &SoulDatabase) {
     for f in &failures {
         let err = &f.error_output;
         // Categorize common Rust errors
-        if err.contains("expected `&str`, found `String`") || err.contains("expected `String`, found `&str`") {
+        if err.contains("expected `&str`, found `String`")
+            || err.contains("expected `String`, found `&str`")
+        {
             *patterns.entry("String/&str type mismatch — check test expectations for owned vs borrowed strings").or_default() += 1;
         }
         if err.contains("not found in this scope") || err.contains("cannot find") {
@@ -2050,10 +2072,14 @@ pub fn update_benchmark_hints(db: &SoulDatabase) {
             *patterns.entry("Missing trait implementation — check what traits the tests expect (Display, From, Iterator, etc.)").or_default() += 1;
         }
         if err.contains("mismatched types") {
-            *patterns.entry("Type mismatch — carefully read the function signature the tests expect").or_default() += 1;
+            *patterns
+                .entry("Type mismatch — carefully read the function signature the tests expect")
+                .or_default() += 1;
         }
         if err.contains("overflow") || err.contains("attempt to") {
-            *patterns.entry("Integer overflow/underflow — use checked arithmetic or handle edge cases").or_default() += 1;
+            *patterns
+                .entry("Integer overflow/underflow — use checked arithmetic or handle edge cases")
+                .or_default() += 1;
         }
         if err.contains("borrow") || err.contains("lifetime") {
             *patterns.entry("Borrow checker issue — prefer owned types (String, Vec) in return positions unless tests require references").or_default() += 1;

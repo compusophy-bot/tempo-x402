@@ -762,16 +762,12 @@ fn spawn_post_clone_probe(
             match http.get(&info_url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     // Child is alive — extract address and promote to running
-                    let address = resp
-                        .json::<serde_json::Value>()
-                        .await
-                        .ok()
-                        .and_then(|j| {
-                            j.get("identity")
-                                .and_then(|id| id.get("address"))
-                                .and_then(|v| v.as_str())
-                                .map(String::from)
-                        });
+                    let address = resp.json::<serde_json::Value>().await.ok().and_then(|j| {
+                        j.get("identity")
+                            .and_then(|id| id.get("address"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                    });
 
                     match db::update_child(
                         &db,
@@ -789,12 +785,7 @@ fn spawn_post_clone_probe(
                             );
                             // Notify all existing siblings about the new peer.
                             // One-time, fire-and-forget. No polling.
-                            notify_siblings_of_new_peer(
-                                &db,
-                                &instance_id,
-                                &child_url,
-                                &http,
-                            ).await;
+                            notify_siblings_of_new_peer(&db, &instance_id, &child_url, &http).await;
                         }
                         Err(e) => {
                             tracing::warn!(

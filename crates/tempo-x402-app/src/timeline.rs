@@ -20,7 +20,8 @@ const MARGIN_RIGHT: f64 = 20.0;
 const MARGIN_TOP: f64 = 30.0;
 const MARGIN_BOTTOM: f64 = 25.0;
 const PLOT_WIDTH: f64 = SVG_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
-const TOTAL_HEIGHT: f64 = REGION_HEIGHT * 2.0 + EVENT_STRIP_HEIGHT + MARGIN_TOP * 3.0 + MARGIN_BOTTOM + 40.0;
+const TOTAL_HEIGHT: f64 =
+    REGION_HEIGHT * 2.0 + EVENT_STRIP_HEIGHT + MARGIN_TOP * 3.0 + MARGIN_BOTTOM + 40.0;
 
 // Colors matching the dark theme
 const COL_PRIMARY: &str = "#6366f1";
@@ -51,7 +52,11 @@ fn extract_fe_points(data: &serde_json::Value) -> Vec<(f64, f64, String)> {
                 .filter_map(|m| {
                     let t = m.get("timestamp")?.as_f64()?;
                     let total = m.get("total")?.as_f64()?;
-                    let regime = m.get("regime").and_then(|r| r.as_str()).unwrap_or("Learn").to_string();
+                    let regime = m
+                        .get("regime")
+                        .and_then(|r| r.as_str())
+                        .unwrap_or("Learn")
+                        .to_string();
                     Some((t, total, regime))
                 })
                 .collect()
@@ -247,11 +252,7 @@ fn YAxisLabels(
 
 /// Free energy region with regime bands and area chart.
 #[component]
-fn FreeEnergyRegion(
-    points: Vec<(f64, f64, String)>,
-    t_start: f64,
-    t_end: f64,
-) -> impl IntoView {
+fn FreeEnergyRegion(points: Vec<(f64, f64, String)>, t_start: f64, t_end: f64) -> impl IntoView {
     let region_top = MARGIN_TOP;
     let rh = REGION_HEIGHT;
 
@@ -282,7 +283,11 @@ fn FreeEnergyRegion(
     };
 
     // Normalize F(t) — typically 0 to ~1.5, we map 0-1.5 to chart height
-    let max_fe = points.iter().map(|(_, v, _)| *v).fold(0.5_f64, f64::max).max(0.5);
+    let max_fe = points
+        .iter()
+        .map(|(_, v, _)| *v)
+        .fold(0.5_f64, f64::max)
+        .max(0.5);
     let xy_points: Vec<(f64, f64)> = points
         .iter()
         .map(|(t, v, _)| (tx(*t, t_start, t_end), vy(*v / max_fe, region_top, rh)))
@@ -418,11 +423,7 @@ fn EloFitnessRegion(
 
 /// Event strip — categorical dot markers.
 #[component]
-fn EventStrip(
-    events: Vec<EventPoint>,
-    t_start: f64,
-    t_end: f64,
-) -> impl IntoView {
+fn EventStrip(events: Vec<EventPoint>, t_start: f64, t_end: f64) -> impl IntoView {
     let region_top = MARGIN_TOP * 3.0 + REGION_HEIGHT * 2.0 + MARGIN_BOTTOM * 2.0;
     let rh = EVENT_STRIP_HEIGHT;
 

@@ -153,10 +153,7 @@ pub async fn validated_commit(
 
 /// Block commits that delete more than 50% of any existing file's content.
 /// This prevents the "lobotomy" failure mode where an agent guts a critical file.
-async fn check_destruction_guard(
-    workspace_root: &str,
-    _files: &[&str],
-) -> Result<(), String> {
+async fn check_destruction_guard(workspace_root: &str, _files: &[&str]) -> Result<(), String> {
     // Get the staged diff with stats
     let output = tokio::process::Command::new("git")
         .args(["diff", "--cached", "--numstat"])
@@ -193,9 +190,7 @@ async fn check_destruction_guard(
 
             if let Ok(orig_output) = orig {
                 if orig_output.status.success() {
-                    let orig_lines = String::from_utf8_lossy(&orig_output.stdout)
-                        .lines()
-                        .count();
+                    let orig_lines = String::from_utf8_lossy(&orig_output.stdout).lines().count();
                     if orig_lines > 0 {
                         let deletion_pct = (deleted as f64 / orig_lines as f64) * 100.0;
                         if deletion_pct > 50.0 {
@@ -239,10 +234,7 @@ pub struct CodeReviewResponse {
 
 /// Send staged diff to all known peers for review. Requires majority approval.
 /// If no peers are reachable, the commit proceeds (graceful degradation).
-async fn request_colony_review(
-    workspace_root: &str,
-    message: &str,
-) -> Result<(), String> {
+async fn request_colony_review(workspace_root: &str, message: &str) -> Result<(), String> {
     // Get the staged diff
     let diff_output = tokio::process::Command::new("git")
         .args(["diff", "--cached"])

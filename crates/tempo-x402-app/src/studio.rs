@@ -48,10 +48,8 @@ pub fn StudioPage() -> impl IntoView {
         });
     };
     poll_status();
-    let _interval = set_interval_with_handle(
-        move || poll_status(),
-        std::time::Duration::from_secs(10),
-    );
+    let _interval =
+        set_interval_with_handle(move || poll_status(), std::time::Duration::from_secs(10));
 
     // Load initial file tree
     {
@@ -327,7 +325,5 @@ async fn fetch_file_content(path: &str) -> Result<String, String> {
         return Err(format!("HTTP {}", resp.status()));
     }
 
-    resp.text()
-        .await
-        .map_err(|e| format!("Read error: {e}"))
+    resp.text().await.map_err(|e| format!("Read error: {e}"))
 }

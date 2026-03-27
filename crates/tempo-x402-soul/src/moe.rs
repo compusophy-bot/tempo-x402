@@ -103,16 +103,19 @@ impl MoeRouter {
         overall_success: f64,
         brain_steps: u64,
     ) {
-        let expert = self.experts.entry(peer_id.to_string()).or_insert(ExpertProfile {
-            peer_id: peer_id.to_string(),
-            url: url.to_string(),
-            capability_scores: HashMap::new(),
-            overall_success: 0.0,
-            verified_predictions: 0,
-            correct_predictions: 0,
-            brain_steps: 0,
-            updated_at: 0,
-        });
+        let expert = self
+            .experts
+            .entry(peer_id.to_string())
+            .or_insert(ExpertProfile {
+                peer_id: peer_id.to_string(),
+                url: url.to_string(),
+                capability_scores: HashMap::new(),
+                overall_success: 0.0,
+                verified_predictions: 0,
+                correct_predictions: 0,
+                brain_steps: 0,
+                updated_at: 0,
+            });
         expert.url = url.to_string();
         expert.capability_scores = capability_scores;
         expert.overall_success = overall_success;
@@ -148,7 +151,9 @@ impl MoeRouter {
             .get(capability)
             .and_then(|ranked| ranked.first())
             .and_then(|(peer_id, weight)| {
-                self.experts.get(peer_id).map(|e| (e.peer_id.as_str(), e.url.as_str(), *weight))
+                self.experts
+                    .get(peer_id)
+                    .map(|e| (e.peer_id.as_str(), e.url.as_str(), *weight))
             })
     }
 
@@ -159,9 +164,7 @@ impl MoeRouter {
             .map(|ranked| {
                 ranked
                     .iter()
-                    .filter_map(|(peer_id, weight)| {
-                        self.experts.get(peer_id).map(|e| (e, *weight))
-                    })
+                    .filter_map(|(peer_id, weight)| self.experts.get(peer_id).map(|e| (e, *weight)))
                     .collect()
             })
             .unwrap_or_default()
@@ -186,7 +189,8 @@ impl MoeRouter {
 
         // Each expert contributes based on their trust weight × capability score
         for (expert, trust) in &experts {
-            let cap_score = expert.capability_scores
+            let cap_score = expert
+                .capability_scores
                 .get(capability)
                 .copied()
                 .unwrap_or(expert.overall_success);
@@ -202,7 +206,8 @@ impl MoeRouter {
             success_prob: combined_success,
             // Keep local brain's error classification (experts don't provide this remotely)
             likely_error: local_pred.likely_error.clone(),
-            error_confidence: local_pred.error_confidence * (local_weight as f32 / total_weight as f32),
+            error_confidence: local_pred.error_confidence
+                * (local_weight as f32 / total_weight as f32),
             capability_confidence: local_pred.capability_confidence.clone(),
         }
     }
@@ -256,7 +261,8 @@ impl MoeRouter {
         self.routing_table.clear();
 
         // Collect all known capabilities
-        let mut all_capabilities: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut all_capabilities: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         for expert in self.experts.values() {
             all_capabilities.extend(expert.capability_scores.keys().cloned());
         }
@@ -310,7 +316,13 @@ pub fn update_from_peer_sync(
     brain_steps: u64,
 ) {
     let mut router = load_router(db);
-    router.update_expert(peer_id, peer_url, capability_profile.clone(), overall_success, brain_steps);
+    router.update_expert(
+        peer_id,
+        peer_url,
+        capability_profile.clone(),
+        overall_success,
+        brain_steps,
+    );
     save_router(db, &router);
 }
 

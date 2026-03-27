@@ -14,9 +14,17 @@ use crate::memory::{Thought, ThoughtType};
 ///
 /// `fired_ops` comes from the temporal binding system — it lists which
 /// cognitive operations should run this cycle based on neural oscillators.
-pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root: &str, fired_ops: &[String]) {
+pub fn housekeeping(
+    db: &Arc<SoulDatabase>,
+    prune_threshold: f64,
+    workspace_root: &str,
+    fired_ops: &[String],
+) {
     // Thought decay + promotion + belief decay (driven by temporal binding)
-    if fired_ops.iter().any(|op| op == crate::temporal::OP_THOUGHT_DECAY) {
+    if fired_ops
+        .iter()
+        .any(|op| op == crate::temporal::OP_THOUGHT_DECAY)
+    {
         match db.run_decay_cycle(prune_threshold) {
             Ok((decayed, pruned)) => {
                 if decayed > 0 || pruned > 0 {
@@ -97,12 +105,18 @@ pub fn housekeeping(db: &Arc<SoulDatabase>, prune_threshold: f64, workspace_root
 
     // Mechanical self-repair of cognitive systems (driven by temporal binding)
     // No LLM, no nudges — pure Rust enforcement. The agent should self-correct.
-    if fired_ops.iter().any(|op| op == crate::temporal::OP_SELF_REPAIR) {
+    if fired_ops
+        .iter()
+        .any(|op| op == crate::temporal::OP_SELF_REPAIR)
+    {
         self_repair(db);
     }
 
     // Memory consolidation (driven by temporal binding)
-    if fired_ops.iter().any(|op| op == crate::temporal::OP_MEMORY_CONSOLIDATION) {
+    if fired_ops
+        .iter()
+        .any(|op| op == crate::temporal::OP_MEMORY_CONSOLIDATION)
+    {
         simple_consolidate(db);
         // Track when consolidation last ran for staleness signal
         let cycle_count: u64 = db

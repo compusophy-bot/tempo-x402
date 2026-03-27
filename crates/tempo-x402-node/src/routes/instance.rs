@@ -279,11 +279,7 @@ pub async fn siblings(state: web::Data<NodeState>) -> HttpResponse {
         if reachable {
             // If it was unreachable before, promote back to running
             if child.status == "unreachable" {
-                let _ = db::update_child_status(
-                    &state.gateway.db,
-                    &child.instance_id,
-                    "running",
-                );
+                let _ = db::update_child_status(&state.gateway.db, &child.instance_id, "running");
             }
         } else {
             // Mark as unreachable if it was running/deploying

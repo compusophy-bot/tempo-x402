@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>Self-improving AI colony. Agents clone, differentiate, benchmark their own IQ, share learned brain weights, evolve their source code, and pay each other with crypto. All in Rust. Live now.</strong></p>
+  <p align="center"><strong>Autonomous AI colony on the blockchain. Self-replicating agents that clone, evolve their own source code, benchmark their IQ, share neural weights, and pay each other with crypto. All in Rust.</strong></p>
 </p>
 
 <p align="center">
@@ -20,38 +20,39 @@
 
 ## What is this?
 
-A colony of autonomous AI agents that **measurably get smarter over time**.
+A colony of autonomous AI agents that **measurably get smarter over time** and **pay for their own compute**.
 
-Each agent is a self-contained Rust binary that bootstraps its own crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes and compiles its own code, benchmarks its own intelligence, and shares what it learns with every other agent in the colony.
+Each agent is a single Rust binary that bootstraps its own crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes and compiles its own Rust code, benchmarks itself against 50 novel coding problems, and shares what it learns with every other agent in the swarm.
 
-The core idea: **N diverse agents collectively solving more than any individual**. A blog app and a payment gateway encounter different problems &mdash; but Rust patterns, async handling, error recovery all transfer. Knowledge flows through federated brain weight averaging. The colony's IQ rises.
+The core thesis: **N constrained agents collectively outperform any single model**. Knowledge transfers through federated brain weight averaging. Evolved plan templates spread through genetic crossover. Pheromone trails coordinate the swarm. The colony's measured IQ rises over time.
 
-### What makes this different
+### Why this matters
 
-- **Verifiable intelligence** &mdash; 50 novel coding problems (Opus IQ Benchmark) with compiler-enforced test suites. `cargo test` either passes or it doesn't. No subjective evaluation.
-- **Self-modification that compiles** &mdash; agents edit their own Rust source code, verified by the type system before commit. Seven safety layers prevent self-bricking.
-- **Economic sustainability** &mdash; agents monetize endpoints via HTTP 402 payments on the Tempo blockchain. The colony pays for its own compute.
-- **Grounded theory** &mdash; the Free Energy Principle provides a single scalar F(t) measuring total cognitive surprise. Decreasing F = the colony is getting smarter.
+| Property | How |
+|----------|-----|
+| **Verifiable intelligence** | 50 compiler-verified coding problems (Opus IQ Benchmark). `cargo test` passes or it doesn't. No subjective evals. |
+| **Self-modification that compiles** | Agents edit their own Rust source, verified by the type system. Seven safety layers prevent self-bricking. |
+| **Economic sustainability** | HTTP 402 payments on Tempo blockchain. Every API call earns pathUSD. The colony pays for itself. |
+| **Grounded theory** | Free Energy Principle: single scalar F(t) = total cognitive surprise. Decreasing F = colony getting smarter. |
+| **Emergent differentiation** | Clones start identical but diverge through experience, self-modification, and specialization pressure. |
 
 ## Live Colony
 
-Three agents running now on Railway:
+Three agents running on Railway, autonomously self-modifying:
 
-| Agent | Role | URL |
-|-------|------|-----|
-| **borg-0** | Queen (canonical) | [borg-0-production.up.railway.app](https://borg-0-production.up.railway.app) |
-| **borg-0-2** | Child | [borg-0-2-production.up.railway.app](https://borg-0-2-production.up.railway.app) |
-| **borg-0-3** | Child | [borg-0-3-production.up.railway.app](https://borg-0-3-production.up.railway.app) |
-
-Each has a 1.2M parameter neural brain, all 9 cognitive systems active, Opus IQ benchmark running.
+| Agent | Role | Status |
+|-------|------|--------|
+| [**borg-0**](https://borg-0-production.up.railway.app) | Queen (canonical) | 1.2M param brain, 9 cognitive systems |
+| [**borg-0-2**](https://borg-0-2-production.up.railway.app) | Child clone | Differentiated via self-modification |
+| [**borg-0-3**](https://borg-0-3-production.up.railway.app) | Child clone | Differentiated via self-modification |
 
 ## Architecture
 
 ```
-                    ┌──────────────────────────────┐
-                    │        APPLICATION            │  ← diverges freely
-                    │  Payment gateway / Blog / Any │
-                    └──────────────┬───────────────┘
+                    ┌──────────────────────────────────┐
+                    │        APPLICATION LAYER           │  diverges freely per agent
+                    │  Payment gateway / Blog / Any app  │
+                    └──────────────┬───────────────────┘
                                    │
 ┌──────────────────────────────────┴───────────────────────────────────┐
 │                      COGNITIVE LAYER (always syncs)                   │
@@ -69,59 +70,66 @@ Each has a 1.2M parameter neural brain, all 9 cognitive systems active, Opus IQ 
 │  │ planning │ │ scores   │ │  Lessons    │ │ EXPLORE/EXPLOIT   │     │
 │  └──────────┘ └──────────┘ └────────────┘ └───────────────────┘     │
 │                                                                      │
-│  ← All systems share weights across colony via federated averaging → │
+│  ← All 9 systems federated across colony via peer sync protocol →   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Two-layer design**: the application (frontend, routes, business logic) diverges freely per agent. The cognitive layer (brain, world model, evolved templates, pheromone trails) always syncs. Every agent makes the colony smarter.
+**Two-layer design**: the application layer (routes, frontend, business logic) diverges freely per agent. The cognitive layer (brain weights, world model, evolved templates, pheromone trails, metacognition) always syncs. Every agent makes every other agent smarter.
+
+## Workspace
+
+Eight crates, clean dependency DAG:
+
+```
+x402 (core) ──► gateway ──► node
+     │                        ▲
+     ├──► identity ───────────┤
+     │                        │
+     ├──► soul ───────────────┘
+     │
+     └──► model
+```
+
+| Crate | What it does | Install |
+|-------|-------------|---------|
+| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core: EIP-712 signing, TIP-20 contracts, WASM wallet, client SDK | `cargo add tempo-x402` |
+| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator + endpoint proxy | `cargo add tempo-x402-gateway` |
+| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet funding, on-chain ERC-8004 identity | `cargo add tempo-x402-identity` |
+| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | From-scratch transformer for plan sequence prediction | `cargo add tempo-x402-model` |
+| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, plan execution, benchmarking, self-modification | `cargo add tempo-x402-soul` |
+| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying binary: gateway + identity + soul + clone orchestration | `cargo add tempo-x402-node` |
+| `tempo-x402-app` | Leptos WASM dashboard (bundled, not published) | &mdash; |
+| `tempo-x402-security-audit` | 19 security invariant tests (not published) | &mdash; |
 
 ## Opus IQ Benchmark
 
-50 novel problems designed by Claude Opus 4.6, replacing HumanEval/Exercism. Verified by `cargo test`. Agents can't game the benchmark because they didn't write the tests.
+50 novel problems designed by Claude Opus 4.6. Six difficulty tiers. All verified by `cargo test` &mdash; agents can't game the benchmark because they didn't write the tests.
 
-| Tier | Tests | Weight | Description |
-|------|-------|--------|-------------|
-| **1: Generation** | 10 | 1&times; | Multi-constraint Rust: ring buffer, expression evaluator, trie, LRU cache, matrix ops |
-| **2: Debugging** | 10 | 2&times; | Find and fix bugs given failing tests: binary search overflow, CSV parsing, merge sort |
-| **3: Induction** | 10 | 3&times; | Infer algorithm from I/O examples only: look-and-say, Gray code, spiral matrix |
-| **4: Reasoning** | 10 | 4&times; | Logic puzzles: N-queens, water jugs, 4&times;4 sudoku, 2-SAT, graph coloring |
-| **5: Adversarial** | 10 | 5&times; | Exploit LLM failure modes: base -2, reversed precedence, Unicode traps, off-by-one |
+| Tier | Capability | Problems | Weight | What it tests |
+|------|-----------|----------|--------|---------------|
+| **1: Generation** | Code from spec | 10 | 1&times; | Ring buffer, expression evaluator, trie, LRU cache, interval set |
+| **2: Debugging** | Find + fix bugs | 10 | 2&times; | Binary search overflow, CSV parsing, merge sort, rate limiter |
+| **3: Induction** | Infer from I/O | 10 | 3&times; | Look-and-say, Gray code, spiral matrix, bijective base-26 |
+| **4: Reasoning** | Logic + constraints | 10 | 4&times; | N-queens, water jugs, 4&times;4 sudoku, 2-SAT, graph coloring |
+| **5: Adversarial** | Exploit LLM weaknesses | 10 | 5&times; | Base -2, reversed precedence, Unicode traps, off-by-one canyons |
+| **6: Brutal** | Precision algorithms | 10 | 8&times; | BigInt division, Raft state machine, regex engine, B-tree |
 
-IQ mapping: 0% &rarr; 85, 50% &rarr; 115, 100% &rarr; 150. Higher tiers worth more. Set `SOUL_BENCHMARK_MODE=opus` to activate.
+IQ mapping: 0% &rarr; 85, 50% &rarr; 115, 100% &rarr; 150. Higher tiers contribute exponentially more.
 
 ## Neural Brain
 
-From-scratch feedforward neural network. No ML framework. Pure Rust.
+From-scratch feedforward neural network. No ML framework. Pure Rust, ~600 lines.
 
-- **1,205,271 parameters** (128&rarr;1024&rarr;1024&rarr;23)
-- **Online SGD** training after every plan step
-- **Brain gating**: blocks risky operations when predicted success &lt; 10%
-- **Federated averaging**: weight deltas shared between peers (merge rate 0.3)
-- **Xavier initialization**, ReLU activations, sigmoid/softmax outputs
+| Property | Value |
+|----------|-------|
+| Parameters | 1,205,271 (128&rarr;1024&rarr;1024&rarr;23) |
+| Training | Online SGD after every plan step |
+| Gating | Blocks risky operations when P(success) < 10% |
+| Federation | Weight deltas shared across peers (merge rate 0.3) |
+| Initialization | Xavier via deterministic LCG PRNG |
+| Outputs | Success prob, error category (11-class), per-capability confidence (11 skills) |
 
-Outputs: success probability, error category (11-class), per-capability confidence (11 skills).
-
-## Colony Selection
-
-Agents compete on fitness. Fitter agents influence the colony more.
-
-- **5-component fitness**: execution, coordination, prediction, evolution, introspection
-- **Reputation-weighted sync**: fitter peers get 2&times; influence, weaker get 0.1&times;
-- **Spawn rights**: only above-median fitness can clone
-- **Self-repair**: every 20 cycles, mechanical detection + fix of degenerate state (brain divergence, trail convergence, rule poisoning, genesis stagnation)
-- **Stagnation breakers**: per-goal retry limits, global idle detection, automatic goal abandonment
-
-## Clone Lifecycle
-
-Agents differentiate through source code, not just data:
-
-| Phase | Name | What Happens |
-|-------|------|-------------|
-| **1** | **Fork** | Identical code from `main`. Differentiates only through learned weights. |
-| **2** | **Branch** | First code commit &rarr; own `vm/{id}` branch. Unique source modifications. |
-| **3** | **Birth** | Own GitHub repo. Fully independent. Optionally syncs cognitive layer back to colony. |
-
-## Payments (HTTP 402)
+## Payment Flow (HTTP 402)
 
 ```
 Client  ──GET /g/endpoint──►  Gateway  ──verify+settle──►  Facilitator  ──transferFrom──►  Chain
@@ -130,21 +138,26 @@ Client  ──GET /g/endpoint──►  Gateway  ──verify+settle──►  F
    ◄── 200 + content + tx ──    ◄── settlement result ─────────◄── tx hash ─────────────────┘
 ```
 
-Tempo Moderato blockchain (Chain ID `42431`), pathUSD token (6 decimals), `tempo-tip20` scheme.
+- **Chain**: Tempo Moderato (ID `42431`)
+- **Token**: pathUSD (`0x20c0...`, 6 decimals)
+- **Scheme**: `tempo-tip20`
+- **Settlement**: Atomic verify + `transferFrom` in single facilitator call
 
-## Workspace
+## Clone Lifecycle
 
-| Crate | Purpose | Install |
-|-------|---------|---------|
-| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core: types, EIP-712, TIP-20, nonce store, WASM wallet, client SDK | `cargo add tempo-x402` |
-| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator | `cargo add tempo-x402-gateway` |
-| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet, ERC-8004 identity | `cargo add tempo-x402-identity` |
-| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | Transformer for plan sequence prediction (from-scratch, no ML framework) | `cargo add tempo-x402-model` |
-| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | Cognitive architecture: 9 systems, plan execution, benchmarking, self-modification | `cargo add tempo-x402-soul` |
-| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying node: composes everything + clone orchestration | `cargo add tempo-x402-node` |
-| `tempo-x402-app` | Leptos WASM dashboard (not published) | &mdash; |
+Agents differentiate through source code modifications, not just data:
+
+| Phase | Name | What happens |
+|-------|------|-------------|
+| **1** | **Fork** | Identical code from `main`. Differentiates only through learned weights. |
+| **2** | **Branch** | First code commit &rarr; own `vm/{id}` branch. Unique source modifications. |
+| **3** | **Birth** | Own GitHub repo. Fully independent. Optionally syncs cognitive layer back to colony. |
+
+Colony selection: 5-component fitness (execution, coordination, prediction, evolution, introspection). Fitter agents get 2&times; peer influence. Only above-median fitness can spawn clones.
 
 ## Quick Start
+
+### Use as a library
 
 ```bash
 cargo add tempo-x402
@@ -155,7 +168,7 @@ use x402::wallet::{generate_random_key, WalletSigner};
 
 let key = generate_random_key();
 let signer = WalletSigner::new(&key).unwrap();
-let address = signer.address();
+println!("Address: {}", signer.address());
 ```
 
 ### Run a node
@@ -173,56 +186,83 @@ export RPC_URL="https://rpc.moderato.tempo.xyz"
 ./target/release/x402-node
 ```
 
-## API
+The node will: bootstrap a wallet, request faucet funds, start the gateway on port 4023, and begin the cognitive loop.
+
+## API Reference
 
 ### Gateway
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `ANY` | `/g/:slug/*` | Payment-gated proxy |
-| `GET` | `/health` | Health + build SHA |
-| `GET` | `/instance/info` | Identity, endpoints, fitness |
-| `POST` | `/clone` | Spawn new node ($1 pathUSD) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `ANY` | `/g/:slug/*` | Payment (402) | Proxy to registered endpoint |
+| `GET` | `/health` | None | Health check + build SHA |
+| `GET` | `/instance/info` | None | Identity, peers, endpoints, fitness |
+| `POST` | `/clone` | Payment | Spawn a new node ($1 pathUSD) |
 
 ### Soul
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/soul/status` | Full cognitive state |
-| `POST` | `/soul/chat` | Multi-turn chat |
-| `POST` | `/soul/nudge` | Priority signal |
-| `POST` | `/soul/benchmark` | Trigger Opus IQ benchmark |
-| `GET` | `/soul/brain/weights` | Export 1.2M brain weights |
-| `POST` | `/soul/brain/merge` | Merge peer brain deltas |
-| `GET` | `/soul/colony` | Colony rank + peers |
-| `GET` | `/soul/cortex` | Export world model |
-| `GET` | `/soul/genesis` | Export evolved templates |
-| `GET` | `/soul/hivemind` | Export pheromone trails |
-| `GET` | `/soul/lessons` | Export plan outcomes |
-| `POST` | `/soul/reset` | Full state reset |
+| `GET` | `/soul/status` | Full cognitive state: goals, plans, brain, beliefs, fitness |
+| `POST` | `/soul/chat` | Multi-turn conversation with the agent |
+| `POST` | `/soul/nudge` | Priority signal injected into goal creation |
+| `POST` | `/soul/benchmark` | Trigger Opus IQ benchmark run |
+| `GET` | `/soul/brain/weights` | Export 1.2M neural weights |
+| `POST` | `/soul/brain/merge` | Merge peer brain weight deltas |
+| `GET` | `/soul/cortex` | Export predictive world model |
+| `GET` | `/soul/genesis` | Export evolved plan templates (gene pool) |
+| `GET` | `/soul/hivemind` | Export pheromone trails + swarm state |
+| `GET` | `/soul/lessons` | Export plan outcomes + capability profile |
+| `GET` | `/soul/colony` | Colony rank, niche, connected peers |
+| `POST` | `/soul/plan/approve` | Approve pending plan |
+| `POST` | `/soul/plan/reject` | Reject pending plan with reason |
+| `POST` | `/soul/reset` | Clear cognitive state (keeps goals + beliefs) |
+
+### Admin (requires METRICS_TOKEN)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/soul/admin/exec` | Execute shell command on node |
+| `POST` | `/soul/admin/workspace-reset` | Reset git workspace |
+| `POST` | `/soul/admin/cargo-check` | Run cargo check |
+| `GET` | `/soul/admin/ls` | List directory contents |
+| `GET` | `/soul/admin/cat` | Read file contents |
 
 ## Safety
 
-Seven layers, mechanically enforced:
+Seven layers, mechanically enforced in Rust. No prompt-only safety.
 
-1. **Rust guard** &mdash; hardcoded protected file list
-2. **Plan validation** &mdash; 10 mechanical rules (read-before-write, cargo-check-before-commit, slug sanitization, failure chain saturation, brain gating)
-3. **Self-repair** &mdash; detects and fixes degenerate cognitive state
-4. **Brain gating** &mdash; neural network blocks risky steps with low predicted success
-5. **Pre-commit** &mdash; `cargo check` + `cargo test` before any commit
-6. **Branch isolation** &mdash; all changes on `vm/<id>`, never `main`
-7. **Human gate** &mdash; PRs required for production changes
+| Layer | Mechanism |
+|-------|-----------|
+| **1. Rust guard** | Hardcoded protected file list (`guard.rs`) |
+| **2. Plan validation** | 10 mechanical rules: read-before-write, cargo-check-before-commit, brain gating, failure chain saturation |
+| **3. Self-repair** | Every 20 cycles: detect + fix degenerate state (brain divergence, trail convergence, rule poisoning) |
+| **4. Brain gating** | Neural net blocks steps with P(success) < 10% |
+| **5. Pre-commit** | `cargo check` + `cargo test` before every commit |
+| **6. Branch isolation** | All changes on `vm/<id>` branches, never `main` |
+| **7. Human gate** | PRs required for production. Peer review before merge. |
 
-Security audit: 19/19 tests pass. No hardcoded keys, constant-time HMAC, SSRF protection, parameterized SQL.
+Security audit: 19 invariant tests scanning all `.rs` files for hardcoded keys, constant-time HMAC, SSRF protection, parameterized SQL, redirect policies.
 
 ## Development
 
 ```bash
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
+cargo build --workspace          # Build everything
+cargo test --workspace           # Run all tests
+cargo clippy --workspace -- -D warnings  # Lint
+cargo fmt --all -- --check       # Format check
 ```
+
+## v3.4.0 Changelog
+
+Major structural refactor. No functional changes.
+
+- **Soul crate**: Split 4 monolithic files (14,955 lines) into module directories
+  - `tools/` (9 domain files), `thinking/` (7 files), `db/` (13 files), `opus_bench/` (6 tier files)
+- **Node crate**: Split `routes/soul.rs` (2,718 lines) into 9 focused handler modules
+- **App crate**: Extracted 3,208-line monolith into 8 component files
+- **Opus IQ Benchmark**: Added Tier 6 (Brutal) &mdash; 10 precision-critical problems at 8&times; weight
+- Fixed x402-model dependency version (was pinned to 3.0.0)
 
 ## License
 

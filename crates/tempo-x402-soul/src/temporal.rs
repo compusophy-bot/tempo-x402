@@ -126,7 +126,11 @@ pub fn compute_signals(db: &Arc<SoulDatabase>) -> SignalSnapshot {
     let avg_fitness = if gene_pool.templates.is_empty() {
         0.5
     } else {
-        gene_pool.templates.iter().map(|t| t.fitness as f64).sum::<f64>()
+        gene_pool
+            .templates
+            .iter()
+            .map(|t| t.fitness as f64)
+            .sum::<f64>()
             / gene_pool.templates.len() as f64
     };
     s.genesis_surprise = 1.0 - avg_fitness;
@@ -236,7 +240,12 @@ pub struct Oscillator {
 }
 
 impl Oscillator {
-    fn new(name: &str, natural_period: u32, refractory: u32, signal_weights: Vec<(&str, f64)>) -> Self {
+    fn new(
+        name: &str,
+        natural_period: u32,
+        refractory: u32,
+        signal_weights: Vec<(&str, f64)>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             phase: 0.0,
@@ -245,7 +254,10 @@ impl Oscillator {
             refractory,
             cycles_since_fire: refractory + 1, // Allow firing immediately after init
             total_fires: 0,
-            signal_weights: signal_weights.into_iter().map(|(s, w)| (s.to_string(), w)).collect(),
+            signal_weights: signal_weights
+                .into_iter()
+                .map(|(s, w)| (s.to_string(), w))
+                .collect(),
         }
     }
 
@@ -629,7 +641,10 @@ mod tests {
             }
         }
         // Should fire approximately every 10 cycles
-        assert!(!fired_at.is_empty(), "should fire at least once in 30 cycles");
+        assert!(
+            !fired_at.is_empty(),
+            "should fire at least once in 30 cycles"
+        );
         assert_eq!(fired_at[0], 10, "first fire should be at cycle 10");
     }
 

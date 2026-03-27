@@ -145,8 +145,7 @@ fn http_clients_disable_redirects() {
     let builder_re = Regex::new(r"reqwest::Client::builder\(\)").unwrap();
     // Accept both Policy::none() and Policy::limited(...) — both prevent unbounded SSRF.
     // Policy::limited(N) is preferred for peer-to-peer communication where Railway may redirect.
-    let redirect_re =
-        Regex::new(r"redirect\s*\(\s*.*Policy::(none|limited)\s*\(").unwrap();
+    let redirect_re = Regex::new(r"redirect\s*\(\s*.*Policy::(none|limited)\s*\(").unwrap();
     // Also catch reqwest::Client::new() — which allows redirects by default (SSRF risk)
     let new_re = Regex::new(r"reqwest::Client::new\(\)").unwrap();
 

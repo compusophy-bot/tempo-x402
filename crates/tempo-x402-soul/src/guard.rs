@@ -7,12 +7,12 @@
 /// Everything else should be editable for self-improvement.
 const PROTECTED_PREFIXES: &[&str] = &[
     // Core safety: editing these could brick the agent
-    "crates/tempo-x402-soul/src/guard.rs",   // self-protection bypass
-    "crates/tempo-x402-soul/src/db.rs",      // database corruption
-    "crates/tempo-x402-soul/src/config.rs",  // config corruption
-    "crates/tempo-x402-soul/src/llm.rs",     // API client corruption
-    "crates/tempo-x402-soul/src/tools.rs",   // tool executor corruption
-    "crates/tempo-x402-soul/src/error.rs",   // error type changes break everything
+    "crates/tempo-x402-soul/src/guard.rs", // self-protection bypass
+    "crates/tempo-x402-soul/src/db.rs",    // database corruption
+    "crates/tempo-x402-soul/src/config.rs", // config corruption
+    "crates/tempo-x402-soul/src/llm.rs",   // API client corruption
+    "crates/tempo-x402-soul/src/tools.rs", // tool executor corruption
+    "crates/tempo-x402-soul/src/error.rs", // error type changes break everything
     // Infrastructure: these affect other systems, not just this agent
     "crates/tempo-x402-identity/",
     "crates/tempo-x402-node/src/main.rs",

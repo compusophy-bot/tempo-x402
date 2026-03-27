@@ -31,7 +31,7 @@ No dependency on gateway/identity/node. Communicates via `NodeObserver` trait �
 | Module | Purpose |
 |--------|---------|
 | `plan.rs` | Plan types (PlanStep, Plan, PlanStatus), PlanExecutor — deterministic step execution |
-| `thinking.rs` | Main plan-driven loop: observe → plan → execute → advance |
+| `thinking/` | Main plan-driven loop (mod.rs: ThinkingLoop + run()), split: plan_cycle, observe, goals, planning, completion, housekeeping, tool_loop |
 | `prompts.rs` | 5 focused prompt builders: goal_creation, planning, code_generation, replan, reflection |
 | `validation.rs` | **Plan validation**: mechanical plan checks (read-before-edit, cargo-check-before-commit, protected files, durable rules, brain gating, failure chains) — server-side enforcement, not prompt injection |
 | `feedback.rs` | **Feedback loop**: structured plan outcomes, error classification, lesson extraction, experience consultation |
@@ -48,14 +48,14 @@ No dependency on gateway/identity/node. Communicates via `NodeObserver` trait �
 | `free_energy.rs` | **Unifying theoretical framework**: single scalar F(t) measuring total cognitive surprise across all systems. F = Σ(system_surprise × weight) + λ×Complexity. Decreasing F = agent getting smarter. Drives behavioral regime (Explore/Learn/Exploit/Anomaly). Trend analysis, history tracking, prompt injection. The theoretical contribution that unifies the entire architecture under the Free Energy Principle. |
 | `computer_use.rs` | **Computer use**: screenshot capture, mouse/keyboard simulation, browser control via xdotool/scrot in VM |
 | `guard.rs` | Hardcoded protected file list — prevents self-bricking |
-| `tools.rs` | Tool executor: shell, file read/write/edit, search, commit, PR + dynamic tool dispatch |
+| `tools/` | Tool executor (mod.rs: dispatch + struct), split by domain: file_ops, shell, git, deployment, endpoints, social, memory, beliefs, planning |
 | `tool_registry.rs` | Dynamic tool registry: register/list/unregister tools at runtime, shell execution |
 | `git.rs` | Branch-per-VM git workflow (ensure_branch, commit, push, PR, issues) with fork support |
 | `coding.rs` | Pre-commit validation pipeline (cargo check → test → commit) |
 | `mode.rs` | Agent modes (Observe, Chat, Code, Review) with per-mode tool sets |
 | `llm.rs` | Gemini API client with thought_signature support |
 | `chat.rs` | Session-based interactive chat with plan context injection |
-| `db.rs` | SQLite: thoughts, soul_state, mutations, tools, pattern_counts, beliefs, goals, plans, nudges, chat_sessions, chat_messages, **plan_outcomes, capability_events** tables |
+| `db/` | SQLite (mod.rs: schema + migrations + types), split by domain: thoughts, state, mutations, tools, beliefs, goals, plans, chat, feedback, events, nudges, benchmark, housekeeping |
 | `memory.rs` | Thought types (Observation, Reasoning, Decision, etc.) |
 | `neuroplastic.rs` | Salience scoring, tiered memory decay |
 | `persistent_memory.rs` | Persistent markdown memory file — read/seed/update, 4KB cap |
@@ -168,7 +168,7 @@ Each step can have `store_as` to accumulate results in plan context. LLM steps r
 ## If You're Changing...
 
 - **Plan execution**: `plan.rs` — step types, PlanExecutor, step dispatch
-- **Thinking loop**: `thinking.rs` — observe → plan → execute → advance cycle
+- **Thinking loop**: `thinking/` — mod.rs has run(), submodules: plan_cycle, observe, goals, planning, completion, housekeeping, tool_loop
 - **Prompts**: `prompts.rs` — 5 focused builders (goal_creation, planning, code_generation, replan, reflection); accepts experience + capability data
 - **Feedback loop**: `feedback.rs` — PlanOutcome recording, error classification, lesson extraction, experience consultation
 - **Capability tracking**: `capability.rs` — per-step event recording, profile computation, prompt guidance
@@ -182,6 +182,6 @@ Each step can have `store_as` to accumulate results in plan context. LLM steps r
 - **Pre-commit validation**: `coding.rs` — cargo check/test pipeline
 - **Database schema**: `db.rs` — plans table (v4), nudges table (v5), chat sessions/messages (v6), CRUD methods
 - **Chat sessions**: `chat.rs` — session-based conversation, plan context builder
-- **Plan approval**: `thinking.rs` — approval gate in plan_cycle; `plan.rs` — PendingApproval status; `tools.rs` — approve/reject/request tools
+- **Plan approval**: `thinking/plan_cycle.rs` — approval gate; `plan.rs` — PendingApproval status; `tools/planning.rs` — approve/reject/request tools
 - **World model**: `world_model.rs` — belief types + formatters
 - **Observer trait**: `observer.rs` — changing `NodeSnapshot` fields affects all implementors

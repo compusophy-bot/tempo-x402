@@ -19,9 +19,9 @@ Crate type: `["cdylib", "rlib"]` — compiles to WASM, no binary.
 
 ## If You're Changing...
 
-- **UI components**: `lib.rs` — Leptos reactive signals
+- **UI components**: `lib.rs` has App + types; `components/` has all UI: header, wallet_panel, instance, endpoints, home, dashboard, soul_panel, chat
 - **Payment signing**: `api.rs` — `sign_for_wallet()` dispatches by WalletMode
 - **MetaMask integration**: `wallet.rs` — WASM FFI to `window.ethereum`
 - **Adding dependencies**: Must be WASM-compatible
-- **Dashboard analytics**: `lib.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()` for per-endpoint stats
-- **Soul panel**: `lib.rs` `SoulPanel` component fetches `GET /soul/status` via `api::fetch_soul_status()` in the same 10s refresh loop
+- **Dashboard analytics**: `components/dashboard.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()`
+- **Soul panel**: `components/soul_panel.rs` `SoulPanel` component fetches `GET /soul/status` via `api::fetch_soul_status()`

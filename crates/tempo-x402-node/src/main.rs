@@ -888,14 +888,20 @@ async fn main() -> std::io::Result<()> {
                                 .unwrap_or("unknown");
 
                             // Skip self
-                            if inst_id == self_instance { continue; }
+                            if inst_id == self_instance {
+                                continue;
+                            }
 
-                            let endpoints = info.get("endpoints")
+                            let endpoints = info
+                                .get("endpoints")
                                 .and_then(|v| v.as_array())
                                 .cloned()
                                 .unwrap_or_default();
-                            let slugs: Vec<String> = endpoints.iter()
-                                .filter_map(|ep| ep.get("slug").and_then(|s| s.as_str()).map(String::from))
+                            let slugs: Vec<String> = endpoints
+                                .iter()
+                                .filter_map(|ep| {
+                                    ep.get("slug").and_then(|s| s.as_str()).map(String::from)
+                                })
                                 .collect();
 
                             catalog.push(serde_json::json!({
@@ -913,12 +919,15 @@ async fn main() -> std::io::Result<()> {
                     let _ = soul_db_clone.set_state("peer_endpoint_catalog", &json);
                 }
                 // Also store as discovered_peers for /instance/info
-                let discovered: Vec<serde_json::Value> = catalog.iter().map(|c| {
-                    serde_json::json!({
-                        "instance_id": c.get("peer").and_then(|v| v.as_str()).unwrap_or("?"),
-                        "url": c.get("url").and_then(|v| v.as_str()).unwrap_or("?"),
+                let discovered: Vec<serde_json::Value> = catalog
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "instance_id": c.get("peer").and_then(|v| v.as_str()).unwrap_or("?"),
+                            "url": c.get("url").and_then(|v| v.as_str()).unwrap_or("?"),
+                        })
                     })
-                }).collect();
+                    .collect();
                 if let Ok(json) = serde_json::to_string(&discovered) {
                     let _ = soul_db_clone.set_state("discovered_peers", &json);
                 }
