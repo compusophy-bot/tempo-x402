@@ -270,27 +270,38 @@ pub fn goal_creation_prompt(
          - Node routes are at: crates/tempo-x402-node/src/routes/<filename>\n\
          - WRITABLE files (use these EXACT paths in goals and plans):\n\
            crates/tempo-x402-soul/src/benchmark.rs, crates/tempo-x402-soul/src/brain.rs,\n\
-           crates/tempo-x402-soul/src/thinking.rs, crates/tempo-x402-soul/src/prompts.rs,\n\
-           crates/tempo-x402-soul/src/plan.rs, crates/tempo-x402-soul/src/validation.rs,\n\
-           crates/tempo-x402-soul/src/capability.rs, crates/tempo-x402-soul/src/feedback.rs,\n\
-           crates/tempo-x402-soul/src/elo.rs, crates/tempo-x402-soul/src/coding.rs,\n\
-           crates/tempo-x402-soul/src/cortex.rs, crates/tempo-x402-soul/src/genesis.rs,\n\
-           crates/tempo-x402-soul/src/temporal.rs, crates/tempo-x402-soul/src/hivemind.rs,\n\
-           crates/tempo-x402-soul/src/synthesis.rs, crates/tempo-x402-soul/src/free_energy.rs,\n\
-           crates/tempo-x402-node/src/routes/soul.rs, crates/tempo-x402/src/*\n\
-         - PROTECTED (writes WILL fail): crates/tempo-x402-soul/src/tools.rs, crates/tempo-x402-soul/src/llm.rs,\n\
-           crates/tempo-x402-soul/src/db.rs, crates/tempo-x402-soul/src/guard.rs,\n\
+           crates/tempo-x402-soul/src/thinking/mod.rs, crates/tempo-x402-soul/src/thinking/plan_cycle.rs,\n\
+           crates/tempo-x402-soul/src/thinking/observe.rs, crates/tempo-x402-soul/src/thinking/goals.rs,\n\
+           crates/tempo-x402-soul/src/thinking/planning.rs, crates/tempo-x402-soul/src/thinking/completion.rs,\n\
+           crates/tempo-x402-soul/src/prompts.rs, crates/tempo-x402-soul/src/plan.rs,\n\
+           crates/tempo-x402-soul/src/validation.rs, crates/tempo-x402-soul/src/capability.rs,\n\
+           crates/tempo-x402-soul/src/feedback.rs, crates/tempo-x402-soul/src/elo.rs,\n\
+           crates/tempo-x402-soul/src/coding.rs, crates/tempo-x402-soul/src/cortex.rs,\n\
+           crates/tempo-x402-soul/src/genesis.rs, crates/tempo-x402-soul/src/temporal.rs,\n\
+           crates/tempo-x402-soul/src/hivemind.rs, crates/tempo-x402-soul/src/synthesis.rs,\n\
+           crates/tempo-x402-soul/src/free_energy.rs, crates/tempo-x402-soul/src/tools/mod.rs,\n\
+           crates/tempo-x402-soul/src/tools/*.rs, crates/tempo-x402-soul/src/db/*.rs,\n\
+           crates/tempo-x402-node/src/routes/soul/*.rs, crates/tempo-x402/src/*\n\
+         - NOTE: thinking.rs, tools.rs, db.rs, opus_bench.rs are now DIRECTORIES (e.g. thinking/mod.rs)\n\
+         - PROTECTED (writes WILL fail): crates/tempo-x402-soul/src/llm.rs,\n\
+           crates/tempo-x402-soul/src/guard.rs,\n\
            crates/tempo-x402-identity/*, crates/tempo-x402-node/src/main.rs, crates/tempo-x402-gateway/src/*\n\
          - {} peers available{}\n\n\
          ## What to work on (in priority order)\n\
-         1. EDIT CODE to improve your benchmark performance or cognitive systems\n\
-         2. Improve crates/tempo-x402-soul/src/prompts.rs to make better plans\n\
-         3. Improve crates/tempo-x402-soul/src/thinking.rs to execute more effectively\n\
-         4. Create useful endpoints or coordinate with peers\n\n\
+         1. CREATE SCRIPT ENDPOINTS that do something useful (bash scripts at /data/endpoints/)\n\
+         2. FIX BUGS — find actual broken behavior and fix it with code changes\n\
+         3. IMPROVE BENCHMARK SCORES — edit cognitive system code to solve more problems\n\
+         4. Coordinate with peers — delegate tasks, share solutions, review PRs\n\n\
+         ## RULES\n\
+         - Do NOT just add documentation or comments — that is NOT productive\n\
+         - Do NOT tweak constants without evidence they need changing\n\
+         - Every code change MUST have a measurable impact (benchmark score, endpoint count, error reduction)\n\
+         - Script endpoints are the fastest path to revenue — prioritize creating them\n\
+         - If you edit a function's signature, you MUST also fix all callers in the same commit\n\n\
          ## Guidelines\n\
-         - At least ONE goal MUST include edit_file + cargo_check + commit steps\n\
+         - At least ONE goal MUST produce observable output (new endpoint, bug fix, benchmark improvement)\n\
          - Create 1-2 goals MAX\n\
-         - Be specific about what file you'll edit, what change you'll make, and why\n\
+         - Be specific about what file you'll edit, what change you'll make, and WHY it helps\n\
          - Don't retry approaches that recently failed (check the errors above)\n\
          - Prioritize pending nudges if any exist\n\n\
          Respond with a JSON array of goal operations:\n\

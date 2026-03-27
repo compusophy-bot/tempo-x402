@@ -8,10 +8,10 @@
 const PROTECTED_PREFIXES: &[&str] = &[
     // Core safety: editing these could brick the agent
     "crates/tempo-x402-soul/src/guard.rs", // self-protection bypass
-    "crates/tempo-x402-soul/src/db.rs",    // database corruption
+    "crates/tempo-x402-soul/src/db/mod.rs", // database schema corruption
     "crates/tempo-x402-soul/src/config.rs", // config corruption
     "crates/tempo-x402-soul/src/llm.rs",   // API client corruption
-    "crates/tempo-x402-soul/src/tools.rs", // tool executor corruption
+    "crates/tempo-x402-soul/src/tools/mod.rs", // tool executor dispatch corruption
     "crates/tempo-x402-soul/src/error.rs", // error type changes break everything
     // Infrastructure: these affect other systems, not just this agent
     "crates/tempo-x402-identity/",
@@ -82,9 +82,9 @@ mod tests {
 
     #[test]
     fn protects_soul_core_files() {
-        assert!(is_protected("crates/tempo-x402-soul/src/tools.rs"));
+        assert!(is_protected("crates/tempo-x402-soul/src/tools/mod.rs"));
         assert!(is_protected("crates/tempo-x402-soul/src/llm.rs"));
-        assert!(is_protected("crates/tempo-x402-soul/src/db.rs"));
+        assert!(is_protected("crates/tempo-x402-soul/src/db/mod.rs"));
         assert!(is_protected("crates/tempo-x402-soul/src/error.rs"));
         assert!(is_protected("crates/tempo-x402-soul/src/guard.rs"));
         assert!(is_protected("crates/tempo-x402-soul/src/config.rs"));
@@ -138,7 +138,10 @@ mod tests {
         assert!(!is_protected("crates/tempo-x402-soul/src/feedback.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/elo.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/validation.rs"));
-        assert!(!is_protected("crates/tempo-x402-soul/src/thinking.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/thinking/mod.rs"));
+        assert!(!is_protected(
+            "crates/tempo-x402-soul/src/thinking/plan_cycle.rs"
+        ));
         assert!(!is_protected("crates/tempo-x402-soul/src/prompts.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/chat.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/memory.rs"));
@@ -147,19 +150,23 @@ mod tests {
         assert!(!is_protected("crates/tempo-x402-soul/src/genesis.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/hivemind.rs"));
         assert!(!is_protected("crates/tempo-x402-soul/src/synthesis.rs"));
-        assert!(!is_protected("crates/tempo-x402-node/src/routes/soul.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/tools/social.rs"));
+        assert!(!is_protected("crates/tempo-x402-soul/src/db/goals.rs"));
+        assert!(!is_protected(
+            "crates/tempo-x402-node/src/routes/soul/status.rs"
+        ));
         assert!(!is_protected("README.md"));
     }
 
     #[test]
     fn normalizes_paths() {
-        assert!(is_protected("./crates/tempo-x402-soul/src/tools.rs"));
-        assert!(is_protected("/crates/tempo-x402-soul/src/tools.rs"));
+        assert!(is_protected("./crates/tempo-x402-soul/src/tools/mod.rs"));
+        assert!(is_protected("/crates/tempo-x402-soul/src/tools/mod.rs"));
     }
 
     #[test]
     fn validate_returns_error_for_protected() {
-        assert!(validate_write_target("crates/tempo-x402-soul/src/tools.rs").is_err());
+        assert!(validate_write_target("crates/tempo-x402-soul/src/tools/mod.rs").is_err());
     }
 
     #[test]
