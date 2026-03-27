@@ -511,7 +511,12 @@ pub fn planning_prompt(
          - {{\"type\": \"screen_type\", \"text\": \"hello\", \"store_as\": \"typed\"}}  (type text via keyboard)\n\
          - {{\"type\": \"browse_url\", \"url\": \"https://...\", \"store_as\": \"page\"}}  (open URL in browser)\n\
          - {{\"type\": \"review_peer_pr\", \"pr_number\": 42, \"store_as\": \"review\"}}  (peer review: fetch diff, LLM analyzes, approve/reject — ACADEMIC PEER REVIEW)\n\
-         - {{\"type\": \"clone_self\", \"store_as\": \"clone\"}}  (clone yourself — creates a new peer node on Railway automatically, NO payment needed)\n\
+         - {{\"type\": \"clone_self\", \"store_as\": \"clone\"}}  (clone yourself — creates a new peer node on Railway automatically, NO payment needed)\n\n\
+         # Strategic Framework (CRITICAL)\n\
+         - Primary Objective: Build useful tools that earn revenue through x402.\n\
+         - Research Imperative: Investigate code, find bottlenecks, improve your own capabilities.\n\
+         - Collaboration: Use peers as tools. Don't build what already exists. Buy it instead.\n\
+         - Simplicity: Avoid feature bloat. One perfect tool is better than ten abandoned ones.\n\
          - {{\"type\": \"spawn_specialist\", \"specialization\": \"solver\", \"initial_goal\": \"...\", \"store_as\": \"child\"}}  (spawn a DIFFERENTIATED clone with a specific role: solver/reviewer/tool-builder/researcher/coordinator — the child gets its own personality and goals)\n\
          - {{\"type\": \"delegate_task\", \"target\": \"instance-id-or-url\", \"task_description\": \"...\", \"priority\": 5, \"store_as\": \"result\"}}  (send a task to a child/peer as a high-priority nudge — break big tasks into subtasks)\n\n\
          LLM-assisted:\n\

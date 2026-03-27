@@ -6,6 +6,49 @@
 //! The Brain (brain.rs) is a reactive classifier: "will this step succeed?"
 //! The Cortex is a **generative world model**: "what will happen if I do X?"
 //!
+//! ### Predictive World Model Logic
+//! The core of the cortex is an associative, state-action-consequence (SAC)
+//! Markov model. It does not learn by gradient descent, but by building
+//! a sparse, graph-based representation of transitions.
+//!
+//! 1. **State Space**: Encoded as a rolling hash of recent events, representing
+//!    the current agent context.
+//! 2. **Transition Probability**: For a given `(state, action)`, the model
+//!    maintains a distribution of observed next states.
+//! 3. **Causal Weighting**: Transitions that lead to higher reward or reduce
+//!    prediction error (surprise) are weighted more heavily, reinforcing
+//!    successful causal paths.
+//! 4. **Surprise (Prediction Error)**: Defined as the divergence between the
+//!    predicted state distribution and the actual observed next state.
+//!    Surprise = -log(P(observed_state | state, action)).
+//!
+//! ### Inference Loop
+//! The inference loop functions as a continuous cycle of Active Inference:
+//! 1. **Perception**: New observations are mapped to context hashes.
+//! 2. **Prediction**: The causal graph generates a distribution of expected outcomes
+//!    for a given action, conditioned on current context.
+//! 3. **Error Detection**: Discrepancies between expected and actual outcomes are
+//!    calculated as `surprise`.
+//! 4. **Update**: Surprise triggers updates to the causal weights, minimizing future
+//!    surprise through model refinement.
+//!
+//! ### State Assessment
+//! Agent state is maintained via:
+//! - **Causal Graph**: `(context, action) → (outcome, probability)`.
+//! - **Emotional Valence**: A running affective state that biases action selection,
+//!   derived from the cumulative reward history of the current goal trajectory.
+//! - **Curiosity**: A metric defined by total recent prediction error, driving the
+//!   agent to seek areas of high uncertainty.
+//!
+//! ### Free Energy Minimization
+//! The agent operates on the Principle of Free Energy Minimization:
+//! - **Surprise (Intrinsic Motivation)**: High prediction error is treated as
+//!   an information deficit (negative information gain). The agent prioritizes
+//!   actions that reduce this surprise.
+//! - **Goal Alignment (Extrinsic Motivation)**: The agent seeks to minimize the
+//!   expected divergence from successful goal states, balancing exploration
+//!   (minimizing surprise) with exploitation (maximizing reward).
+//!
 //! Three subsystems work together:
 //!
 //! 1. **Experience Graph** — A causal graph of (context, action) → outcome transitions.
@@ -316,18 +359,28 @@ impl Cortex {
         }
     }
 
+    /// Initialize cortex and log startup.
+    pub fn init_and_log(&mut self) {
+        self.record(
+            "system_init",
+            vec!["system".to_string(), "init".to_string()],
+            true,
+            1.0,
+            None,
+        );
+    }
+
     // ── Recording ────────────────────────────────────────────────────
 
-    /// Record an experience after a step executes.
-    /// This is the primary learning signal for the cortex.
-    pub fn record(
+    /// Helper to construct a new experience.
+    pub fn log_experience(
         &mut self,
         action: &str,
         context_tags: Vec<String>,
         succeeded: bool,
         reward: f32,
         error_tag: Option<String>,
-    ) {
+    ) -> Experience {
         let context_hash = hash_context(&context_tags);
         let now = chrono::Utc::now().timestamp();
 
@@ -339,26 +392,40 @@ impl Cortex {
         self.update_emotion(succeeded, reward, surprise);
 
         // ── Create experience ──
-        let exp = Experience {
+        Experience {
             id: self.next_id,
             context_hash,
-            context_tags: context_tags.clone(),
+            context_tags,
             action: action.to_string(),
             succeeded,
             reward,
-            error_tag: error_tag.clone(),
+            error_tag,
             surprise,
             valence: self.emotion.valence,
             timestamp: now,
             replay_count: 0,
             abstraction_level: 0,
-        };
+        }
+    }
+
+    /// Record an experience after a step executes.
+    /// This is the primary learning signal for the cortex.
+    pub fn record(
+        &mut self,
+        action: &str,
+        context_tags: Vec<String>,
+        succeeded: bool,
+        reward: f32,
+        error_tag: Option<String>,
+    ) {
+        let exp = self.log_experience(action, context_tags, succeeded, reward, error_tag);
+        
         self.next_id += 1;
         self.total_experiences_processed += 1;
 
         // ── Update prediction accuracy ──
         self.total_predictions += 1;
-        let predicted_success = predicted_reward > 0.0;
+        let predicted_success = exp.reward > 0.0;
         if predicted_success == succeeded {
             self.correct_predictions += 1;
         }
@@ -366,6 +433,7 @@ impl Cortex {
         // ── Store experience (evict oldest if at capacity) ──
         if self.experiences.len() >= EXPERIENCE_CAPACITY {
             // Evict least valuable: lowest (surprise * recency) score
+            let now = exp.timestamp;
             let evict_idx = self
                 .experiences
                 .iter()
@@ -381,10 +449,10 @@ impl Cortex {
                 .unwrap_or(0);
             self.experiences.remove(evict_idx);
         }
-        self.experiences.push(exp);
+        self.experiences.push(exp.clone());
 
         // ── Update action model ──
-        self.update_action_model(action, &context_tags, succeeded, reward);
+        self.update_action_model(action, &exp.context_tags, succeeded, reward);
 
         // ── Update causal edge from previous action ──
         if let Some(ref prev_action) = self.last_action.clone() {
@@ -402,13 +470,13 @@ impl Cortex {
             .curiosity_scores
             .entry(action.to_string())
             .or_insert(0.5);
-        *curiosity = *curiosity * CURIOSITY_DECAY + surprise * (1.0 - CURIOSITY_DECAY);
+        *curiosity = *curiosity * CURIOSITY_DECAY + exp.surprise * (1.0 - CURIOSITY_DECAY);
 
         // ── Update feature importance ──
-        for tag in &context_tags {
+        for tag in &exp.context_tags {
             let importance = self.feature_importance.entry(tag.clone()).or_insert(0.0);
             // If this tag's presence correlates with surprising outcomes, it's important
-            *importance = *importance * 0.95 + surprise * 0.05;
+            *importance = *importance * 0.95 + exp.surprise * 0.05;
         }
 
         // ── Update global curiosity ──
@@ -419,7 +487,7 @@ impl Cortex {
 
         // ── Store last action for next causal edge ──
         self.last_action = Some(action.to_string());
-        self.last_context_hash = context_hash;
+        self.last_context_hash = exp.context_hash;
         self.last_succeeded = succeeded;
     }
 

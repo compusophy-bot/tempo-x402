@@ -10,8 +10,11 @@ use crate::db::SoulDatabase;
 /// Starting ELO rating (1000 = baseline, untested).
 const BASE_RATING: f64 = 1000.0;
 
-/// K-factor for rating adjustments.
-const K_FACTOR: f64 = 32.0;
+/// K-factor for rating adjustments. A higher K-factor puts more weight on recent performance.
+const K_FACTOR: f64 = 48.0;
+
+/// Smoothing factor for the update (higher = less smooth, more responsive).
+const SMOOTHING: f64 = 300.0;
 
 /// Map of reference model ELO ratings (estimated from pass@1 scores).
 /// These give context to the agent's rating.
@@ -39,9 +42,10 @@ pub fn update_rating(db: &SoulDatabase, pass_at_1: f64) {
     let current = load_rating(db);
     let new_from_score = pass_at_1_to_elo(pass_at_1);
 
-    // Smooth update: blend current rating with new measurement
-    // This prevents wild swings from small sample sizes
-    let updated = current + K_FACTOR * ((new_from_score - current) / 400.0);
+    // Responsive update: apply a weighted blend of new performance.
+    // The higher K-factor and adjusted denominator make the rating more reactive
+    // to recent benchmark improvements.
+    let updated = current + K_FACTOR * ((new_from_score - current) / SMOOTHING);
 
     let _ = db.set_state("elo_rating", &format!("{:.1}", updated));
 

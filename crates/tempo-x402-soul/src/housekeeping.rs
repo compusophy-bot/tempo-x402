@@ -2,6 +2,13 @@
 //!
 //! Background maintenance: memory decay, promotion, belief decay, consolidation,
 //! cycle counting, error tracking, and workspace cleanup.
+//!
+//! This module manages the long-term health and resource constraints of the
+//! agent's environment, ensuring the database remains bounded and disk
+//! usage (e.g., target directories, git artifacts) stays within limits.
+//!
+//! The main entry point is `housekeeping`, which should be invoked as part
+//! of the periodic cognitive cycle to maintain system stability.
 
 use std::sync::Arc;
 
