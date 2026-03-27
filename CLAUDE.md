@@ -4,7 +4,7 @@
 
 Autonomous AI colony on the Tempo blockchain. Self-replicating agents that clone, evolve source code, benchmark IQ, share neural weights, and pay each other via HTTP 402.
 
-Rust workspace. 8 crates, ~65K lines. Published as `tempo-x402`, `tempo-x402-gateway`, `tempo-x402-identity`, `tempo-x402-model`, `tempo-x402-soul`, `tempo-x402-node` on crates.io.
+Rust workspace. 9 crates, ~67K lines. Published as `tempo-x402`, `tempo-x402-cartridge`, `tempo-x402-gateway`, `tempo-x402-identity`, `tempo-x402-model`, `tempo-x402-soul`, `tempo-x402-node` on crates.io.
 
 ## Architecture
 
@@ -26,6 +26,7 @@ crates/
 ├── tempo-x402-gateway/        # API proxy + embedded facilitator + payment middleware
 ├── tempo-x402-identity/       # wallet generation, faucet, on-chain ERC-8004 identity
 ├── tempo-x402-model/          # from-scratch transformer for plan sequence prediction
+├── tempo-x402-cartridge/      # WASM cartridge runtime (wasmtime) — sandboxed app execution
 ├── tempo-x402-soul/           # 9-system cognitive architecture + plan execution + benchmarking
 │   ├── src/tools/             # tool executor split by domain (9 files)
 │   ├── src/thinking/          # thinking loop split (7 files)
@@ -38,7 +39,7 @@ crates/
 └── tempo-x402-security-audit/ # 19 security invariant tests (not published)
 ```
 
-Dependency DAG: `x402 → gateway → node`, `x402 → identity → node`, `x402 → soul → node`, `x402 → model → soul`.
+Dependency DAG: `x402 → gateway → node`, `x402 → identity → node`, `x402 → soul → node`, `x402 → model → soul`, `cartridge → soul, node`.
 
 Each crate has its own `CLAUDE.md` with local context. **Read that first when working in a crate.**
 
@@ -103,11 +104,12 @@ cargo fmt --all                 # CI enforces formatting
 
 ## Publishing
 
-Publish in dependency order: `x402` → `model` → `gateway` → `identity` → `soul` → `node`. App and security-audit are not published.
+Publish in dependency order: `x402` → `model` → `cartridge` → `gateway` → `identity` → `soul` → `node`. App and security-audit are not published.
 
 ```bash
 cargo publish -p tempo-x402
 cargo publish -p tempo-x402-model
+cargo publish -p tempo-x402-cartridge
 cargo publish -p tempo-x402-gateway
 cargo publish -p tempo-x402-identity
 cargo publish -p tempo-x402-soul
