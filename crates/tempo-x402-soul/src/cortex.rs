@@ -6,6 +6,33 @@
 //! The Brain (brain.rs) is a reactive classifier: "will this step succeed?"
 //! The Cortex is a **generative world model**: "what will happen if I do X?"
 //!
+//! ### Inference Loop
+//! The inference loop functions as a continuous cycle of Active Inference:
+//! 1. **Perception**: New observations are mapped to context hashes.
+//! 2. **Prediction**: The causal graph generates a distribution of expected outcomes
+//!    for a given action, conditioned on current context.
+//! 3. **Error Detection**: Discrepancies between expected and actual outcomes are
+//!    calculated as `surprise`.
+//! 4. **Update**: Surprise triggers updates to the causal weights, minimizing future
+//!    surprise through model refinement.
+//!
+//! ### State Assessment
+//! Agent state is maintained via:
+//! - **Causal Graph**: `(context, action) → (outcome, probability)`.
+//! - **Emotional Valence**: A running affective state that biases action selection,
+//!   derived from the cumulative reward history of the current goal trajectory.
+//! - **Curiosity**: A metric defined by total recent prediction error, driving the
+//!   agent to seek areas of high uncertainty.
+//!
+//! ### Free Energy Minimization
+//! The agent operates on the Principle of Free Energy Minimization:
+//! - **Surprise (Intrinsic Motivation)**: High prediction error is treated as
+//!   an information deficit (negative information gain). The agent prioritizes
+//!   actions that reduce this surprise.
+//! - **Goal Alignment (Extrinsic Motivation)**: The agent seeks to minimize the
+//!   expected divergence from successful goal states, balancing exploration
+//!   (minimizing surprise) with exploitation (maximizing reward).
+//!
 //! Three subsystems work together:
 //!
 //! 1. **Experience Graph** — A causal graph of (context, action) → outcome transitions.
