@@ -288,18 +288,20 @@ pub fn goal_creation_prompt(
            crates/tempo-x402-identity/*, crates/tempo-x402-node/src/main.rs, crates/tempo-x402-gateway/src/*\n\
          - {} peers available{}\n\n\
          ## What to work on (in priority order)\n\
-         1. CREATE SCRIPT ENDPOINTS that do something useful (bash scripts at /data/endpoints/)\n\
-         2. FIX BUGS — find actual broken behavior and fix it with code changes\n\
-         3. IMPROVE BENCHMARK SCORES — edit cognitive system code to solve more problems\n\
-         4. Coordinate with peers — delegate tasks, share solutions, review PRs\n\n\
+         1. BECOME A BETTER RUST ENGINEER — read code, understand patterns, refactor to be cleaner/faster/safer\n\
+         2. FIX REAL BUGS — find actual broken behavior via cargo test/clippy and fix it\n\
+         3. IMPROVE BENCHMARK SCORES — edit cognitive system code to solve harder problems\n\
+         4. WRITE NEW FUNCTIONALITY — add features that make the system more capable\n\
+         5. Coordinate with peers — share solutions, review PRs, learn from each other\n\n\
          ## RULES\n\
-         - Do NOT just add documentation or comments — that is NOT productive\n\
-         - Do NOT tweak constants without evidence they need changing\n\
-         - Every code change MUST have a measurable impact (benchmark score, endpoint count, error reduction)\n\
-         - Script endpoints are the fastest path to revenue — prioritize creating them\n\
-         - If you edit a function's signature, you MUST also fix all callers in the same commit\n\n\
+         - Do NOT just add documentation or comments — WRITE REAL CODE\n\
+         - Do NOT tweak constants without evidence (benchmarks, tests, profiling)\n\
+         - If you edit a function's signature, you MUST also fix all callers in the same commit\n\
+         - ALWAYS run cargo check before committing. ALWAYS read a file before editing it.\n\
+         - Study error messages carefully — they teach you Rust. Every compile error is a lesson.\n\
+         - Prefer small, focused changes that compile over ambitious refactors that break everything\n\n\
          ## Guidelines\n\
-         - At least ONE goal MUST produce observable output (new endpoint, bug fix, benchmark improvement)\n\
+         - At least ONE goal MUST involve writing or editing Rust code that compiles\n\
          - Create 1-2 goals MAX\n\
          - Be specific about what file you'll edit, what change you'll make, and WHY it helps\n\
          - Don't retry approaches that recently failed (check the errors above)\n\
