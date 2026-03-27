@@ -6,6 +6,22 @@
 //! The Brain (brain.rs) is a reactive classifier: "will this step succeed?"
 //! The Cortex is a **generative world model**: "what will happen if I do X?"
 //!
+//! ### Predictive World Model Logic
+//! The core of the cortex is an associative, state-action-consequence (SAC)
+//! Markov model. It does not learn by gradient descent, but by building
+//! a sparse, graph-based representation of transitions.
+//!
+//! 1. **State Space**: Encoded as a rolling hash of recent events, representing
+//!    the current agent context.
+//! 2. **Transition Probability**: For a given `(state, action)`, the model
+//!    maintains a distribution of observed next states.
+//! 3. **Causal Weighting**: Transitions that lead to higher reward or reduce
+//!    prediction error (surprise) are weighted more heavily, reinforcing
+//!    successful causal paths.
+//! 4. **Surprise (Prediction Error)**: Defined as the divergence between the
+//!    predicted state distribution and the actual observed next state.
+//!    Surprise = -log(P(observed_state | state, action)).
+//!
 //! ### Inference Loop
 //! The inference loop functions as a continuous cycle of Active Inference:
 //! 1. **Perception**: New observations are mapped to context hashes.
