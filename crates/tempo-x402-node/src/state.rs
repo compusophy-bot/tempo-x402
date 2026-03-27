@@ -66,4 +66,6 @@ pub struct NodeState {
     pub soul_observer: Option<Arc<dyn NodeObserver>>,
     #[cfg(not(feature = "soul"))]
     pub soul_observer: Option<()>,
+    /// WASM cartridge engine (None if not initialized)
+    pub cartridge_engine: Option<Arc<x402_cartridge::CartridgeEngine>>,
 }

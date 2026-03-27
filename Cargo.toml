@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/tempo-x402",
     "crates/tempo-x402-app",
+    "crates/tempo-x402-cartridge",
     "crates/tempo-x402-gateway",
     "crates/tempo-x402-identity",
     "crates/tempo-x402-model",
@@ -12,10 +13,12 @@ members = [
 ]
 
 [workspace.dependencies]
-x402 = { path = "crates/tempo-x402", version = "3.0.0", package = "tempo-x402" }
-x402-gateway = { path = "crates/tempo-x402-gateway", version = "3.0.0", package = "tempo-x402-gateway" }
-x402-identity = { path = "crates/tempo-x402-identity", version = "3.0.0", package = "tempo-x402-identity" }
-x402-soul = { path = "crates/tempo-x402-soul", version = "3.0.0", package = "tempo-x402-soul" }
+x402 = { path = "crates/tempo-x402", version = "4.0.0", package = "tempo-x402" }
+x402-gateway = { path = "crates/tempo-x402-gateway", version = "4.0.0", package = "tempo-x402-gateway" }
+x402-identity = { path = "crates/tempo-x402-identity", version = "4.0.0", package = "tempo-x402-identity" }
+x402-soul = { path = "crates/tempo-x402-soul", version = "4.0.0", package = "tempo-x402-soul" }
+x402-cartridge = { path = "crates/tempo-x402-cartridge", version = "4.0.0", package = "tempo-x402-cartridge" }
+wasmtime = { version = "29", features = ["cranelift"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

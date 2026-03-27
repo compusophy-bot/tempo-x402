@@ -524,3 +524,218 @@ pub fn prune_unreachable_children(db: &Database, max_age_secs: i64) -> Result<u3
 pub fn query_children_count(conn: &rusqlite::Connection) -> Result<u32, rusqlite::Error> {
     conn.query_row("SELECT COUNT(*) FROM children", params![], |row| row.get(0))
 }
+
+// ── Cartridges ──────────────────────────────────────────────────────
+
+const CARTRIDGES_SCHEMA: &str = r#"
+    CREATE TABLE IF NOT EXISTS cartridges (
+        slug TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        version TEXT NOT NULL DEFAULT '0.1.0',
+        price_usd TEXT NOT NULL DEFAULT '$0.001',
+        price_amount TEXT NOT NULL DEFAULT '1000',
+        owner_address TEXT NOT NULL DEFAULT '',
+        source_repo TEXT,
+        wasm_path TEXT NOT NULL,
+        wasm_hash TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cartridges_active ON cartridges(active);
+
+    CREATE TABLE IF NOT EXISTS cartridge_kv (
+        slug TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (slug, key)
+    );
+"#;
+
+/// Initialize the cartridges tables on an existing gateway database.
+pub fn init_cartridges_schema(db: &Database) -> Result<(), GatewayError> {
+    db.execute_schema(CARTRIDGES_SCHEMA)
+}
+
+/// A registered WASM cartridge.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CartridgeRecord {
+    pub slug: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: String,
+    pub price_usd: String,
+    pub price_amount: String,
+    pub owner_address: String,
+    pub source_repo: Option<String>,
+    pub wasm_path: String,
+    pub wasm_hash: String,
+    pub active: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Register or update a cartridge in the database.
+pub fn upsert_cartridge(db: &Database, record: &CartridgeRecord) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        conn.execute(
+            "INSERT INTO cartridges (slug, name, description, version, price_usd, price_amount, \
+             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+             ON CONFLICT(slug) DO UPDATE SET \
+             name=?2, description=?3, version=?4, price_usd=?5, price_amount=?6, \
+             wasm_path=?9, wasm_hash=?10, active=?11, updated_at=?13",
+            params![
+                record.slug,
+                record.name,
+                record.description,
+                record.version,
+                record.price_usd,
+                record.price_amount,
+                record.owner_address,
+                record.source_repo,
+                record.wasm_path,
+                record.wasm_hash,
+                record.active as i32,
+                record.created_at,
+                record.updated_at,
+            ],
+        )
+        .map_err(|e| GatewayError::Internal(format!("upsert cartridge: {e}")))?;
+        Ok(())
+    })
+}
+
+/// Get a cartridge by slug.
+pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord>, GatewayError> {
+    db.with_connection(|conn| {
+        conn.query_row(
+            "SELECT slug, name, description, version, price_usd, price_amount, \
+             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at \
+             FROM cartridges WHERE slug = ?1 AND active = 1",
+            params![slug],
+            |row| {
+                Ok(CartridgeRecord {
+                    slug: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    version: row.get(3)?,
+                    price_usd: row.get(4)?,
+                    price_amount: row.get(5)?,
+                    owner_address: row.get(6)?,
+                    source_repo: row.get(7)?,
+                    wasm_path: row.get(8)?,
+                    wasm_hash: row.get(9)?,
+                    active: row.get::<_, i32>(10)? != 0,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| GatewayError::Internal(format!("get cartridge: {e}")))
+    })
+}
+
+/// List all active cartridges.
+pub fn list_cartridges(db: &Database) -> Result<Vec<CartridgeRecord>, GatewayError> {
+    db.with_connection(|conn| {
+        let mut stmt = conn
+            .prepare(
+                "SELECT slug, name, description, version, price_usd, price_amount, \
+                 owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at \
+                 FROM cartridges WHERE active = 1 ORDER BY created_at DESC",
+            )
+            .map_err(|e| GatewayError::Internal(format!("list cartridges: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CartridgeRecord {
+                    slug: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    version: row.get(3)?,
+                    price_usd: row.get(4)?,
+                    price_amount: row.get(5)?,
+                    owner_address: row.get(6)?,
+                    source_repo: row.get(7)?,
+                    wasm_path: row.get(8)?,
+                    wasm_hash: row.get(9)?,
+                    active: row.get::<_, i32>(10)? != 0,
+                    created_at: row.get(11)?,
+                    updated_at: row.get(12)?,
+                })
+            })
+            .map_err(|e| GatewayError::Internal(format!("list cartridges query: {e}")))?;
+
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    })
+}
+
+/// Deactivate a cartridge by slug.
+pub fn delete_cartridge(db: &Database, slug: &str) -> Result<bool, GatewayError> {
+    db.with_connection(|conn| {
+        let rows = conn
+            .execute(
+                "UPDATE cartridges SET active = 0, updated_at = ?1 WHERE slug = ?2",
+                params![chrono::Utc::now().timestamp(), slug],
+            )
+            .map_err(|e| GatewayError::Internal(format!("delete cartridge: {e}")))?;
+        Ok(rows > 0)
+    })
+}
+
+/// Get a KV value for a cartridge.
+pub fn cartridge_kv_get(
+    db: &Database,
+    slug: &str,
+    key: &str,
+) -> Result<Option<String>, GatewayError> {
+    db.with_connection(|conn| {
+        conn.query_row(
+            "SELECT value FROM cartridge_kv WHERE slug = ?1 AND key = ?2",
+            params![slug, key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| GatewayError::Internal(format!("kv get: {e}")))
+    })
+}
+
+/// Set a KV value for a cartridge.
+pub fn cartridge_kv_set(
+    db: &Database,
+    slug: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        conn.execute(
+            "INSERT INTO cartridge_kv (slug, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT(slug, key) DO UPDATE SET value = ?3, updated_at = ?4",
+            params![slug, key, value, chrono::Utc::now().timestamp()],
+        )
+        .map_err(|e| GatewayError::Internal(format!("kv set: {e}")))?;
+        Ok(())
+    })
+}
+
+/// Load all KV pairs for a cartridge (for pre-loading into WASM state).
+pub fn cartridge_kv_load(
+    db: &Database,
+    slug: &str,
+) -> Result<std::collections::HashMap<String, String>, GatewayError> {
+    db.with_connection(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM cartridge_kv WHERE slug = ?1")
+            .map_err(|e| GatewayError::Internal(format!("kv load: {e}")))?;
+        let rows = stmt
+            .query_map(params![slug], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| GatewayError::Internal(format!("kv load query: {e}")))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    })
+}

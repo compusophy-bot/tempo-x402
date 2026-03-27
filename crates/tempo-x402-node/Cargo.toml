@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402-node"
-version = "3.5.0"
+version = "4.0.0"
 edition = "2021"
 description = "Self-deploying x402 node: gateway + identity bootstrap + clone orchestration"
 license = "MIT"
@@ -24,6 +24,7 @@ x402 = { workspace = true }
 x402-gateway = { workspace = true }
 x402-identity = { workspace = true }
 x402-soul = { workspace = true, optional = true }
+x402-cartridge = { workspace = true }
 actix-web = { workspace = true }
 actix-files = { workspace = true }
 actix-governor = { workspace = true }

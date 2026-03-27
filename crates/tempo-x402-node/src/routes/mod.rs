@@ -1,3 +1,4 @@
+pub mod cartridges;
 #[cfg(feature = "agent")]
 pub mod clone;
 pub mod health;

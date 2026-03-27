@@ -419,7 +419,7 @@ impl Cortex {
         error_tag: Option<String>,
     ) {
         let exp = self.log_experience(action, context_tags, succeeded, reward, error_tag);
-        
+
         self.next_id += 1;
         self.total_experiences_processed += 1;
 

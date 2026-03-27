@@ -528,6 +528,89 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
             }),
         });
 
+        // WASM Cartridge tools — write Rust programs, compile to WASM, test instantly
+        tools.push(FunctionDeclaration {
+            name: "create_cartridge".to_string(),
+            description: "Create a new WASM cartridge — a Rust program that compiles to WASM and runs instantly without redeploying. \
+                         Write the Rust source code and it gets scaffolded into a compilable project. \
+                         The cartridge handles HTTP requests via the x402 ABI. \
+                         This is the fastest way to practice Rust: write → compile → test in seconds.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "URL slug for the cartridge (alphanumeric + hyphens, e.g. 'calculator', 'todo-api')"
+                    },
+                    "source_code": {
+                        "type": "string",
+                        "description": "Rust source code for src/lib.rs. Must export x402_handle(request_ptr, request_len). Use x402_response() to send replies. Leave empty for default template."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short description of what the cartridge does"
+                    }
+                },
+                "required": ["slug"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "compile_cartridge".to_string(),
+            description: "Compile a cartridge from Rust source to WASM binary. \
+                         Runs cargo build --target wasm32-wasip1. \
+                         Study compile errors carefully — they teach Rust patterns."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "The cartridge slug to compile"
+                    }
+                },
+                "required": ["slug"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "test_cartridge".to_string(),
+            description: "Test a compiled WASM cartridge by executing it with sample HTTP input. \
+                         Returns the cartridge's response (status, body, content-type)."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "The cartridge slug to test"
+                    },
+                    "method": {
+                        "type": "string",
+                        "description": "HTTP method (GET, POST, etc.)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Request path"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Request body (for POST)"
+                    }
+                },
+                "required": ["slug"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
+            name: "list_cartridges".to_string(),
+            description: "List all WASM cartridges (source and compiled status).".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {}
+            }),
+        });
+
         // GitHub tools — create repos, fork repos, expand into external projects
         tools.push(FunctionDeclaration {
             name: "create_github_repo".to_string(),

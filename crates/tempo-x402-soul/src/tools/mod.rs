@@ -13,6 +13,7 @@ use crate::persistent_memory;
 use crate::tool_registry::ToolRegistry;
 
 mod beliefs;
+mod cartridges;
 mod deployment;
 mod endpoints;
 mod file_ops;
@@ -473,6 +474,34 @@ impl ToolExecutor {
                 let input = args.get("input").and_then(|v| v.as_str()).unwrap_or("");
                 self.test_script_endpoint(slug, input).await
             }
+            // ── WASM Cartridge tools ──
+            "create_cartridge" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                let source_code = args.get("source_code").and_then(|v| v.as_str());
+                let description = args.get("description").and_then(|v| v.as_str());
+                self.create_cartridge(slug, source_code, description).await
+            }
+            "compile_cartridge" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                self.compile_cartridge(slug).await
+            }
+            "test_cartridge" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                let method = args.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
+                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+                let body = args.get("body").and_then(|v| v.as_str()).unwrap_or("");
+                self.test_cartridge(slug, method, path, body).await
+            }
+            "list_cartridges" => self.list_cartridges().await,
             "screenshot" => {
                 let executor = crate::computer_use::ComputerExecutor::new(
                     std::path::PathBuf::from("/tmp/screenshots"),

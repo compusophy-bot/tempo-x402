@@ -302,6 +302,8 @@ async fn main() -> std::io::Result<()> {
     // Initialize children table (node extension on top of gateway DB)
     db::init_children_schema(&gateway_db).expect("Failed to initialize children schema");
     tracing::info!("Children schema initialized");
+    db::init_cartridges_schema(&gateway_db).expect("Failed to initialize cartridges schema");
+    tracing::info!("Cartridges schema initialized");
 
     // Register Prometheus metrics
     register_metrics();
@@ -770,6 +772,46 @@ async fn main() -> std::io::Result<()> {
             Some(soul_alive.clone())
         } else {
             None
+        },
+        cartridge_engine: {
+            let cartridge_dir = "/data/cartridges";
+            match x402_cartridge::CartridgeEngine::new(cartridge_dir) {
+                Ok(engine) => {
+                    // Auto-load any existing compiled cartridges
+                    if let Ok(entries) = std::fs::read_dir(cartridge_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_dir() {
+                                let slug = path.file_name().unwrap().to_string_lossy().to_string();
+                                let wasm_dir = path.join("bin");
+                                if let Ok(mut wasm_entries) = std::fs::read_dir(&wasm_dir) {
+                                    if let Some(Ok(wasm_entry)) = wasm_entries.next() {
+                                        let wasm_path = wasm_entry.path();
+                                        if wasm_path
+                                            .extension()
+                                            .map(|e| e == "wasm")
+                                            .unwrap_or(false)
+                                        {
+                                            if let Err(e) = engine.load_module(&slug, &wasm_path) {
+                                                tracing::warn!(slug = %slug, error = %e, "Failed to load cartridge");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let loaded = engine.loaded_slugs();
+                    if !loaded.is_empty() {
+                        tracing::info!(count = loaded.len(), slugs = ?loaded, "Cartridge engine initialized");
+                    }
+                    Some(std::sync::Arc::new(engine))
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Cartridge engine init failed");
+                    None
+                }
+            }
         },
     };
 
@@ -1477,6 +1519,8 @@ async fn main() -> std::io::Result<()> {
             .configure(crate::routes::wallet::configure)
             // Script endpoints — soul-created dynamic handlers (no compilation needed)
             .configure(crate::routes::scripts::configure)
+            // WASM cartridge endpoints — sandboxed app execution
+            .configure(crate::routes::cartridges::configure)
             // Admin endpoint — local-only endpoint management (no payment required)
             .route("/admin/endpoints", web::post().to(admin_register_endpoint))
             .route(
