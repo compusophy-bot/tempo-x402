@@ -74,6 +74,7 @@ pub mod git;
 pub mod guard;
 pub mod hivemind;
 pub mod housekeeping;
+pub mod interaction;
 pub mod lifecycle;
 pub mod llm;
 pub mod memory;
