@@ -41,9 +41,14 @@ pub fn validate_imports(file_path: &str) -> Result<(), String> {
     if content.contains("std::mem::transmute") {
         return Err(format!("forbidden import detected: 'std::mem::transmute' in {}", file_path));
     }
-    
-    // Check for suspicious external crates if necessary
-    // Example: if content.contains("use rand::rngs::StdRng") { ... }
+
+    if content.contains("std::process::Command") {
+        return Err(format!("forbidden import detected: 'std::process::Command' in {}. Use tokio::process::Command instead.", file_path));
+    }
+
+    if content.contains("unsafe {") {
+        return Err(format!("forbidden pattern detected: 'unsafe {{' in {}. Use of unsafe is discouraged.", file_path));
+    }
 
     Ok(())
 }
