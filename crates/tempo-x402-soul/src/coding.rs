@@ -19,6 +19,28 @@ pub struct CommitResult {
     pub error_output: Option<String>,
 }
 
+#[cfg(test)]
+mod coding_tests {
+    use super::*;
+
+    #[test]
+    fn test_commit_result_serialization() {
+        let result = CommitResult {
+            success: true,
+            commit_sha: Some("abc12345".to_string()),
+            message: "Success".to_string(),
+            cargo_check_passed: true,
+            cargo_test_passed: true,
+            error_output: None,
+        };
+
+        let serialized = serde_json::to_string(&result).expect("Failed to serialize");
+        let deserialized: CommitResult = serde_json::from_str(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(result, deserialized);
+    }
+}
+
 /// Orchestrate a validated commit: stage → cargo check → cargo test → commit → push.
 ///
 /// If validation fails at any step, reverts changes and returns the error.
