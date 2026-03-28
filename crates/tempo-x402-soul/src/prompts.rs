@@ -7,7 +7,8 @@ use crate::config::SoulConfig;
 use crate::db::Nudge;
 use crate::mode::AgentMode;
 use crate::observer::NodeSnapshot;
-use crate::world_model::{Belief, Goal};
+use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, ModelUpdate};
+
 
 // Used for peer endpoint catalog deserialization in planning_prompt
 use serde_json;
