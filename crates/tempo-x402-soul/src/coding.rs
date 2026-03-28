@@ -6,6 +6,18 @@
 use crate::git::GitContext;
 use serde::{Deserialize, Serialize};
 use crate::guard;
+use std::path::Path;
+
+/// Validates that a file path exists and is a file.
+pub fn validate_path_exists(path: &str) -> Result<(), String> {
+    if !Path::new(path).exists() {
+        return Err(format!("path does not exist: {}", path));
+    }
+    if !Path::new(path).is_file() {
+        return Err(format!("path is not a file: {}", path));
+    }
+    Ok(())
+}
 
 /// Result of a coding commit attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
