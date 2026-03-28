@@ -147,7 +147,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_commit_result_creation() {
+    fn test_commit_result_traits() {
         let result = CommitResult {
             success: true,
             commit_sha: Some("abc123".to_string()),
@@ -156,7 +156,18 @@ mod tests {
             cargo_test_passed: true,
             error_output: None,
         };
-        assert!(result.success);
-        assert_eq!(result.commit_sha.unwrap(), "abc123");
+
+        // Test Clone
+        let cloned = result.clone();
+        assert_eq!(result, cloned);
+
+        // Test Debug
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("success: true"));
+
+        // Test Serialize/Deserialize
+        let serialized = serde_json::to_string(&result).unwrap();
+        let deserialized: CommitResult = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(result, deserialized);
     }
 }
