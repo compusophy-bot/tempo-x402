@@ -36,6 +36,12 @@ mod coding_tests {
     use super::*;
 
     #[test]
+    fn test_validate_path_exists_nonexistent() {
+        let path = "non_existent_file_xyz_123.txt";
+        assert!(validate_path_exists(path).is_err());
+    }
+
+    #[test]
     fn test_commit_result_serialization() {
         let result = CommitResult {
             success: true,
