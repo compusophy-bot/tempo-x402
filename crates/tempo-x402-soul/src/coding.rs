@@ -31,6 +31,21 @@ pub struct CommitResult {
     pub error_output: Option<String>,
 }
 
+/// Request for peer review of a code change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeReviewRequest {
+    pub diff: String,
+    pub reason: String,
+}
+
+/// Response from peer review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeReviewResponse {
+    pub approved: bool,
+    pub reason: String,
+    pub reviewer: String,
+}
+
 #[cfg(test)]
 mod coding_tests {
     use super::*;

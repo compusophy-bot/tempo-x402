@@ -11,6 +11,7 @@ pub struct InteractionRequest {
     pub target: String,
     pub endpoint: String,
     pub payload: serde_json::Value,
+    pub signature: Option<String>,
 }
 
 /// Represents the response from an interaction.
@@ -19,6 +20,8 @@ pub struct InteractionResponse {
     pub success: bool,
     pub data: Option<serde_json::Value>,
     pub error: Option<String>,
+    pub payment_required: Option<bool>,
+    pub payment_url: Option<String>,
 }
 
 /// Core function to initiate an interaction with another peer.
@@ -46,6 +49,8 @@ pub async fn send_interaction(
             success: false,
             data: None,
             error: Some(format!("Request failed with status: {}", response.status())),
+            payment_required: None,
+            payment_url: None,
         });
     }
 

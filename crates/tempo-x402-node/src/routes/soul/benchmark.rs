@@ -161,9 +161,8 @@ pub(super) async fn review_code_change(
 
     let prompt =
         format!(
-        "Review this code change from agent '{}'.\n\nCommit message: {}\n\n{}Diff:\n```\n{}\n```",
-        body.requester,
-        body.message,
+        "Review this code change.\n\nCommit message: {}\n\n{}Diff:\n```\n{}\n```",
+        body.reason,
         if modifies_critical { "⚠️ WARNING: This modifies CRITICAL files.\n\n" } else { "" },
         // Truncate diff for LLM context
         body.diff.chars().take(8000).collect::<String>()
