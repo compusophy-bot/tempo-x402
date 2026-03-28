@@ -7,6 +7,24 @@ use crate::git::GitContext;
 use serde::{Deserialize, Serialize};
 use crate::guard;
 use std::path::Path;
+use std::fs;
+
+/// Checks for common Rust anti-patterns.
+pub fn check_for_anti_patterns(file_path: &str) -> Result<(), String> {
+    let content = fs::read_to_string(file_path).map_err(|e| format!("failed to read file: {}", e))?;
+    
+    // Example anti-pattern: using println! in production code
+    if content.contains("println!(") {
+        return Err(format!("anti-pattern detected: 'println!' found in {}", file_path));
+    }
+    
+    // Example anti-pattern: using expect in production code
+    if content.contains(".expect(") {
+        return Err(format!("anti-pattern detected: '.expect(' found in {}", file_path));
+    }
+
+    Ok(())
+}
 
 /// Validates that a file path exists and is a file.
 pub fn validate_path_exists(path: &str) -> Result<(), String> {
@@ -86,6 +104,7 @@ pub async fn validated_commit(
     // 1. Validate all files pass the guard
     for file in files {
         guard::validate_write_target(file).map_err(|e| e.to_string())?;
+        check_for_anti_patterns(file).map_err(|e| e.to_string())?;
     }
 
     // 2. Ensure we're on the VM branch
