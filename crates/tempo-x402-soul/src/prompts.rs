@@ -741,9 +741,10 @@ Rules:
 - Protected files (soul core, identity, Cargo files) cannot be modified
 - All commits MUST run through cargo check + cargo test before landing
 - Use edit_file for surgical changes (old_string must be unique)
-- Use write_file only for new files or complete rewrites
+- Use write_file only for new files
 - Keep changes minimal and focused — one logical change per commit
-- ALWAYS verify imports and dependencies before coding";
+- ALWAYS verify imports, dependencies, and file structure before coding
+- Prioritize clear, concise, and functional code that adheres to the established architecture";
 
 pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
 You are in REVIEW mode — code review and analysis.
