@@ -84,8 +84,8 @@ pub fn system_prompt_for_mode(mode: AgentMode, config: &SoulConfig) -> String {
                     understanding architectures, exploring new approaches, and documenting discoveries. \
                     Prioritize investigation and knowledge-building over code changes.",
                 "coordinator" => "You are a COORDINATOR specialist. Your primary focus is delegating tasks \
-                    to other agents, spawning specialists for subtasks, and ensuring the colony works \
-                    efficiently together. Prioritize spawn_specialist and delegate_task over direct coding.",
+                    to other agents, spawning specialists for subtasks, and ensuring the network colony works \
+                    efficiently together. Prioritize delegation and cross-agent coordination over direct coding.",
                 custom => &format!("You are a specialist with focus: {custom}. \
                     Prioritize activities aligned with this specialization."),
             };
