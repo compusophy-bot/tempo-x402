@@ -23,8 +23,18 @@ impl ToolExecutor {
             .as_ref()
             .ok_or_else(|| "database not available".to_string())?;
 
+        // Check commit cooldown — prevent rapid-fire commits
+        coding::check_commit_cooldown(db)?;
+
         let workspace = self.workspace_root.to_string_lossy().to_string();
         let result = coding::validated_commit(git, &workspace, files, message).await?;
+
+        // Record commit timestamp for cooldown tracking
+        if result.success {
+            coding::record_commit(db);
+            // Request benchmark to run after this commit — measures impact
+            coding::request_post_commit_benchmark(db);
+        }
 
         // Link mutation to highest-priority active goal (if any)
         let active_goal_id = db
