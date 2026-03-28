@@ -1105,12 +1105,12 @@ mod tests {
         let db = make_db();
         let steps = vec![
             PlanStep::ReadFile {
-                path: "crates/tempo-x402-soul/src/tools.rs".to_string(),
+                path: "crates/tempo-x402-soul/src/guard.rs".to_string(),
                 store_as: Some("src".to_string()),
             },
             PlanStep::EditCode {
-                file_path: "crates/tempo-x402-soul/src/tools.rs".to_string(),
-                description: "modify tools".to_string(),
+                file_path: "crates/tempo-x402-soul/src/guard.rs".to_string(),
+                description: "modify guard".to_string(),
                 context_keys: vec![],
             },
         ];

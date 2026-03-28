@@ -4,10 +4,11 @@
 //! to ensure commits don't break the build AND aren't destructive.
 
 use crate::git::GitContext;
+use serde::{Deserialize, Serialize};
 use crate::guard;
 
 /// Result of a coding commit attempt.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommitResult {
     pub success: bool,
     pub commit_sha: Option<String>,
