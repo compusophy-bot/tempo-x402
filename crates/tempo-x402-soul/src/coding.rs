@@ -22,6 +22,11 @@ pub fn check_for_anti_patterns(file_path: &str) -> Result<(), String> {
     if content.contains(".expect(") {
         return Err(format!("anti-pattern detected: '.expect(' found in {}", file_path));
     }
+    
+    // Example anti-pattern: using unwrap() in production code
+    if content.contains(".unwrap()") {
+        return Err(format!("anti-pattern detected: '.unwrap()' found in {}", file_path));
+    }
 
     Ok(())
 }
