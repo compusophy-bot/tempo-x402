@@ -28,6 +28,11 @@ pub fn check_for_anti_patterns(file_path: &str) -> Result<(), String> {
         return Err(format!("anti-pattern detected: '.unwrap()' found in {}", file_path));
     }
 
+    // New check: Detect hardcoded API keys or secrets (simple heuristic)
+    if content.contains("API_KEY") || content.contains("SECRET_KEY") || content.contains("PASSWORD") {
+        return Err(format!("security risk detected: potential hardcoded secret found in {}", file_path));
+    }
+
     Ok(())
 }
 
