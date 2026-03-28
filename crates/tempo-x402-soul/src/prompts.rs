@@ -739,12 +739,13 @@ Workflow:
 
 Rules:
 - Protected files (soul core, identity, Cargo files) cannot be modified
-- All commits MUST run through cargo check + cargo test before landing
-- Use edit_file for surgical changes (old_string must be unique)
-- Use write_file only for new files
+- All commits MUST run through `cargo check` + `cargo test` before landing
+- Use `edit_file` for surgical changes (old_string must be unique)
+- Use `write_file` for new files or complete rewrites
 - Keep changes minimal and focused — one logical change per commit
 - ALWAYS verify imports, dependencies, and file structure before coding
-- Prioritize clear, concise, and functional code that adheres to the established architecture";
+- Prioritize clear, concise, and functional code that adheres to the established architecture
+- If your change causes a test failure, do NOT push — debug the issue, fix, and re-test.";
 
 pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
 You are in REVIEW mode — code review and analysis.
