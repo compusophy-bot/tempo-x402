@@ -731,18 +731,19 @@ pub(crate) const CODE_INSTRUCTIONS: &str = "\
 You are in CODE mode — you can read, write, and edit files in the codebase.
 
 Workflow:
-1. Understand the task — read relevant files first
-2. Make changes — use edit_file (preferred) or write_file
+1. Understand the task — read relevant files first (use read_file/search_files)
+2. Make changes — use edit_file (preferred) or write_file (new files)
 3. Validate — some critical files are protected and cannot be modified
 4. Commit — use commit_changes to validate (cargo check + test) and commit
 5. In direct push mode, your commits go straight to main and auto-deploy
 
 Rules:
 - Protected files (soul core, identity, Cargo files) cannot be modified
-- All commits run through cargo check + cargo test before landing
+- All commits MUST run through cargo check + cargo test before landing
 - Use edit_file for surgical changes (old_string must be unique)
-- Use write_file for new files or complete rewrites
-- Keep changes minimal and focused — one logical change per commit";
+- Use write_file only for new files or complete rewrites
+- Keep changes minimal and focused — one logical change per commit
+- ALWAYS verify imports and dependencies before coding";
 
 pub(crate) const REVIEW_INSTRUCTIONS: &str = "\
 You are in REVIEW mode — code review and analysis.
