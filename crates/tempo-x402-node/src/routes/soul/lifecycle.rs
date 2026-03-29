@@ -292,3 +292,57 @@ pub(super) async fn disk_cleanup(_state: web::Data<NodeState>) -> HttpResponse {
         }
     }
 }
+
+/// POST /soul/cognitive-reset — full nuclear reset of all learned state.
+///
+/// Wipes: brain weights, cortex, genesis, hivemind, synthesis, plans, goals,
+/// thoughts, nudges, plan outcomes, capability events, durable rules, failure chains.
+/// Preserves: benchmark history, ELO score, persistent memory (soul_memory.md).
+///
+/// This is the Rust-native replacement for shelling out to Python+sqlite3.
+/// Call this instead of the hacky admin/exec Python scripts.
+pub(super) async fn cognitive_reset(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    // Force a cognitive architecture reset by clearing the version marker.
+    // On next thinking cycle, the version check will see a mismatch and
+    // trigger reset_cognitive_architecture() which wipes everything properly.
+    let version_tag = format!("manual-reset-{}", chrono::Utc::now().timestamp());
+    let reset = soul_db.reset_cognitive_architecture(&version_tag);
+
+    // Also clear plans, goals, thoughts (reset_cognitive_architecture does this,
+    // but be thorough in case the version check doesn't fire immediately)
+    let history = soul_db.reset_history();
+
+    // Clear the commit gate state
+    let _ = soul_db.set_state("commit_awaiting_benchmark", "0");
+    let _ = soul_db.set_state("last_commit_at", "0");
+    let _ = soul_db.set_state("total_think_cycles", "0");
+    let _ = soul_db.set_state("cycles_since_last_commit", "0");
+    let _ = soul_db.set_state("recent_errors", "[]");
+
+    let (thoughts, plans, nudges) = history.unwrap_or((0, 0, 0));
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "cognitive_reset_complete",
+        "version_tag": version_tag,
+        "architecture_reset": reset,
+        "cleared": {
+            "thoughts": thoughts,
+            "plans": plans,
+            "nudges": nudges,
+            "brain_weights": true,
+            "cortex": true,
+            "genesis": true,
+            "hivemind": true,
+            "synthesis": true,
+        },
+        "preserved": ["benchmark_history", "elo_score", "persistent_memory"],
+    }))
+}

@@ -172,6 +172,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/soul/goals/abandon", web::post().to(nudges::abandon_goal))
         .route("/soul/reset", web::post().to(lifecycle::soul_reset))
         .route(
+            "/soul/cognitive-reset",
+            web::post().to(lifecycle::cognitive_reset),
+        )
+        .route(
             "/soul/brain/weights",
             web::get().to(brain::get_brain_weights),
         )
