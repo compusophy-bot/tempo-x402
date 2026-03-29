@@ -128,7 +128,8 @@ pub fn validate_plan_with_coding(
                     violations.push(PlanViolation {
                         rule: "commit-gate",
                         step_index: Some(i),
-                        detail: "Commit gated: awaiting benchmark results from previous commit.".to_string(),
+                        detail: "Commit gated: awaiting benchmark results from previous commit."
+                            .to_string(),
                         severity: Severity::Hard,
                     });
                 }

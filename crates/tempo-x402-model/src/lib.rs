@@ -26,12 +26,16 @@
 //! Training: online SGD on successful plan sequences from the colony.
 //! Inference: autoregressive generation — predict one step at a time.
 
+pub mod diff_features;
 pub mod inference;
+pub mod quality;
 pub mod trainer;
 pub mod transformer;
 pub mod vocab;
 
+pub use diff_features::DiffFeatures;
 pub use inference::generate_plan;
+pub use quality::{CodeQualityModel, QualityExample, QualityPrediction};
 pub use trainer::{train_batch, TrainingExample};
 pub use transformer::{PlanTransformer, TransformerDelta};
 pub use vocab::Vocab;
