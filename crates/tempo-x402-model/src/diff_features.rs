@@ -137,7 +137,16 @@ impl DiffFeatures {
         f[21] = current_iq / 150.0; // Agent's IQ (normalized to max 150)
         f[22] = current_fitness; // Agent's fitness (already 0-1)
 
-        // f[23..31] reserved for future features
+        // Rust construct detection in added lines — the "Rust alphabet"
+        f[23] = norm(count_additions(&diff_lower, "fn "), 10.0);
+        f[24] = norm(count_additions(&diff_lower, "struct "), 5.0);
+        f[25] = norm(count_additions(&diff_lower, "impl "), 5.0);
+        f[26] = norm(count_additions(&diff_lower, "match "), 5.0);
+        f[27] = norm(count_additions(&diff_lower, "result<"), 5.0);
+        f[28] = norm(count_additions(&diff_lower, "option<"), 5.0);
+        f[29] = norm(count_additions(&diff_lower, "async fn"), 5.0);
+        f[30] = norm(count_additions(&diff_lower, ".iter()"), 10.0);
+        f[31] = norm(count_additions(&diff_lower, ".map("), 10.0);
 
         DiffFeatures { features: f }
     }

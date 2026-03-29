@@ -241,6 +241,51 @@ impl ThinkingLoop {
             plan.replan_count = 3; // force max so the block below handles it
         }
 
+        // ── Sub-goal investigation: before replanning, try to understand WHY it failed ──
+        // Read the file involved, search for the error pattern. This gives the replan
+        // LLM actual evidence instead of blind guessing.
+        let investigation_context = if !unsolvable && plan.replan_count < 2 {
+            let mut context = String::new();
+
+            // Extract file path from step description if available
+            let file_hint: Option<String> = {
+                let sd = step_desc.to_lowercase();
+                if sd.contains("crates/") {
+                    sd.split_whitespace()
+                        .find(|w| w.contains("crates/"))
+                        .map(|w| {
+                            w.trim_matches(|c: char| {
+                                !c.is_alphanumeric() && c != '/' && c != '.' && c != '-' && c != '_'
+                            })
+                            .to_string()
+                        })
+                } else {
+                    None
+                }
+            };
+
+            if let Some(ref path) = file_hint {
+                // Try to read the file to give the replan LLM actual content
+                if let Ok(result) = self
+                    .tool_executor
+                    .execute("read_file", &serde_json::json!({"path": path, "limit": 50}))
+                    .await
+                {
+                    if result.exit_code == 0 && !result.stdout.is_empty() {
+                        context = format!(
+                            "\n\nInvestigation — I read the file involved:\n```\n{}\n```\n",
+                            result.stdout.chars().take(2000).collect::<String>()
+                        );
+                        tracing::info!(path = %path, "Sub-goal: read file for replan context");
+                    }
+                }
+            }
+
+            context
+        } else {
+            String::new()
+        };
+
         if plan.replan_count >= 3 {
             tracing::warn!(plan_id = %plan.id, "Max replans reached — failing plan");
             plan.status = PlanStatus::Failed;
@@ -353,7 +398,12 @@ impl ThinkingLoop {
             completed_at: None,
         });
 
-        let prompt = prompts::replan_prompt(&goal, step_desc, error);
+        let base_prompt = prompts::replan_prompt(&goal, step_desc, error);
+        let prompt = if investigation_context.is_empty() {
+            base_prompt
+        } else {
+            format!("{base_prompt}{investigation_context}")
+        };
         let system =
             "You are a software engineering planner. Output ONLY a JSON array of plan steps.";
 

@@ -55,7 +55,22 @@ pub const TOK_REFACTOR: u32 = 35;
 
 // ── Reserved for future step types ──────────────────────────────────
 
-// 36-49 reserved
+// ── Rust Construct Tokens ──
+// The "alphabet" of valid Rust patterns.
+pub const TOK_RUST_FN: u32 = 36;
+pub const TOK_RUST_STRUCT: u32 = 37;
+pub const TOK_RUST_IMPL: u32 = 38;
+pub const TOK_RUST_MATCH: u32 = 39;
+pub const TOK_RUST_RESULT: u32 = 40;
+pub const TOK_RUST_OPTION: u32 = 41;
+pub const TOK_RUST_ASYNC: u32 = 42;
+pub const TOK_RUST_TRAIT: u32 = 43;
+pub const TOK_RUST_ENUM: u32 = 44;
+pub const TOK_RUST_TEST: u32 = 45;
+pub const TOK_RUST_DERIVE: u32 = 46;
+pub const TOK_RUST_CLOSURE: u32 = 47;
+pub const TOK_RUST_ITERATOR: u32 = 48;
+pub const TOK_RUST_LIFETIME: u32 = 49;
 
 // ── Context Tokens (goal keywords mapped to IDs) ─────────────────────
 
@@ -128,6 +143,20 @@ impl Vocab {
             "remove_dead_code" => TOK_REMOVE_DEAD_CODE,
             "simplify" => TOK_SIMPLIFY,
             "refactor" => TOK_REFACTOR,
+            "rust_fn" => TOK_RUST_FN,
+            "rust_struct" => TOK_RUST_STRUCT,
+            "rust_impl" => TOK_RUST_IMPL,
+            "rust_match" => TOK_RUST_MATCH,
+            "rust_result" => TOK_RUST_RESULT,
+            "rust_option" => TOK_RUST_OPTION,
+            "rust_async" => TOK_RUST_ASYNC,
+            "rust_trait" => TOK_RUST_TRAIT,
+            "rust_enum" => TOK_RUST_ENUM,
+            "rust_test" => TOK_RUST_TEST,
+            "rust_derive" => TOK_RUST_DERIVE,
+            "rust_closure" => TOK_RUST_CLOSURE,
+            "rust_iterator" => TOK_RUST_ITERATOR,
+            "rust_lifetime" => TOK_RUST_LIFETIME,
             _ => UNK,
         }
     }
@@ -167,6 +196,20 @@ impl Vocab {
             TOK_REMOVE_DEAD_CODE => "remove_dead_code",
             TOK_SIMPLIFY => "simplify",
             TOK_REFACTOR => "refactor",
+            TOK_RUST_FN => "rust_fn",
+            TOK_RUST_STRUCT => "rust_struct",
+            TOK_RUST_IMPL => "rust_impl",
+            TOK_RUST_MATCH => "rust_match",
+            TOK_RUST_RESULT => "rust_result",
+            TOK_RUST_OPTION => "rust_option",
+            TOK_RUST_ASYNC => "rust_async",
+            TOK_RUST_TRAIT => "rust_trait",
+            TOK_RUST_ENUM => "rust_enum",
+            TOK_RUST_TEST => "rust_test",
+            TOK_RUST_DERIVE => "rust_derive",
+            TOK_RUST_CLOSURE => "rust_closure",
+            TOK_RUST_ITERATOR => "rust_iterator",
+            TOK_RUST_LIFETIME => "rust_lifetime",
             _ => "unknown",
         }
     }

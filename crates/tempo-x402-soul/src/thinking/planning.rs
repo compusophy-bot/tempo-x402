@@ -211,6 +211,22 @@ impl ThinkingLoop {
             None => String::new(),
         };
 
+        // Code quality model: tell the agent what its quality model predicts
+        let quality_section = {
+            let qm = crate::code_quality::load_model(&self.db);
+            if qm.train_steps > 5 {
+                format!(
+                    "# Code Quality Model (trained on {} examples)\n\
+                     Your quality model has learned from past commits. It will evaluate your diff \
+                     before committing. Focus on changes that add test coverage, use Result/Option \
+                     types, and avoid .unwrap()/.expect(). The model blocks commits predicted to regress.",
+                    qm.train_steps
+                )
+            } else {
+                String::new()
+            }
+        };
+
         // Lifecycle: tell the agent what phase it's in and encourage differentiation
         let lifecycle_section = crate::lifecycle::prompt_section(&self.db);
 
@@ -223,6 +239,7 @@ impl ThinkingLoop {
             colony_section,
             imagine_section,
             transformer_section,
+            quality_section,
             lifecycle_section,
         ]
         .into_iter()
