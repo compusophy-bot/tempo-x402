@@ -19,15 +19,19 @@ use crate::vocab::{MAX_SEQ_LEN, VOCAB_SIZE};
 // ── Architecture Constants ───────────────────────────────────────────
 
 /// Embedding dimension.
-pub const D_MODEL: usize = 128;
+/// Scaled from 128→256 to capture richer plan representations.
+/// At 256d with vocab 128 and 4 layers, the model is ~4.5M params (18 MB).
+/// This is still trivial for our 371 GB Railway instances.
+pub const D_MODEL: usize = 256;
 /// Number of attention heads.
-pub const N_HEADS: usize = 4;
+pub const N_HEADS: usize = 8;
 /// Head dimension (D_MODEL / N_HEADS).
 pub const D_HEAD: usize = D_MODEL / N_HEADS;
 /// Feed-forward hidden dimension.
-pub const D_FF: usize = 256;
+pub const D_FF: usize = 512;
 /// Number of transformer layers.
-pub const N_LAYERS: usize = 2;
+/// Scaled from 2→4 for deeper plan reasoning.
+pub const N_LAYERS: usize = 4;
 
 // ── Core Model ───────────────────────────────────────────────────────
 

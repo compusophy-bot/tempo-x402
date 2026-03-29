@@ -405,31 +405,67 @@ pub fn sample_problems_smart(
         .filter(|p| solved_slugs.contains(&p.slug))
         .collect();
 
-    // 80% unsolved (push the frontier), 20% solved (regression testing)
-    let unsolved_target = (n * 4 / 5).min(unsolved.len());
+    // Tier-weighted sampling: harder problems sampled more often.
+    // This pushes agents toward tier 3+ (induction, reasoning, adversarial)
+    // instead of grinding easy tier 1-2 problems.
+    //
+    // Weight by difficulty: tier1=1, tier2=2, tier3=4, tier4=6, tier5=8, tier6=10
+    // Higher tiers get sampled proportionally more, accelerating learning on hard problems.
+    let tier_weight = |difficulty: &str| -> usize {
+        match difficulty {
+            "tier1" => 1,
+            "tier2" => 2,
+            "tier3" => 4,
+            "tier4" => 6,
+            "tier5" => 8,
+            "tier6" => 10,
+            _ => 1,
+        }
+    };
+
+    // 70% unsolved (push the frontier), 30% solved (regression testing)
+    let unsolved_target = (n * 7 / 10).min(unsolved.len()).max(1);
     let solved_target = n.saturating_sub(unsolved_target).min(solved.len());
     let remaining = n.saturating_sub(unsolved_target + solved_target);
 
     let seed = chrono::Utc::now().timestamp() as usize;
     let mut selected = Vec::new();
 
-    // Sample from unsolved
-    let mut indices: HashSet<usize> = HashSet::new();
-    let mut i = seed;
-    while indices.len() < unsolved_target && !unsolved.is_empty() {
-        i = (i.wrapping_mul(6364136223846793005).wrapping_add(1)) % unsolved.len();
-        indices.insert(i);
-    }
-    for idx in &indices {
-        selected.push(unsolved[*idx].clone());
+    // Build weighted index for unsolved problems
+    let mut weighted_unsolved: Vec<(usize, usize)> = Vec::new(); // (original_idx, cumulative_weight)
+    let mut cum_weight = 0usize;
+    for (idx, p) in unsolved.iter().enumerate() {
+        cum_weight += tier_weight(&p.difficulty);
+        weighted_unsolved.push((idx, cum_weight));
     }
 
-    // Sample from solved (regression)
-    indices.clear();
-    i = seed.wrapping_add(12345);
+    // Weighted random sampling from unsolved
+    let mut picked: HashSet<usize> = HashSet::new();
+    let mut rng = seed;
+    let max_attempts = unsolved_target * 10;
+    let mut attempts = 0;
+    while picked.len() < unsolved_target && !weighted_unsolved.is_empty() && attempts < max_attempts
+    {
+        rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
+        let target = rng % cum_weight.max(1);
+        // Binary search for the weighted index
+        let idx = weighted_unsolved
+            .iter()
+            .position(|(_, w)| *w > target)
+            .unwrap_or(0);
+        let orig_idx = weighted_unsolved[idx].0;
+        if picked.insert(orig_idx) {
+            selected.push(unsolved[orig_idx].clone());
+        }
+        attempts += 1;
+    }
+
+    // Sample from solved (regression — uniform, no tier weighting)
+    let mut indices: HashSet<usize> = HashSet::new();
+    rng = seed.wrapping_add(12345);
     while indices.len() < (solved_target + remaining) && !solved.is_empty() {
-        i = (i.wrapping_mul(6364136223846793005).wrapping_add(1)) % solved.len();
-        indices.insert(i);
+        rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1)) % solved.len();
+        indices.insert(rng);
     }
     for idx in &indices {
         selected.push(solved[*idx].clone());

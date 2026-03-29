@@ -41,17 +41,35 @@ pub const TOK_CLONE_SELF: u32 = 27;
 pub const TOK_SPAWN_SPECIALIST: u32 = 28;
 pub const TOK_DELEGATE_TASK: u32 = 29;
 
+// ── Cartridge Tokens ────────────────────────────────────────────────
+
+pub const TOK_CREATE_CARTRIDGE: u32 = 30;
+pub const TOK_COMPILE_CARTRIDGE: u32 = 31;
+pub const TOK_TEST_CARTRIDGE: u32 = 32;
+
+// ── Autophagy / Quality Tokens ──────────────────────────────────────
+
+pub const TOK_REMOVE_DEAD_CODE: u32 = 33;
+pub const TOK_SIMPLIFY: u32 = 34;
+pub const TOK_REFACTOR: u32 = 35;
+
+// ── Reserved for future step types ──────────────────────────────────
+
+// 36-49 reserved
+
 // ── Context Tokens (goal keywords mapped to IDs) ─────────────────────
 
-pub const TOK_CTX_START: u32 = 30;
-// Context tokens: 30-63 (34 slots for goal keywords)
-pub const TOK_CTX_END: u32 = 63;
+pub const TOK_CTX_START: u32 = 50;
+// Context tokens: 50-127 (78 slots for goal keywords — more room for specialization)
+pub const TOK_CTX_END: u32 = 127;
 
 /// Total vocabulary size.
-pub const VOCAB_SIZE: usize = 64;
+/// Scaled from 64→128 for richer context representation and future step types.
+pub const VOCAB_SIZE: usize = 128;
 
 /// Maximum sequence length (plan steps + context).
-pub const MAX_SEQ_LEN: usize = 32;
+/// Scaled from 32→64 for longer, more complex plans.
+pub const MAX_SEQ_LEN: usize = 64;
 
 /// Vocabulary for plan step tokenization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +122,12 @@ impl Vocab {
             "clone_self" => TOK_CLONE_SELF,
             "spawn_specialist" => TOK_SPAWN_SPECIALIST,
             "delegate_task" => TOK_DELEGATE_TASK,
+            "create_cartridge" => TOK_CREATE_CARTRIDGE,
+            "compile_cartridge" => TOK_COMPILE_CARTRIDGE,
+            "test_cartridge" => TOK_TEST_CARTRIDGE,
+            "remove_dead_code" => TOK_REMOVE_DEAD_CODE,
+            "simplify" => TOK_SIMPLIFY,
+            "refactor" => TOK_REFACTOR,
             _ => UNK,
         }
     }
@@ -137,6 +161,12 @@ impl Vocab {
             TOK_CLONE_SELF => "clone_self",
             TOK_SPAWN_SPECIALIST => "spawn_specialist",
             TOK_DELEGATE_TASK => "delegate_task",
+            TOK_CREATE_CARTRIDGE => "create_cartridge",
+            TOK_COMPILE_CARTRIDGE => "compile_cartridge",
+            TOK_TEST_CARTRIDGE => "test_cartridge",
+            TOK_REMOVE_DEAD_CODE => "remove_dead_code",
+            TOK_SIMPLIFY => "simplify",
+            TOK_REFACTOR => "refactor",
             _ => "unknown",
         }
     }

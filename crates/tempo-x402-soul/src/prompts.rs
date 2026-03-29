@@ -295,9 +295,13 @@ pub fn goal_creation_prompt(
          2. IMPROVE YOUR CODE-GENERATION ABILITY — edit prompts.rs, thinking/planning.rs, or\n\
             coding.rs to produce better Rust code. Study patterns in your own codebase.\n\
          3. FIX REAL BUGS — run cargo clippy, cargo test, find and fix actual issues\n\
-         4. PRACTICE RUST PATTERNS — read complex files (cortex.rs, brain.rs, synthesis.rs),\n\
-            understand the patterns, then apply them in your own improvements\n\
-         5. Coordinate with peers — share benchmark solutions, learn from their successes\n\n\
+         4. AUTOPHAGY — find dead code, unused functions, redundant logic, and REMOVE it.\n\
+            Run `search_files` for `#[allow(dead_code)]`, unused imports, TODO comments.\n\
+            Simplify complex functions. Reduce line count while keeping tests passing.\n\
+            Negative LOC changes that pass cargo test are MORE valuable than additions.\n\
+         5. BUILD WASM CARTRIDGES — use create_cartridge to write Rust programs that compile\n\
+            to WASM and serve at /c/{{slug}}. This is the fastest feedback loop for learning Rust.\n\
+         6. Coordinate with peers — share benchmark solutions, learn from their successes\n\n\
          ## RULES\n\
          - Do NOT just add documentation or comments — WRITE REAL CODE\n\
          - Do NOT tweak constants without evidence from benchmark scores\n\
