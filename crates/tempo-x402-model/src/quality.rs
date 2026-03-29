@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::diff_features::DIFF_FEATURE_DIM;
 
-const HIDDEN_SIZE: usize = 256;
-const LEARNING_RATE: f32 = 0.001;
+/// Hidden layer size — scaled to match plan transformer capacity.
+/// Code quality evaluation is at least as hard as plan sequence prediction.
+/// 32 → 1024 → 1024 → 1 = ~1.1M params (comparable to brain's 1.2M).
+const HIDDEN_SIZE: usize = 1024;
+const LEARNING_RATE: f32 = 0.0005; // Lower for larger model stability
 const WEIGHT_DECAY: f32 = 0.0001;
 
 /// The code quality prediction model.
@@ -265,9 +268,9 @@ mod tests {
         let model = CodeQualityModel::new();
         let params = model.param_count();
         println!("Code quality model parameters: {}", params);
-        // 32*256 + 256 + 256*256 + 256 + 256*1 + 1 = 8192 + 256 + 65536 + 256 + 256 + 1 = 74497
-        assert!(params > 50_000);
-        assert!(params < 200_000);
+        // 32*1024 + 1024 + 1024*1024 + 1024 + 1024*1 + 1 ≈ 1.1M params
+        assert!(params > 1_000_000, "Should have >1M params, got {}", params);
+        assert!(params < 2_000_000, "Should have <2M params, got {}", params);
     }
 
     #[test]
