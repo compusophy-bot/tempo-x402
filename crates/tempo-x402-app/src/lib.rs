@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
 mod api;
+mod cartridges;
 mod components;
 pub mod studio;
 #[allow(unused_braces)]
@@ -93,6 +94,7 @@ pub fn App() -> impl IntoView {
                     <Route path="/" view=HomePage />
                     <Route path="/dashboard" view=DashboardPage />
                     <Route path="/studio" view=studio::StudioPage />
+                    <Route path="/cartridges" view=cartridges::CartridgesPage />
                     <Route path="/timeline" view=timeline::TimelinePage />
                     <Route path="/*any" view=NotFound />
                 </Routes>

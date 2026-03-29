@@ -25,3 +25,4 @@ Crate type: `["cdylib", "rlib"]` — compiles to WASM, no binary.
 - **Adding dependencies**: Must be WASM-compatible
 - **Dashboard analytics**: `components/dashboard.rs` `DashboardPage` fetches `GET /analytics` via `api::fetch_analytics()`
 - **Soul panel**: `components/soul_panel.rs` `SoulPanel` component fetches `GET /soul/status` via `api::fetch_soul_status()`
+- **Cartridges**: `cartridges.rs` `CartridgesPage` — browse, inspect, and test WASM cartridges at `/cartridges`

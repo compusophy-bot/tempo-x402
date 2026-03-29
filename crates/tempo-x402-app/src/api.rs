@@ -719,6 +719,23 @@ fn random_nonce() -> String {
     format!("0x{}", hex::encode(&bytes))
 }
 
+/// Generic JSON fetch from a relative URL.
+pub async fn fetch_json(path: &str) -> Result<serde_json::Value, String> {
+    let resp = gloo_net::http::Request::get(&format!("{}{}", GATEWAY_URL, path))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {e}"))?;
+
+    if !resp.ok() {
+        let err = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", resp.status(), err));
+    }
+
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("Parse failed: {e}"))
+}
+
 /// Simple hex encoding
 mod hex {
     pub fn encode(bytes: &[u8]) -> String {

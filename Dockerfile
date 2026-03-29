@@ -14,8 +14,8 @@ FROM chef AS builder
 ARG GIT_SHA=dev
 ENV GIT_SHA=${GIT_SHA}
 
-# Install WASM toolchain for SPA build
-RUN rustup target add wasm32-unknown-unknown
+# Install WASM toolchains: unknown-unknown for SPA, wasip1 for cartridges
+RUN rustup target add wasm32-unknown-unknown wasm32-wasip1
 RUN cargo install trunk
 
 # Pre-download wasm-bindgen binary (trunk needs the musl static build;

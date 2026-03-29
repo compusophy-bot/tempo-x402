@@ -106,6 +106,9 @@ impl Capability {
             PlanStep::CloneSelf { .. }
             | PlanStep::SpawnSpecialist { .. }
             | PlanStep::DelegateTask { .. } => Self::PeerCall,
+            PlanStep::CreateCartridge { .. }
+            | PlanStep::CompileCartridge { .. }
+            | PlanStep::TestCartridge { .. } => Self::EndpointCreate,
         }
     }
 }

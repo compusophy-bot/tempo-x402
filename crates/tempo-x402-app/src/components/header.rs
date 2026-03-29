@@ -38,6 +38,11 @@ pub fn Header() -> impl IntoView {
                                 on:click=move |_| set_mobile_open.set(false)
                             >"Studio"</a>
                             <a
+                                href="/cartridges"
+                                class=if path == "/cartridges" { "active" } else { "" }
+                                on:click=move |_| set_mobile_open.set(false)
+                            >"Cartridges"</a>
+                            <a
                                 href="/timeline"
                                 class=if path == "/timeline" { "active" } else { "" }
                                 on:click=move |_| set_mobile_open.set(false)

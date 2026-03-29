@@ -48,7 +48,7 @@ No dependency on gateway/identity/node. Communicates via `NodeObserver` trait �
 | `free_energy.rs` | **Unifying theoretical framework**: single scalar F(t) measuring total cognitive surprise across all systems. F = Σ(system_surprise × weight) + λ×Complexity. Decreasing F = agent getting smarter. Drives behavioral regime (Explore/Learn/Exploit/Anomaly). Trend analysis, history tracking, prompt injection. The theoretical contribution that unifies the entire architecture under the Free Energy Principle. |
 | `computer_use.rs` | **Computer use**: screenshot capture, mouse/keyboard simulation, browser control via xdotool/scrot in VM |
 | `guard.rs` | Hardcoded protected file list — prevents self-bricking |
-| `tools/` | Tool executor (mod.rs: dispatch + struct), split by domain: file_ops, shell, git, deployment, endpoints, social, memory, beliefs, planning |
+| `tools/` | Tool executor (mod.rs: dispatch + struct), split by domain: file_ops, shell, git, deployment, endpoints, social, memory, beliefs, planning, cartridges |
 | `tool_registry.rs` | Dynamic tool registry: register/list/unregister tools at runtime, shell execution |
 | `git.rs` | Branch-per-VM git workflow (ensure_branch, commit, push, PR, issues) with fork support |
 | `coding.rs` | Pre-commit validation pipeline (cargo check → test → commit) |
