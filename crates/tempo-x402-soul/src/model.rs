@@ -23,10 +23,31 @@ pub struct ModelStatus {
 }
 
 /// Load the plan transformer from soul_state.
+/// If the saved model has different dimensions than the current architecture
+/// (e.g., after a model scaling), discard it and start fresh.
 pub fn load_model(db: &SoulDatabase) -> x402_model::PlanTransformer {
     match db.get_state("plan_transformer").ok().flatten() {
         Some(json) if !json.is_empty() => {
-            x402_model::PlanTransformer::from_json(&json).unwrap_or_default()
+            match x402_model::PlanTransformer::from_json(&json) {
+                Some(model) => {
+                    // Validate dimensions match current architecture
+                    let expected_embedding =
+                        x402_model::vocab::VOCAB_SIZE * x402_model::transformer::D_MODEL;
+                    if model.embedding.len() != expected_embedding {
+                        tracing::warn!(
+                            saved_embedding = model.embedding.len(),
+                            expected = expected_embedding,
+                            "Transformer dimensions mismatch — reinitializing (architecture was scaled)"
+                        );
+                        // Clear stale weights from DB
+                        let _ = db.set_state("plan_transformer", "");
+                        x402_model::PlanTransformer::new()
+                    } else {
+                        model
+                    }
+                }
+                None => x402_model::PlanTransformer::new(),
+            }
         }
         _ => x402_model::PlanTransformer::new(),
     }
