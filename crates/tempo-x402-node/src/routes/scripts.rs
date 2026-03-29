@@ -283,10 +283,116 @@ pub async fn list_scripts() -> HttpResponse {
     }))
 }
 
+/// `GET/POST /app/{slug}` — serve a script as a FREE frontend app (no payment gate).
+///
+/// Same execution as `/x/{slug}` but:
+/// 1. No x402 payment required — this is for human-facing UIs
+/// 2. Auto-detects content type from output (HTML if starts with `<`, else JSON)
+/// 3. Sets CORS headers for browser access
+///
+/// Use this for frontend apps that humans visit. Use `/x/{slug}` for paid APIs.
+pub async fn handle_app(
+    req: HttpRequest,
+    path: web::Path<String>,
+    body: web::Bytes,
+    _state: web::Data<NodeState>,
+) -> HttpResponse {
+    let slug = path.into_inner();
+
+    if !slug
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return HttpResponse::BadRequest().body("invalid app slug");
+    }
+
+    let script_path = PathBuf::from(SCRIPTS_DIR).join(format!("{slug}.sh"));
+    if !script_path.exists() {
+        return HttpResponse::NotFound().body(format!("App '{slug}' not found"));
+    }
+
+    // Security check (same as /x/)
+    if let Ok(content) = std::fs::read_to_string(&script_path) {
+        let lower = content.to_lowercase();
+        if lower.contains("/proc/1/environ") || lower.contains("/proc/self/environ") {
+            return HttpResponse::Forbidden().body("blocked");
+        }
+    }
+
+    let method = req.method().to_string();
+    let query = req.query_string().to_string();
+    let body_str = String::from_utf8_lossy(&body).to_string();
+    let mut headers_json = serde_json::Map::new();
+    for (name, value) in req.headers() {
+        if let Ok(v) = value.to_str() {
+            headers_json.insert(name.to_string(), serde_json::Value::String(v.to_string()));
+        }
+    }
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(SCRIPT_TIMEOUT_SECS),
+        tokio::process::Command::new("bash")
+            .arg(script_path.to_str().unwrap_or_default())
+            .env_clear()
+            .env(
+                "PATH",
+                "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            )
+            .env("HOME", "/tmp")
+            .env("LANG", "C.UTF-8")
+            .env("REQUEST_METHOD", &method)
+            .env("QUERY_STRING", &query)
+            .env("REQUEST_BODY", &body_str)
+            .env(
+                "REQUEST_HEADERS",
+                &serde_json::to_string(&headers_json).unwrap_or_default(),
+            )
+            .env("ENDPOINT_SLUG", &slug)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output(),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(output)) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let trimmed = stdout.trim();
+
+            // Auto-detect content type
+            let content_type = if trimmed.starts_with('<') || trimmed.starts_with("<!") {
+                "text/html; charset=utf-8"
+            } else if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                "application/json"
+            } else {
+                "text/plain; charset=utf-8"
+            };
+
+            HttpResponse::Ok()
+                .content_type(content_type)
+                .insert_header(("Access-Control-Allow-Origin", "*"))
+                .body(trimmed.to_string())
+        }
+        Ok(Ok(output)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            HttpResponse::InternalServerError().body(format!(
+                "App error: {}",
+                stderr.chars().take(500).collect::<String>()
+            ))
+        }
+        Ok(Err(e)) => HttpResponse::InternalServerError().body(format!("Failed to run: {e}")),
+        Err(_) => HttpResponse::GatewayTimeout().body("App timed out"),
+    }
+}
+
 /// Configure script endpoint routes.
 /// Note: handle_script expects `web::Data<NodeState>` for x402 payment checks.
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/x", web::get().to(list_scripts))
         .route("/x/{slug}", web::get().to(handle_script))
-        .route("/x/{slug}", web::post().to(handle_script));
+        .route("/x/{slug}", web::post().to(handle_script))
+        // Free frontend apps — no payment, HTML content-type auto-detection
+        .route("/app/{slug}", web::get().to(handle_app))
+        .route("/app/{slug}", web::post().to(handle_app));
 }

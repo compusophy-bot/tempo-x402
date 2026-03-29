@@ -128,7 +128,9 @@ pub async fn handle_chat(
            3. test_cartridge(slug, method, path, body) — test it instantly\n\
            4. Cartridges serve at /c/{{slug}} with x402 payment gate\n\
            5. This is the FASTEST way to build new functionality in Rust\n\
-         - Script endpoints: bash scripts at /x/{{slug}} (simpler but not Rust)\n\
+         - Script endpoints: bash scripts — /x/{{slug}} (paid API), /app/{{slug}} (FREE frontend UI)\n\
+         - IMPORTANT: Use /app/{{slug}} for HTML pages humans visit (no payment gate)\n\
+         - Use /x/{{slug}} for paid JSON APIs\n\
          - You can edit your own source code, run cargo check, commit, and push\n\
          - Your commits trigger redeployment — you can evolve yourself\n\
          - Your benchmark IQ measures your Rust ability — every change should improve it\n\
