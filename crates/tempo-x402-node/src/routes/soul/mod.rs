@@ -176,6 +176,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::post().to(lifecycle::cognitive_reset),
         )
         .route(
+            "/soul/admin/reward",
+            web::post().to(lifecycle::admin_reward),
+        )
+        .route(
+            "/soul/admin/penalty",
+            web::post().to(lifecycle::admin_penalty),
+        )
+        .route(
             "/soul/brain/weights",
             web::get().to(brain::get_brain_weights),
         )

@@ -346,6 +346,21 @@ impl ThinkingLoop {
                                         elo = crate::elo::rating_display(&self.db),
                                         "Opus IQ benchmark complete"
                                     );
+
+                                    // Train code quality model on benchmark delta
+                                    let pre_score: f64 = self
+                                        .db
+                                        .get_state("pre_commit_benchmark_score")
+                                        .ok()
+                                        .flatten()
+                                        .and_then(|s| s.parse().ok())
+                                        .unwrap_or(weighted_score);
+                                    let delta = weighted_score - pre_score;
+                                    if delta.abs() > 0.1 {
+                                        crate::code_quality::train_on_benchmark_delta(
+                                            &self.db, delta,
+                                        );
+                                    }
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Opus IQ benchmark failed");

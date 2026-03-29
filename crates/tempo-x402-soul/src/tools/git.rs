@@ -27,6 +27,36 @@ impl ToolExecutor {
         coding::check_commit_readiness(db)?;
 
         let workspace = self.workspace_root.to_string_lossy().to_string();
+
+        // Code quality gate — predict whether this diff improves the codebase
+        // Only gates if model has been trained (>10 steps). Otherwise let commits through.
+        {
+            let quality_model = crate::code_quality::load_model(db);
+            if quality_model.train_steps >= 10 {
+                match crate::code_quality::evaluate_diff(db, &workspace).await {
+                    Ok(prediction) if prediction.score < -0.1 && prediction.confidence > 0.3 => {
+                        return Err(format!(
+                            "Code quality gate: predicted regression (score={:.2}, confidence={:.0}%). \
+                             The model predicts this change will hurt benchmark performance. \
+                             Review your changes and try a more targeted approach.",
+                            prediction.score,
+                            prediction.confidence * 100.0,
+                        ));
+                    }
+                    Ok(prediction) if prediction.score < 0.0 => {
+                        tracing::warn!(
+                            score = format!("{:.3}", prediction.score),
+                            "Code quality warning: predicted neutral/slight regression, proceeding"
+                        );
+                    }
+                    Ok(_) => {} // Predicted improvement — proceed
+                    Err(e) => {
+                        tracing::debug!(error = %e, "Code quality evaluation skipped");
+                    }
+                }
+            }
+        }
+
         let result = coding::validated_commit(git, &workspace, files, message).await?;
 
         // Enter AWAITING_BENCHMARK state — next commit blocked until benchmark runs

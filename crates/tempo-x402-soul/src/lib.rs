@@ -56,6 +56,7 @@ pub mod benchmark;
 pub mod brain;
 pub mod capability;
 pub mod chat;
+pub mod code_quality;
 pub mod coding;
 pub mod colony;
 pub mod computer_use;

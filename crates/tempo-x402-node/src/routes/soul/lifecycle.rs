@@ -346,3 +346,65 @@ pub(super) async fn cognitive_reset(state: web::Data<NodeState>) -> HttpResponse
         "preserved": ["benchmark_history", "elo_score", "persistent_memory"],
     }))
 }
+
+/// POST /soul/admin/reward — upstream accepted a commit. Strongest positive signal.
+pub(super) async fn admin_reward(
+    body: web::Json<serde_json::Value>,
+    state: web::Data<NodeState>,
+) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    let commit_sha = body
+        .get("commit_sha")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Reward code quality model with strong positive signal
+    x402_soul::code_quality::reward_upstream_acceptance(soul_db, commit_sha);
+
+    // Update persistent memory
+    let _ = soul_db.set_state(
+        "last_upstream_acceptance",
+        &chrono::Utc::now().timestamp().to_string(),
+    );
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "rewarded",
+        "commit_sha": commit_sha,
+        "signal": "strong_positive (3x reinforcement)",
+    }))
+}
+
+/// POST /soul/admin/penalty — upstream reverted a commit. Strong negative signal.
+pub(super) async fn admin_penalty(
+    body: web::Json<serde_json::Value>,
+    state: web::Data<NodeState>,
+) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db,
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    let commit_sha = body
+        .get("commit_sha")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Penalize code quality model with strong negative signal
+    x402_soul::code_quality::penalty_upstream_revert(soul_db, commit_sha);
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "penalized",
+        "commit_sha": commit_sha,
+        "signal": "strong_negative (3x reinforcement)",
+    }))
+}
