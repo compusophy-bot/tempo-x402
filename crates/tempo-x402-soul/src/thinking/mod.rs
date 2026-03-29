@@ -335,6 +335,11 @@ impl ThinkingLoop {
                                     let iq =
                                         crate::opus_bench::weighted_score_to_iq(weighted_score);
                                     crate::elo::update_rating(&self.db, weighted_score);
+                                    // Store score for commit gate delta comparison
+                                    let _ = self.db.set_state(
+                                        "last_benchmark_score",
+                                        &format!("{:.2}", weighted_score),
+                                    );
                                     tracing::info!(
                                         weighted = format!("{:.1}%", weighted_score),
                                         iq = format!("{:.0}", iq),

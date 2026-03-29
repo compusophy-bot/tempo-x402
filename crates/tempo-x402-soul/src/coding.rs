@@ -18,42 +18,128 @@ pub struct CommitResult {
     pub error_output: Option<String>,
 }
 
-/// Minimum seconds between commits. Gives the deploy time to land and be tested.
-/// Without this, the agent fires commits every cycle and never validates its own changes.
-const COMMIT_COOLDOWN_SECS: i64 = 600; // 10 minutes
-
 /// Maximum cumulative deletions per file over a rolling window.
 /// Prevents the "incremental lobotomy" where an agent deletes <50% per commit
 /// but cumulatively guts a file across many commits.
 const MAX_CUMULATIVE_DELETION_PCT: f64 = 70.0;
 
-/// Check if enough time has passed since the last commit.
-pub fn check_commit_cooldown(db: &crate::db::SoulDatabase) -> Result<(), String> {
-    let last_commit_at: i64 = db
+/// Commit readiness gate — not a timer, a state machine.
+///
+/// The agent can't commit again until it has MEASURED the impact of its last commit.
+/// The state machine:
+///   READY → commit → AWAITING_BENCHMARK → benchmark runs → score recorded → READY
+///
+/// If the last commit's benchmark showed regression, the agent is told.
+/// If the benchmark hasn't run yet, the commit is blocked with explanation.
+///
+/// This replaces dumb hardcoded cooldowns with an intelligent feedback loop
+/// that ties into the actual system state.
+pub fn check_commit_readiness(db: &crate::db::SoulDatabase) -> Result<(), String> {
+    // Check if we're awaiting benchmark results from the last commit
+    let awaiting: bool = db
+        .get_state("commit_awaiting_benchmark")
+        .ok()
+        .flatten()
+        .map(|v| v == "1")
+        .unwrap_or(false);
+
+    if !awaiting {
+        return Ok(()); // Ready to commit
+    }
+
+    // How long have we been waiting?
+    let commit_at: i64 = db
         .get_state("last_commit_at")
         .ok()
         .flatten()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-
     let now = chrono::Utc::now().timestamp();
-    let elapsed = now - last_commit_at;
+    let elapsed = now - commit_at;
 
-    if elapsed < COMMIT_COOLDOWN_SECS {
-        let remaining = COMMIT_COOLDOWN_SECS - elapsed;
-        return Err(format!(
-            "Commit cooldown: {remaining}s remaining (minimum {}s between commits). \
-             Wait for your last deploy to land and test it first.",
-            COMMIT_COOLDOWN_SECS
-        ));
+    // Safety valve: if benchmark hasn't run in 30 minutes, clear the gate.
+    // Something may be wrong with the benchmark system — don't block forever.
+    if elapsed > 1800 {
+        tracing::warn!(
+            elapsed_secs = elapsed,
+            "Commit gate safety valve: benchmark didn't run in 30min, clearing gate"
+        );
+        let _ = db.set_state("commit_awaiting_benchmark", "0");
+        return Ok(());
     }
-    Ok(())
+
+    // Check if benchmark ran since our last commit
+    let last_benchmark_at: i64 = db
+        .get_state("last_benchmark_at")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    if last_benchmark_at > commit_at {
+        // Benchmark has run since our commit — check the result
+        let _ = db.set_state("commit_awaiting_benchmark", "0");
+
+        // Get the score delta
+        let pre_score: f64 = db
+            .get_state("pre_commit_benchmark_score")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+        let current_score: f64 = db
+            .get_state("last_benchmark_score")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+
+        let delta = current_score - pre_score;
+        if delta < -5.0 {
+            tracing::warn!(
+                pre = format!("{:.1}%", pre_score),
+                post = format!("{:.1}%", current_score),
+                delta = format!("{:+.1}%", delta),
+                "Last commit REGRESSED benchmark score"
+            );
+            // Don't block — but the brain will learn from the negative signal
+        } else if delta > 0.0 {
+            tracing::info!(
+                delta = format!("{:+.1}%", delta),
+                "Last commit IMPROVED benchmark score"
+            );
+        }
+
+        return Ok(()); // Gate cleared
+    }
+
+    // Benchmark hasn't run yet — tell the agent to wait
+    let wait_secs = elapsed;
+    Err(format!(
+        "Commit gate: waiting for benchmark to measure impact of last commit \
+         ({wait_secs}s ago). The benchmark runs every ~15 cycles. \
+         Study your code, read files, think about improvements while you wait. \
+         Do NOT commit again until you know if your last change helped."
+    ))
 }
 
-/// Record that a commit was made (for cooldown tracking).
+/// Record that a commit was made — enter AWAITING_BENCHMARK state.
 pub fn record_commit(db: &crate::db::SoulDatabase) {
     let now = chrono::Utc::now().timestamp();
     let _ = db.set_state("last_commit_at", &now.to_string());
+    let _ = db.set_state("commit_awaiting_benchmark", "1");
+
+    // Snapshot current benchmark score for delta comparison
+    let current_score: f64 = db
+        .get_state("last_benchmark_score")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0);
+    let _ = db.set_state("pre_commit_benchmark_score", &current_score.to_string());
+
+    // Force next benchmark to run ASAP
+    let _ = db.set_state("benchmark_force_next", "1");
 
     // Track cumulative commit count for this deploy
     let commit_count: u64 = db
@@ -63,12 +149,11 @@ pub fn record_commit(db: &crate::db::SoulDatabase) {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let _ = db.set_state("deploy_commit_count", &(commit_count + 1).to_string());
-}
 
-/// Flag that a benchmark should run after this commit to measure impact.
-pub fn request_post_commit_benchmark(db: &crate::db::SoulDatabase) {
-    let _ = db.set_state("benchmark_force_next", "1");
-    tracing::info!("Post-commit benchmark requested — will measure impact of this change");
+    tracing::info!(
+        pre_score = format!("{:.1}%", current_score),
+        "Commit recorded — awaiting benchmark to measure impact"
+    );
 }
 
 /// Orchestrate a validated commit: stage → cargo check → cargo test → commit → push.
