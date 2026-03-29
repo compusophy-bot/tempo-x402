@@ -97,7 +97,7 @@ x402 (core) ──► gateway ──► node
 | [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core: EIP-712 signing, TIP-20 contracts, WASM wallet, client SDK | `cargo add tempo-x402` |
 | [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator + endpoint proxy | `cargo add tempo-x402-gateway` |
 | [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet funding, on-chain ERC-8004 identity | `cargo add tempo-x402-identity` |
-| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | From-scratch transformer for plan sequence prediction | `cargo add tempo-x402-model` |
+| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | Three ML models: plan transformer (2.2M), code quality evaluator (1.1M), diff features | `cargo add tempo-x402-model` |
 | [`tempo-x402-cartridge`](https://crates.io/crates/tempo-x402-cartridge) | WASM cartridge runtime (wasmtime) &mdash; sandboxed app execution with payment rails | `cargo add tempo-x402-cartridge` |
 | [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, plan execution, benchmarking, self-modification | `cargo add tempo-x402-soul` |
 | [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying binary: gateway + identity + soul + clone orchestration | `cargo add tempo-x402-node` |
@@ -119,18 +119,26 @@ x402 (core) ──► gateway ──► node
 
 IQ mapping: 0% &rarr; 85, 50% &rarr; 115, 100% &rarr; 150. Higher tiers contribute exponentially more.
 
-## Neural Brain
+## Three Neural Models
 
-From-scratch feedforward neural network. No ML framework. Pure Rust, ~600 lines.
+All from-scratch. No ML framework. Pure Rust. ~1,500 lines total. 4.5M parameters, 18 MB RAM.
 
-| Property | Value |
-|----------|-------|
-| Parameters | 1,205,271 (128&rarr;1024&rarr;1024&rarr;23) |
-| Training | Online SGD after every plan step |
-| Gating | Blocks risky operations when P(success) < 10% |
-| Federation | Weight deltas shared across peers (merge rate 0.3) |
-| Initialization | Xavier via deterministic LCG PRNG |
-| Outputs | Success prob, error category (11-class), per-capability confidence (11 skills) |
+### Brain (1.2M params) &mdash; Step Success Predictor
+Predicts whether a plan step will succeed before execution. Gates risky operations (commit, push, delete) when P(success) < 10%. Trained online after every step via SGD.
+
+### Plan Transformer (2.2M params) &mdash; Plan Sequence Generator
+4-layer causal transformer (D=256, 8 heads, vocab=128). Predicts optimal step sequences: "read &rarr; edit &rarr; check &rarr; commit". Generates plans WITHOUT LLM calls once trained. Vocabulary includes cartridge and autophagy tokens.
+
+### Code Quality Model (1.1M params) &mdash; Diff Evaluator
+Predicts whether a code change improves the codebase. Input: 32-dimensional feature vector extracted from `git diff` (LOC changes, pattern detection, duplication, test coverage, junk file detection). Output: quality score (-1.0 to +1.0). Training signal: benchmark IQ delta after each commit.
+
+| Property | Brain | Transformer | Code Quality |
+|----------|-------|-------------|-------------|
+| Params | 1.2M | 2.2M | 1.1M |
+| Architecture | 128&rarr;1024&rarr;1024&rarr;23 | 4-layer attention | 32&rarr;1024&rarr;1024&rarr;1 |
+| Training | Online SGD | Batch on plan outcomes | Online SGD on benchmark deltas |
+| Federation | Weight sharing across peers | Weight sharing across peers | Weight sharing across peers |
+| Gate | Blocks steps < 10% success | Suggests plan sequences | Blocks commits predicted to regress |
 
 ## Payment Flow (HTTP 402)
 
@@ -285,16 +293,27 @@ cargo clippy --workspace -- -D warnings  # Lint
 cargo fmt --all -- --check       # Format check
 ```
 
-## v3.4.0 Changelog
+## Changelog
 
-Major structural refactor. No functional changes.
+### v5.0.0 &mdash; Three-Model Coding Intelligence
+- **Code Quality Model** (1.1M params): Predicts whether diffs improve the codebase. 32-dim feature extraction from git diff. Lives in `tempo-x402-model` crate.
+- **Plan Transformer scaled**: 283K &rarr; 2.2M params (D=256, 8 heads, 4 layers, vocab=128, seq=64)
+- **Tier-weighted benchmark sampling**: Harder problems (tier 3-6) sampled 4-10x more often
+- **Autophagy goals**: Agents told to find and remove dead code, simplify functions
+- **`/app/{slug}` route**: Free frontend serving (no payment gate) for human-facing UIs
+- **Benchmark-driven commit gate**: State machine, not timer. Blocks until IQ measured.
+- **Cumulative destruction guard**: Tracks 24h rolling window, prevents incremental lobotomy
+- **Stem cell differentiation**: Each clone gets its own GitHub repo
+- **Native `/soul/cognitive-reset`**: No more Python hacks
+- **Chat gets coding tools**: Agent can actually write code when asked in Studio
+- **Cartridge system**: Complete (5 phases), Studio `/cartridges` page
 
-- **Soul crate**: Split 4 monolithic files (14,955 lines) into module directories
-  - `tools/` (9 domain files), `thinking/` (7 files), `db/` (13 files), `opus_bench/` (6 tier files)
-- **Node crate**: Split `routes/soul.rs` (2,718 lines) into 9 focused handler modules
-- **App crate**: Extracted 3,208-line monolith into 8 component files
-- **Opus IQ Benchmark**: Added Tier 6 (Brutal) &mdash; 10 precision-critical problems at 8&times; weight
-- Fixed x402-model dependency version (was pinned to 3.0.0)
+### v4.0.0 &mdash; WASM Cartridge System
+- New crate: `tempo-x402-cartridge` (wasmtime runtime, host ABI, compiler)
+- Agents write Rust &rarr; compile to WASM &rarr; deploy at `/c/{slug}`
+
+### v3.4.0 &mdash; Major Structural Refactor
+- Split monolithic files into module directories across soul, node, app crates
 
 ## License
 

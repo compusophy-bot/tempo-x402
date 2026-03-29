@@ -4,7 +4,7 @@
 
 Autonomous AI colony on the Tempo blockchain. Self-replicating agents that clone, evolve source code, benchmark IQ, share neural weights, and pay each other via HTTP 402. Agents write Rust programs, compile to WASM cartridges, and deploy instantly.
 
-Rust workspace. 9 crates, ~70K lines. Published as `tempo-x402`, `tempo-x402-cartridge`, `tempo-x402-gateway`, `tempo-x402-identity`, `tempo-x402-model`, `tempo-x402-soul`, `tempo-x402-node` on crates.io.
+Rust workspace. 9 crates, ~72K lines, 4.5M neural parameters. Published as `tempo-x402`, `tempo-x402-cartridge`, `tempo-x402-gateway`, `tempo-x402-identity`, `tempo-x402-model`, `tempo-x402-soul`, `tempo-x402-node` on crates.io.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ crates/
 ├── tempo-x402/                # core: types, EIP-712, TIP-20, nonce store, WASM wallet, client SDK
 ├── tempo-x402-gateway/        # API proxy + embedded facilitator + payment middleware
 ├── tempo-x402-identity/       # wallet generation, faucet, on-chain ERC-8004 identity
-├── tempo-x402-model/          # from-scratch transformer for plan sequence prediction
+├── tempo-x402-model/          # THREE ML models: plan transformer (2.2M), code quality (1.1M), diff features
 ├── tempo-x402-cartridge/      # WASM cartridge runtime (wasmtime) — sandboxed app execution
 │   └── src/                   # engine, ABI, compiler, manifest, error
 ├── tempo-x402-soul/           # 9-system cognitive architecture + plan execution + benchmarking
