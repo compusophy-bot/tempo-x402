@@ -220,8 +220,10 @@ pub async fn handle_chat(
             .with_gateway_url(config.gateway_url.clone())
             .with_database(db.clone());
 
-    // Enable coding on the executor if in Code mode
-    if agent_mode == mode::AgentMode::Code && config.coding_enabled {
+    // Enable coding on the executor when coding is enabled.
+    // Chat mode also gets coding tools (the mode system controls prompts, not capabilities).
+    let needs_coding = matches!(agent_mode, mode::AgentMode::Code | mode::AgentMode::Chat);
+    if needs_coding && config.coding_enabled {
         if let Some(instance_id) = &config.instance_id {
             let git = Arc::new(
                 GitContext::new(

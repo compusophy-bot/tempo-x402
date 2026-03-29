@@ -66,26 +66,48 @@ impl AgentMode {
                 v
             }
             Self::Chat => {
-                // Shell + read-only file tools + update_memory + update_beliefs + check_self + plan control + economy
-                let mut v: Vec<_> = all
-                    .into_iter()
-                    .filter(|t| {
-                        matches!(
-                            t.name.as_str(),
-                            "execute_shell" | "read_file" | "list_directory" | "search_files"
-                        )
-                    })
-                    .collect();
-                v.push(tool_decl::update_memory_tool());
-                v.push(tool_decl::update_beliefs_tool());
-                v.push(tool_decl::check_self_tool());
-                v.push(tool_decl::check_reputation_tool());
-                v.push(tool_decl::approve_plan_tool());
-                v.push(tool_decl::reject_plan_tool());
-                v.push(tool_decl::request_plan_tool());
-                v.push(tool_decl::discover_peers_tool());
-                v.push(tool_decl::call_paid_endpoint_tool());
-                v
+                // When coding is enabled, Chat mode gets the SAME tools as Code mode.
+                // The mode detection is too fragile to reliably distinguish "add a /todo route"
+                // from "what is a route?" — and denying tools when the user clearly wants
+                // action is worse than giving tools when they just want conversation.
+                // The agent's judgment (not keyword matching) decides whether to use them.
+                if coding_enabled {
+                    let mut v = all_with_git;
+                    v.push(tool_decl::update_memory_tool());
+                    v.push(tool_decl::update_beliefs_tool());
+                    v.push(tool_decl::register_endpoint_tool());
+                    v.push(tool_decl::delete_endpoint_tool());
+                    v.push(tool_decl::check_self_tool());
+                    v.push(tool_decl::check_reputation_tool());
+                    v.push(tool_decl::approve_plan_tool());
+                    v.push(tool_decl::reject_plan_tool());
+                    v.push(tool_decl::request_plan_tool());
+                    v.push(tool_decl::discover_peers_tool());
+                    v.push(tool_decl::call_paid_endpoint_tool());
+                    v.push(tool_decl::check_deploy_status_tool());
+                    v
+                } else {
+                    // Read-only when coding is disabled
+                    let mut v: Vec<_> = all
+                        .into_iter()
+                        .filter(|t| {
+                            matches!(
+                                t.name.as_str(),
+                                "execute_shell" | "read_file" | "list_directory" | "search_files"
+                            )
+                        })
+                        .collect();
+                    v.push(tool_decl::update_memory_tool());
+                    v.push(tool_decl::update_beliefs_tool());
+                    v.push(tool_decl::check_self_tool());
+                    v.push(tool_decl::check_reputation_tool());
+                    v.push(tool_decl::approve_plan_tool());
+                    v.push(tool_decl::reject_plan_tool());
+                    v.push(tool_decl::request_plan_tool());
+                    v.push(tool_decl::discover_peers_tool());
+                    v.push(tool_decl::call_paid_endpoint_tool());
+                    v
+                }
             }
             Self::Code => {
                 // All tools including write/edit/commit + update_memory + update_beliefs + register_endpoint + check_self + plan control + economy
