@@ -3367,6 +3367,11 @@ html, body { margin: 0 !important; padding: 0 !important; }
 }
 .studio-feedback-good:hover { border-color: #22c55e; color: #22c55e; }
 .studio-feedback-bad:hover { border-color: #ef4444; color: #ef4444; }
+.studio-feedback-locked {
+    font-size: 11px; font-family: monospace; padding: 1px 6px;
+}
+.studio-feedback-locked.studio-feedback-good { color: #22c55e; }
+.studio-feedback-locked.studio-feedback-bad { color: #ef4444; }
 .studio-cartridge-output {
     flex: 1; padding: 12px; overflow: auto;
     background: #0a0a0a; color: #e2e8f0;

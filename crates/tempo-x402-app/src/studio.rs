@@ -191,6 +191,7 @@ pub fn StudioPage() -> impl IntoView {
                                 cmd.contains("create_script_endpoint")
                                     || cmd.contains("delete_endpoint")
                                     || cmd.contains("create_cartridge")
+                                    || cmd.contains("compile_cartridge")
                                     || cmd.contains("delete_cartridge")
                             })
                         })
@@ -516,24 +517,37 @@ pub fn StudioPage() -> impl IntoView {
                                             <div class="studio-msg-role">{if is_user { "You" } else { "Soul" }}</div>
                                             <div class="studio-msg-content">{content}</div>
                                             {(!is_user).then(|| {
+                                                // Per-message feedback state: None, "good", or "bad"
+                                                let (feedback_given, set_feedback_given) = create_signal(Option::<String>::None);
                                                 view! {
                                                     <div class="studio-msg-feedback">
-                                                        <button class="studio-feedback-btn" on:click=move |_| {
-                                                            spawn_local(async move {
-                                                                let _ = gloo_net::http::Request::post("/soul/admin/reward")
-                                                                    .json(&serde_json::json!({"commit_sha": "chat-feedback"}))
-                                                                    .unwrap()
-                                                                    .send().await;
-                                                            });
-                                                        } title="Good response" class="studio-feedback-good">"good"</button>
-                                                        <button class="studio-feedback-btn" on:click=move |_| {
-                                                            spawn_local(async move {
-                                                                let _ = gloo_net::http::Request::post("/soul/admin/penalty")
-                                                                    .json(&serde_json::json!({"commit_sha": "chat-feedback"}))
-                                                                    .unwrap()
-                                                                    .send().await;
-                                                            });
-                                                        } title="Bad response" class="studio-feedback-bad">"bad"</button>
+                                                        {move || {
+                                                            match feedback_given.get() {
+                                                                Some(ref fb) => view! {
+                                                                    <span class={format!("studio-feedback-locked studio-feedback-{fb}")}>{fb.clone()}</span>
+                                                                }.into_view(),
+                                                                None => view! {
+                                                                    <button class="studio-feedback-btn studio-feedback-good" on:click=move |_| {
+                                                                        set_feedback_given.set(Some("good".to_string()));
+                                                                        spawn_local(async move {
+                                                                            let _ = gloo_net::http::Request::post("/soul/admin/reward")
+                                                                                .json(&serde_json::json!({"commit_sha": "chat-feedback"}))
+                                                                                .unwrap()
+                                                                                .send().await;
+                                                                        });
+                                                                    } title="Good response">"good"</button>
+                                                                    <button class="studio-feedback-btn studio-feedback-bad" on:click=move |_| {
+                                                                        set_feedback_given.set(Some("bad".to_string()));
+                                                                        spawn_local(async move {
+                                                                            let _ = gloo_net::http::Request::post("/soul/admin/penalty")
+                                                                                .json(&serde_json::json!({"commit_sha": "chat-feedback"}))
+                                                                                .unwrap()
+                                                                                .send().await;
+                                                                        });
+                                                                    } title="Bad response">"bad"</button>
+                                                                }.into_view(),
+                                                            }
+                                                        }}
                                                     </div>
                                                 }
                                             })}
