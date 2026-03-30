@@ -31,6 +31,12 @@ pub fn housekeeping(
     // This prevents the #1 operational issue: volume full from cargo target/ dirs.
     cleanup_disk(workspace_root);
 
+    // ── PROACTIVE COMMIT GATE CLEARING — runs EVERY cycle ──
+    // The commit gate safety valve previously only triggered when check_commit_readiness()
+    // was called (on next commit attempt). If the agent stopped attempting commits,
+    // the gate stayed stuck forever. Now we proactively clear it.
+    clear_stuck_commit_gate(db);
+
     // Thought decay + promotion + belief decay (driven by temporal binding)
     if fired_ops
         .iter()
@@ -548,6 +554,45 @@ fn truncate_json_array(
                 }
             }
         }
+    }
+}
+
+/// Proactively clear a stuck commit gate.
+///
+/// The commit gate (`commit_awaiting_benchmark`) blocks commits until the next
+/// benchmark measures impact. But `check_commit_readiness()` is reactive — it
+/// only runs when a commit is attempted. If the agent stops committing, the gate
+/// stays stuck forever, blocking ALL plan creation (validation.rs rejects plans
+/// with Commit steps when the gate is closed).
+///
+/// This function runs every cycle and clears the gate if it's been stuck >30min.
+fn clear_stuck_commit_gate(db: &Arc<SoulDatabase>) {
+    let awaiting: bool = db
+        .get_state("commit_awaiting_benchmark")
+        .ok()
+        .flatten()
+        .map(|v| v == "1")
+        .unwrap_or(false);
+
+    if !awaiting {
+        return;
+    }
+
+    let commit_at: i64 = db
+        .get_state("last_commit_at")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let now = chrono::Utc::now().timestamp();
+    let elapsed = now - commit_at;
+
+    if elapsed > 1800 {
+        tracing::warn!(
+            elapsed_secs = elapsed,
+            "Housekeeping: proactively clearing stuck commit gate (>30min)"
+        );
+        let _ = db.set_state("commit_awaiting_benchmark", "0");
     }
 }
 

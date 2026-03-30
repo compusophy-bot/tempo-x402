@@ -492,9 +492,20 @@ async fn main() -> std::io::Result<()> {
                     child_env_vars.insert("CLONE_SOURCE_REPO".into(), repo.clone());
                 }
 
-                // ERC-8004 identity
-                if std::env::var("ERC8004_AUTO_MINT").unwrap_or_default() == "true" {
-                    child_env_vars.insert("ERC8004_AUTO_MINT".into(), "true".into());
+                // ERC-8004 identity — ALWAYS propagate registry addresses to children.
+                // Without this, each child deploys its own separate contracts and
+                // they can never discover each other on-chain.
+                child_env_vars.insert("ERC8004_AUTO_MINT".into(), "true".into());
+                for reg_key in [
+                    "ERC8004_IDENTITY_REGISTRY",
+                    "ERC8004_REPUTATION_REGISTRY",
+                    "ERC8004_VALIDATION_REGISTRY",
+                ] {
+                    if let Ok(addr) = std::env::var(reg_key) {
+                        if !addr.is_empty() && addr != format!("{:#x}", alloy::primitives::Address::ZERO) {
+                            child_env_vars.insert(reg_key.into(), addr);
+                        }
+                    }
                 }
                 if std::env::var("ERC8004_REPUTATION_ENABLED").unwrap_or_default() == "true" {
                     child_env_vars.insert("ERC8004_REPUTATION_ENABLED".into(), "true".into());
@@ -1495,6 +1506,69 @@ async fn main() -> std::io::Result<()> {
                         parent_build = %parent_build,
                         "Child build mismatch detected (auto-redeploy disabled)"
                     );
+                }
+
+                // ── On-chain peer discovery (ERC-8004) ──────────────────
+                // If identity registry is configured, discover peers from
+                // the blockchain and upsert them into the children table.
+                // This is the PRIMARY peer discovery mechanism — survives
+                // resets, DB wipes, and redeployments.
+                #[cfg(feature = "erc8004")]
+                {
+                    let registry = x402_identity::identity_registry();
+                    if registry != alloy::primitives::Address::ZERO {
+                        let rpc = std::env::var("RPC_URL")
+                            .unwrap_or_else(|_| "https://rpc.moderato.tempo.xyz".to_string());
+                        let self_addr: Option<alloy::primitives::Address> =
+                            std::env::var("EVM_ADDRESS")
+                                .ok()
+                                .and_then(|s| s.parse().ok());
+                        let provider = alloy::providers::ProviderBuilder::new()
+                            .connect_http(rpc.parse().unwrap_or_else(|_| {
+                                "https://rpc.moderato.tempo.xyz".parse().unwrap()
+                            }));
+                        match x402_identity::discovery::discover_live_peers(
+                            &provider,
+                            registry,
+                            self_addr,
+                            50,
+                        )
+                        .await
+                        {
+                            Ok(peers) => {
+                                let mut synced = 0u32;
+                                for peer in &peers {
+                                    if let (Some(ref url), Some(ref instance_id)) =
+                                        (&peer.url, &peer.instance_id)
+                                    {
+                                        let addr =
+                                            peer.address.as_deref().unwrap_or("0x0");
+                                        if let Ok(()) = db::link_peer(
+                                            &version_check_state.gateway.db,
+                                            instance_id,
+                                            addr,
+                                            url,
+                                        ) {
+                                            synced += 1;
+                                        }
+                                    }
+                                }
+                                if synced > 0 || !peers.is_empty() {
+                                    tracing::info!(
+                                        discovered = peers.len(),
+                                        synced,
+                                        "On-chain peer sync complete"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::debug!(
+                                    error = %e,
+                                    "On-chain peer discovery failed (non-fatal)"
+                                );
+                            }
+                        }
+                    }
                 }
 
                 tracing::info!("Health probe cycle complete");

@@ -191,6 +191,47 @@ pub fn penalty_upstream_revert(db: &SoulDatabase, commit_sha: &str) {
     );
 }
 
+/// Train the quality model on plan completion signal.
+///
+/// When a coding plan completes (one that involved commits), the plan outcome
+/// is a training signal. Successful plans that passed cargo check/test → positive.
+/// Failed plans → negative. This closes the feedback loop for EVERY coding plan,
+/// not just benchmarks.
+pub fn train_on_plan_outcome(db: &SoulDatabase, success: bool, had_commits: bool) {
+    if !had_commits {
+        return; // Only train on plans that actually changed code
+    }
+
+    // Load the features from the last evaluated diff
+    let features: Vec<f32> = match db.get_state("last_diff_features").ok().flatten() {
+        Some(json) if !json.is_empty() => serde_json::from_str(&json).unwrap_or_default(),
+        _ => return, // No features stored — nothing to train on
+    };
+
+    if features.len() < x402_model::diff_features::DIFF_FEATURE_DIM {
+        return;
+    }
+
+    // Plan success = mild positive, plan failure = mild negative
+    // Weaker signal than benchmark delta (0.3 vs 1.0) because plan success
+    // doesn't mean the code was GOOD, just that it compiled and the plan finished.
+    let target = if success { 0.3_f32 } else { -0.3_f32 };
+
+    let example = x402_model::QualityExample { features, target };
+
+    let mut model = load_model(db);
+    let loss = model.train(&example);
+    save_model(db, &model);
+
+    tracing::info!(
+        success,
+        target = format!("{:.2}", target),
+        loss = format!("{:.4}", loss),
+        steps = model.train_steps,
+        "Code quality model trained on plan outcome"
+    );
+}
+
 /// Get quality model status for observability.
 pub fn status(db: &SoulDatabase) -> serde_json::Value {
     let model = load_model(db);

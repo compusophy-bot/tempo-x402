@@ -87,7 +87,9 @@ pub async fn handle_chat(
     let snapshot = observer
         .observe()
         .map_err(|e| SoulError::Observer(format!("observe failed: {e}")))?;
-    let snapshot_json = serde_json::to_string(&snapshot)?;
+    let snapshot_json = serde_json::to_value(&snapshot)
+        .map(|v| crate::toon::snapshot_to_toon(&v))
+        .unwrap_or_else(|_| serde_json::to_string(&snapshot).unwrap_or_default());
 
     // 4. Detect mode from message
     let agent_mode = mode::detect_mode_from_message(message, config.coding_enabled);

@@ -481,11 +481,12 @@ pub fn validation_registry() -> Address {
 }
 
 /// Check whether ERC-8004 identity minting is enabled.
+/// Defaults to true — blockchain peer discovery is the primary mechanism.
 #[cfg(feature = "erc8004")]
 pub fn auto_mint_enabled() -> bool {
     std::env::var("ERC8004_AUTO_MINT")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false)
+        .map(|v| v != "false" && v != "0")
+        .unwrap_or(true)
 }
 
 /// Check whether reputation submission is enabled.

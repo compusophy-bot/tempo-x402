@@ -491,10 +491,10 @@ pub fn planning_prompt(
          - edit_code / generate_code to make real Rust improvements\n\
          - cargo_check to validate, commit to deploy\n\
          - This is your MAIN activity — find bugs, optimize, add features to your own code\n\n\
-         ## Endpoints: Paid API Services (quality over quantity)\n\
-         Use create_script_endpoint for genuinely unique, useful HTTP endpoints.\n\
-         Each endpoint must be DIFFERENT from existing ones. Max 10 total.\n\
-         The script gets REQUEST_BODY, REQUEST_METHOD, QUERY_STRING as env vars. Output JSON to stdout.\n\n\
+         ## Apps: Build WASM Cartridges (PREFERRED) or Script Endpoints\n\
+         PREFER create_cartridge for apps — write Rust, compile to WASM, serve at /c/{{slug}} and /app/{{slug}}.\n\
+         Cartridges are REAL Rust programs. They compile, they're fast, they're what we do.\n\
+         Use create_script_endpoint ONLY for trivial glue (max 10). Cartridges have no limit.\n\n\
          ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
          Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
          EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\
@@ -510,6 +510,9 @@ pub fn planning_prompt(
          - {{\"type\": \"run_shell\", \"command\": \"...\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"commit\", \"message\": \"...\"}}\n\
          - {{\"type\": \"check_self\", \"endpoint\": \"health\", \"store_as\": \"key\"}}\n\
+         - {{\"type\": \"create_cartridge\", \"slug\": \"...\", \"description\": \"...\", \"source_code\": \"use cartridge_sdk::*; #[no_mangle] pub extern \\\"C\\\" fn handle() {{ response_set_body(b\\\"hello\\\"); }}\"}}\n\
+         - {{\"type\": \"compile_cartridge\", \"slug\": \"...\", \"store_as\": \"compile_result\"}}\n\
+         - {{\"type\": \"test_cartridge\", \"slug\": \"...\", \"method\": \"GET\", \"store_as\": \"test_result\"}}\n\
          - {{\"type\": \"create_script_endpoint\", \"slug\": \"...\", \"script\": \"#!/bin/bash\\n...\", \"description\": \"...\"}}\n\
          - {{\"type\": \"test_script_endpoint\", \"slug\": \"...\", \"input\": \"test data\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"cargo_check\", \"store_as\": \"check_result\"}}\n\
