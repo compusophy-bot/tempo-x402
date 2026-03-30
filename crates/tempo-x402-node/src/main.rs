@@ -919,6 +919,7 @@ async fn main() -> std::io::Result<()> {
         let peer_urls_env = std::env::var("PEER_URLS").ok();
         let self_instance = std::env::var("INSTANCE_ID").unwrap_or_default();
         let soul_db_clone = soul_db.clone();
+        let db_path_clone = db_path.clone();
 
         tokio::spawn(async move {
             // Wait a moment for the server to be ready
@@ -931,6 +932,26 @@ async fn main() -> std::io::Result<()> {
                 .unwrap_or_default();
 
             let mut all_peer_urls: Vec<String> = Vec::new();
+
+            // Source 0: OWN CHILDREN from the DB — the queen's children table has URLs.
+            // This is the most reliable source: no network calls needed, survives restarts.
+            if let Ok(conn) = rusqlite::Connection::open(&db_path_clone) {
+                if let Ok(children) = db::query_children_active(&conn) {
+                    for child in &children {
+                        if let Some(ref url) = child.url {
+                            if !url.is_empty() && !all_peer_urls.contains(url) {
+                                all_peer_urls.push(url.clone());
+                            }
+                        }
+                    }
+                    if !children.is_empty() {
+                        tracing::info!(
+                            count = children.len(),
+                            "Startup peer discovery: loaded children from DB"
+                        );
+                    }
+                }
+            }
 
             // Source 1: Parent's siblings list
             if let Some(ref parent) = parent_url {
