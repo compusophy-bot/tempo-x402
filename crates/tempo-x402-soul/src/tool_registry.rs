@@ -22,6 +22,8 @@ pub struct ToolRegistry {
     db: Arc<SoulDatabase>,
     workspace_root: PathBuf,
     timeout_secs: u64,
+    /// Cartridge engine for cartridge-backed tools (Phase 4).
+    cartridge_engine: Option<std::sync::Arc<x402_cartridge::CartridgeEngine>>,
 }
 
 impl ToolRegistry {
@@ -31,7 +33,13 @@ impl ToolRegistry {
             db,
             workspace_root: PathBuf::from(workspace_root),
             timeout_secs,
+            cartridge_engine: None,
         }
+    }
+
+    /// Set the cartridge engine for cartridge-backed tools.
+    pub fn set_cartridge_engine(&mut self, engine: std::sync::Arc<x402_cartridge::CartridgeEngine>) {
+        self.cartridge_engine = Some(engine);
     }
 
     /// Names of the three meta-tools.
@@ -135,12 +143,12 @@ impl ToolRegistry {
                         },
                         "handler_type": {
                             "type": "string",
-                            "enum": ["shell_command", "shell_script"],
-                            "description": "shell_command: inline command; shell_script: path to script in /data/tools/"
+                            "enum": ["shell_command", "shell_script", "cartridge"],
+                            "description": "shell_command: inline command; shell_script: script in /data/tools/; cartridge: WASM cartridge slug (fastest, no shell)"
                         },
                         "handler_config": {
                             "type": "string",
-                            "description": "The shell command or script filename"
+                            "description": "The shell command, script filename, or cartridge slug"
                         },
                         "mode_tags": {
                             "type": "array",
@@ -350,6 +358,11 @@ impl ToolRegistry {
     ) -> Result<ToolResult, String> {
         let start = std::time::Instant::now();
 
+        // Cartridge-backed tools: execute WASM directly, no shell
+        if tool.handler_type == "cartridge" {
+            return self.execute_cartridge_tool(&tool.handler_config, args).await;
+        }
+
         let command = match tool.handler_type.as_str() {
             "shell_command" => tool.handler_config.clone(),
             "shell_script" => {
@@ -409,6 +422,63 @@ impl ToolRegistry {
                 stdout: String::new(),
                 stderr: format!("command timed out after {}s", self.timeout_secs.min(300)),
                 exit_code: -1,
+                duration_ms,
+            }),
+        }
+    }
+}
+
+impl ToolRegistry {
+    /// Execute a cartridge-backed tool: invoke WASM directly via the engine.
+    /// No shell, no HTTP — pure in-process WASM execution.
+    async fn execute_cartridge_tool(
+        &self,
+        slug: &str,
+        args: &serde_json::Value,
+    ) -> Result<ToolResult, String> {
+        let start = std::time::Instant::now();
+
+        let engine = self
+            .cartridge_engine
+            .as_ref()
+            .ok_or("cartridge engine not available")?;
+
+        let request = x402_cartridge::CartridgeRequest {
+            method: "POST".to_string(),
+            path: "/".to_string(),
+            body: serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string()),
+            headers: std::collections::HashMap::new(),
+            payment: None,
+        };
+
+        // Execute in blocking context (wasmtime is synchronous)
+        let slug_owned = slug.to_string();
+        let engine_clone = engine.clone();
+        let result = tokio::task::block_in_place(|| {
+            engine_clone.execute(&slug_owned, &request, std::collections::HashMap::new(), 10)
+        });
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        match result {
+            Ok(r) => {
+                tracing::info!(
+                    slug = %slug,
+                    status = r.status,
+                    duration_ms = r.duration_ms,
+                    "Cartridge tool executed"
+                );
+                Ok(ToolResult {
+                    stdout: r.body,
+                    stderr: String::new(),
+                    exit_code: if r.status < 400 { 0 } else { 1 },
+                    duration_ms,
+                })
+            }
+            Err(e) => Ok(ToolResult {
+                stdout: String::new(),
+                stderr: format!("cartridge execution failed: {e}"),
+                exit_code: 1,
                 duration_ms,
             }),
         }

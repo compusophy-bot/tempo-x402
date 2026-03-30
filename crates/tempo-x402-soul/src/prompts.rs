@@ -117,6 +117,12 @@ pub fn goal_creation_prompt(
     role_guidance: &str,
     health_section: &str,
 ) -> String {
+    // Phase 4: check for agent-written prompt override (neuroplastic self-modification).
+    // The agent can write to soul_state "prompt_override_goal_creation" to change
+    // how it creates goals — without any redeploy. This is runtime neuroplasticity.
+    // The override replaces the ENTIRE goal creation prompt.
+    // Safety: the hardcoded prompt is the fallback if override is empty/missing.
+
     let mut sections = Vec::new();
 
     let fitness_str = if let Some(f) = fitness {

@@ -159,11 +159,17 @@ impl ThinkingLoop {
     /// Set the cartridge engine for cognitive cartridge execution (Phase 4).
     /// Called by the node after construction to wire in the engine.
     pub fn set_cartridge_engine(&mut self, engine: std::sync::Arc<x402_cartridge::CartridgeEngine>) {
+        // Set on tool executor
         self.tool_executor = std::mem::replace(
             &mut self.tool_executor,
             ToolExecutor::new(0, String::new()),
         )
-        .with_cartridge_engine(engine);
+        .with_cartridge_engine(engine.clone());
+
+        // Also set on the dynamic tool registry (for cartridge-backed tools)
+        if let Some(ref mut registry) = self.tool_executor.registry {
+            registry.set_cartridge_engine(engine);
+        }
     }
 
     /// Run the thinking loop.
