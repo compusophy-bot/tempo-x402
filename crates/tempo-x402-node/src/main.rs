@@ -1618,15 +1618,21 @@ async fn main() -> std::io::Result<()> {
                         continue;
                     }
 
-                    // Ghost child cleanup: no Railway service ID means orphaned
-                    if child.railway_service_id.is_none() {
-                        tracing::warn!(
-                            instance_id = %child.instance_id,
-                            "Deleting ghost child: no Railway service ID"
-                        );
-                        let _ =
-                            db::delete_child(&version_check_state.gateway.db, &child.instance_id);
-                        continue;
+                    // Ghost child cleanup: no Railway service ID AND unreachable.
+                    // Don't delete reachable peers that were manually linked
+                    // (link_peer doesn't set railway_service_id).
+                    if child.railway_service_id.is_none() && !up_to_date {
+                        // Only delete if also not responding to health check
+                        // (up_to_date is false if health check failed above)
+                        if child.status == "unreachable" {
+                            tracing::warn!(
+                                instance_id = %child.instance_id,
+                                "Deleting ghost child: no Railway service ID and unreachable"
+                            );
+                            let _ =
+                                db::delete_child(&version_check_state.gateway.db, &child.instance_id);
+                            continue;
+                        }
                     }
 
                     tracing::info!(
