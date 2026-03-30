@@ -57,11 +57,11 @@ impl AdaptivePacer {
     pub(super) fn next_interval(&mut self, snapshot: &NodeSnapshot, step_type: StepType) -> u64 {
         self.prev_snapshot = Some(snapshot.clone());
         let base = match step_type {
-            StepType::Mechanical => 30,     // fast, keep making progress
-            StepType::Llm => 120,           // LLM step, moderate pause
-            StepType::PlanCompleted => 300, // time to create next plan
-            StepType::NoGoals => 600,       // idle
-            StepType::Observe => 60,        // quick observation only
+            StepType::Mechanical => 15,     // fast, keep making progress
+            StepType::Llm => 60,            // LLM step, moderate pause
+            StepType::PlanCompleted => 60,  // create next plan quickly
+            StepType::NoGoals => 120,       // idle — but still train models locally
+            StepType::Observe => 30,        // quick observation only
         };
         (base as f64 * self.multiplier) as u64
     }
@@ -423,20 +423,10 @@ impl ThinkingLoop {
                     );
                 }
 
-                // Phase 3: code gen model training (every ~50 cycles)
-                let cycle_count: u64 = self
-                    .db
-                    .get_state("total_think_cycles")
-                    .ok()
-                    .flatten()
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                if cycle_count % 50 == 0 && cycle_count > 0 {
-                    // Train BPE tokenizer on accumulated solutions
-                    crate::codegen::train_tokenizer(&self.db);
-                    // Train code gen model on tokenized solutions
-                    crate::codegen::train_model(&self.db);
-                }
+                // Phase 3: code gen model training (every brain training cycle)
+                // BPE + model train alongside brain — no extra LLM calls, pure local compute
+                crate::codegen::train_tokenizer(&self.db);
+                crate::codegen::train_model(&self.db);
             }
 
             // Cortex dream consolidation (driven by temporal binding — independent from brain training)
