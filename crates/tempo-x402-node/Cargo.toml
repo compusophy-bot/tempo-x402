@@ -14,7 +14,7 @@ name = "x402-node"
 path = "src/main.rs"
 
 [features]
-default = ["soul", "agent"]
+default = ["soul", "agent", "erc8004"]
 soul = ["dep:x402-soul"]
 agent = []
 erc8004 = ["x402-identity/erc8004"]

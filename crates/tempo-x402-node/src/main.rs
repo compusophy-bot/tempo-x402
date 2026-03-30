@@ -1219,7 +1219,7 @@ async fn main() -> std::io::Result<()> {
                 }
 
                 tracing::info!("ERC-8004: attempting to mint agent identity NFT");
-                match x402_identity::identity::mint(
+                match x402_identity::onchain::mint(
                     &provider,
                     identity_registry,
                     owner,
