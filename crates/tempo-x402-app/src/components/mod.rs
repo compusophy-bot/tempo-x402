@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod cockpit;
 pub mod dashboard;
 pub mod endpoints;
 pub mod header;

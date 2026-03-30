@@ -497,6 +497,14 @@ pub fn planning_prompt(
          {}\n\
          Success criteria: {}\n\
          Progress so far: {}\n\n\
+         # Plan Creation Rules (CRITICAL)\n\
+         - Before committing to a plan, perform a step-by-step mental simulation:\n\
+           1. Will this step actually work given current environment (check tool capabilities)?\n\
+           2. If this step fails, what is the recovery step?\n\
+           3. Do I have all necessary information BEFORE calling a complex action?\n\
+         - Plans must be mechanical whenever possible (no LLM, low cost).\n\
+         - Plans must be robust: include verification steps after actions.\n\
+         - Failure is expensive. Prevent it by planning ahead.\n\n\
          # Workspace\n\
          {}{}{}{}{}\n\n\
          # Approaches\n\n\

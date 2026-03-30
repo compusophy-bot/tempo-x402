@@ -616,9 +616,9 @@ pub async fn run_cargo_check(workspace_root: &str) -> (bool, Option<String>) {
 async fn run_cargo_test(workspace_root: &str) -> (bool, Option<String>) {
     tracing::info!("running cargo test -p tempo-x402-soul...");
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
+        std::time::Duration::from_secs(600),
         tokio::process::Command::new("cargo")
-            .args(["test", "-p", "tempo-x402-soul"])
+            .args(["test", "-p", "tempo-x402-soul", "--", "--nocapture"])
             .current_dir(workspace_root)
             .env("CARGO_TARGET_DIR", "/tmp/x402_cargo_target")
             .output(),

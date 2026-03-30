@@ -1,6 +1,5 @@
 use leptos::*;
 use leptos_meta::*;
-use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -14,9 +13,7 @@ mod timeline;
 mod wallet;
 mod wallet_crypto;
 
-use components::dashboard::DashboardPage;
-use components::header::{Footer, Header, NotFound};
-use components::home::HomePage;
+use components::cockpit::CockpitPage;
 
 /// Payment requirements from 402 response
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -85,22 +82,9 @@ pub fn App() -> impl IntoView {
         <Html lang="en" />
         <Meta charset="utf-8" />
         <Meta name="viewport" content="width=device-width, initial-scale=1" />
-        <Title text="x402 - Autonomous Pay-per-Request Node" />
+        <Title text="tempo-x402 cockpit" />
         <Stylesheet href="/style.css" />
-
-        <Router>
-            <main class="container">
-                <Header />
-                <Routes>
-                    <Route path="/" view=HomePage />
-                    <Route path="/dashboard" view=DashboardPage />
-                    <Route path="/studio" view=studio::StudioPage />
-                    <Route path="/timeline" view=timeline::TimelinePage />
-                    <Route path="/*any" view=NotFound />
-                </Routes>
-                <Footer />
-            </main>
-        </Router>
+        <CockpitPage />
     }
 }
 

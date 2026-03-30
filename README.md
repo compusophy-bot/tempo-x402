@@ -121,26 +121,43 @@ Nine crates, clean dependency DAG:
 | `tempo-x402-app` | Leptos WASM dashboard with WASM-within-WASM cartridge preview (bundled) |
 | `tempo-x402-security-audit` | 19 security invariant tests (not published) |
 
-## Studio
+## Cockpit
+
+Single-page Bloomberg terminal / spaceship bridge. No page navigation — everything visible at once.
 
 ```
-┌──────────────┬──────────────────────────────┬───────────────────┐
-│  CARTRIDGES  │     PREVIEW                  │      CHAT         │
-│  snake  cart │  ┌────────────────────────┐  │  "make a game"    │
-│  tetris cart │  │  60fps canvas          │  │  Soul: Building.. │
-│  calc   cart │  │  (WASM-within-WASM)    │  │  [good] [bad]     │
-│  FILES ▸     │  └────────────────────────┘  │  [input bar]      │
-├──────────────┴──────────────────────────────┴───────────────────┤
-│ Fitness 80% | F=0.25 EXPLOIT | Ψ=0.42↑ | ELO -- | CPU RAM Disk │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│ tempo-x402 v6.1.0 │ borg-0 │ 0x2e1c..7830 │ 999997 pathUSD │ ↑3h │
+├────────────┬───────────────────────────┬────────────────────────────┤
+│ Ψ(t)      │ COGNITIVE SYSTEMS          │ PROCESSES                  │
+│ Ψ=0.4218  │ BRAIN    1.2M  loss=1.07  │ > soul [code]     [ok]    │
+│ trend ↑   │ XFORMER  2.2M  loss=2.45  │ > tools            on     │
+│ F=0.251   │ QUALITY  1.1M  loss=0.07  │ > coding            on    │
+│ EXPLOIT   │ CODEGEN  50M   loss=3.41  │                            │
+│           │ CORTEX   acc=72% val=+0.3 │ CARTRIDGES                 │
+│ FITNESS   │ GENESIS  gen=147 tmpl=200 │ ● snake-game       [live]  │
+│ ███░░ 80% │ HIVEMND  trails=45 dep=3  │ ● tetris-core      [live]  │
+│ eco  62%  │ SYNTH    coherent conf=3  │                            │
+│ exec 85%  │ EVAL     delta=+0.02      │ COLONY                     │
+│ evol 97%  │                           │ borg-0    ████ 80% queen   │
+│ coord 97% │ BENCHMARK                 │ borg-0-2  ███░ 46% clone   │
+│ intro 24% │ 65.6% pass@1  21/32      │ sync: 2 peers, Δ+0.02     │
+├────────────┴───────────────────────────┴────────────────────────────┤
+│ [CHAT]  [LOGS]                                                      │
+│ > make a snake game                                                  │
+│ soul: Building cartridge snake-game... compile_cartridge              │
+│ > _                                                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│ CPU 79% │ MEM 73% │ DISK 4% │ cycles=180 │ tempo-x402 v6.1.0      │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Cartridge browser**: Scripts + WASM cartridges. Click to preview.
-- **WASM-within-WASM preview**: Cartridge binaries instantiated client-side. No iframe.
-- **Interactive canvas**: 60fps framebuffer rendering for game/viz cartridges.
-- **Chat**: Multi-turn sessions. Agent builds cartridges when asked.
-- **Feedback**: `good`/`bad` buttons train the quality model (human-in-the-loop).
-- **Status bar**: Fitness, F(t), Ψ(t), ELO, CPU, RAM, Disk — event-driven, no polling.
+- **Monospace everything**: JetBrains Mono, green on black, no padding waste
+- **All 9 cognitive systems** visible with real metrics
+- **Ψ(t) + F(t)** with trend arrows and regime badges
+- **5-component fitness** bars with color-coded levels
+- **Chat**: multi-turn sessions with tool execution blocks, plan approval bar
+- **Live colony**: peer fitness bars, sync delta
 
 ## Quick Start
 
@@ -156,6 +173,21 @@ export GEMINI_API_KEY="your-key"
 The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
+
+### v6.1.0 — Hacker's Cockpit + Queen Audit
+
+**Cockpit Frontend**
+- Single-page Bloomberg terminal replacing 4 separate pages (home, dashboard, studio, timeline)
+- Monospace (JetBrains Mono), green/cyan/amber/red on black (#080810)
+- 3-column layout: Ψ+fitness | cognitive grid+benchmark+plan | processes+cartridges+colony
+- Tabbed bottom panel: CHAT | LOGS with plan approval bar
+- Status bar: CPU/MEM/DISK + cycle count
+- No router, no page navigation — everything visible at once
+
+**Queen Commit Audit**
+- Cherry-picked: planning prompt improvements (mental simulation rules), benchmark interval 10→5, test timeout 300→600s + --nocapture
+- Rejected: benchmark solution memoization (metric gaming), dead code files, toothless safety checks
+- Feedback nudge sent to queen with rules: never cache benchmarks, always wire modules, never add inactive guards
 
 ### v6.0.0 — Ψ(t) + Cartridge OS + Phase 3 Code Gen + Neuroplastic Self-Modification
 

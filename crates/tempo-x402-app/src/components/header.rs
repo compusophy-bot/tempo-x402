@@ -1,54 +1,11 @@
 use leptos::*;
 
-use super::wallet_panel::WalletButtons;
 use crate::*;
 
-/// Header with navigation and wallet connection
+/// Header (legacy — cockpit replaces this)
 #[component]
 pub fn Header() -> impl IntoView {
-    let (wallet, set_wallet) =
-        expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
-
-    let location = use_location();
-    let (mobile_open, set_mobile_open) = create_signal(false);
-
-    let toggle_mobile = move |_| set_mobile_open.update(|v| *v = !*v);
-
-    view! {
-        <header class="header">
-            <nav class="nav">
-                <a href="/" class="logo">"tempo-x402"</a>
-                <button class="mobile-nav-toggle" on:click=toggle_mobile>
-                    {move || if mobile_open.get() { "\u{2715}" } else { "\u{2630}" }}
-                </button>
-                <div class=move || {
-                    if mobile_open.get() { "nav-links open" } else { "nav-links" }
-                }>
-                    {move || {
-                        let path = location.pathname.get();
-                        view! {
-                            <a
-                                href="/dashboard"
-                                class=if path == "/dashboard" { "active" } else { "" }
-                                on:click=move |_| set_mobile_open.set(false)
-                            >"Dashboard"</a>
-                            <a
-                                href="/studio"
-                                class=if path == "/studio" { "active" } else { "" }
-                                on:click=move |_| set_mobile_open.set(false)
-                            >"Studio"</a>
-                            <a
-                                href="/timeline"
-                                class=if path == "/timeline" { "active" } else { "" }
-                                on:click=move |_| set_mobile_open.set(false)
-                            >"Timeline"</a>
-                        }
-                    }}
-                </div>
-                <WalletButtons wallet=wallet set_wallet=set_wallet />
-            </nav>
-        </header>
-    }
+    view! { <div></div> }
 }
 
 /// Footer with version and external links
