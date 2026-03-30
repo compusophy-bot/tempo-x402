@@ -24,6 +24,7 @@
 //! - Dimension validation on deserialization (safe scaling)
 //! - Xavier initialization via deterministic LCG PRNG
 
+pub mod bpe;
 pub mod codegen;
 pub mod diff_features;
 pub mod inference;

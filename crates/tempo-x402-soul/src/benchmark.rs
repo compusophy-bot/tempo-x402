@@ -1074,6 +1074,18 @@ pub async fn run_benchmark_session(
         if success {
             passed += 1;
             earned_weight += weight;
+
+            // Phase 3: accumulate training data for local code gen model
+            {
+                let count: u64 = db
+                    .get_state("codegen_training_count")
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let _ = db.set_state("codegen_training_count", &(count + 1).to_string());
+            }
+
             if used_review_fix {
                 review_improved += 1;
                 tracing::info!(
