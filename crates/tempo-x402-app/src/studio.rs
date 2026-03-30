@@ -55,6 +55,7 @@ pub fn StudioPage() -> impl IntoView {
     let (session_id, set_session_id) = create_signal(None::<String>);
     let (sessions, set_sessions) = create_signal(Vec::<serde_json::Value>::new());
     let (soul_status, set_soul_status) = create_signal(None::<serde_json::Value>);
+    let (sys_metrics, set_sys_metrics) = create_signal(None::<serde_json::Value>);
     let (file_tree, set_file_tree) = create_signal(Vec::<FileEntry>::new());
     let (current_path, set_current_path) = create_signal("crates".to_string());
     let (files_expanded, set_files_expanded) = create_signal(false);
@@ -128,12 +129,17 @@ pub fn StudioPage() -> impl IntoView {
         });
     }
 
-    // Fetch soul status ONCE on load — no polling.
+    // Fetch soul status + system metrics ONCE on load — no polling.
     // Refreshed after each chat message send.
     let refresh_status = move || {
         spawn_local(async move {
             if let Ok(data) = api::fetch_soul_status().await {
                 set_soul_status.set(Some(data));
+            }
+        });
+        spawn_local(async move {
+            if let Ok(data) = api::fetch_json("/soul/system").await {
+                set_sys_metrics.set(Some(data));
             }
         });
     };
@@ -586,6 +592,11 @@ pub fn StudioPage() -> impl IntoView {
                     let fe = s.as_ref().and_then(|d| d.get("free_energy")).and_then(|f| f.get("F")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
                     let regime = s.as_ref().and_then(|d| d.get("free_energy")).and_then(|f| f.get("regime")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
                     let elo = s.as_ref().and_then(|d| d.get("benchmark")).and_then(|b| b.get("elo")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                    let m = sys_metrics.get();
+                    let cpu = m.as_ref().and_then(|d| d.get("cpu_pct")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let mem_pct = m.as_ref().and_then(|d| d.get("mem_pct")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let disk_pct = m.as_ref().and_then(|d| d.get("disk_pct")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let disk_class = if disk_pct > 80.0 { "studio-metric-warn" } else { "" };
                     view! {
                         <span>{format!("Fitness {:.0}%", fitness * 100.0)}</span>
                         <span class="studio-statusbar-sep">"|"</span>
@@ -593,6 +604,10 @@ pub fn StudioPage() -> impl IntoView {
                         <span class="studio-statusbar-badge">{regime}</span>
                         <span class="studio-statusbar-sep">"|"</span>
                         <span>{format!("ELO {elo}")}</span>
+                        <span class="studio-statusbar-sep">"|"</span>
+                        <span>{format!("CPU {cpu:.0}%")}</span>
+                        <span>{format!("RAM {mem_pct:.0}%")}</span>
+                        <span class={disk_class}>{format!("Disk {disk_pct:.0}%")}</span>
                     }
                 }}
             </div>

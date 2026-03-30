@@ -3372,6 +3372,7 @@ html, body { margin: 0 !important; padding: 0 !important; }
 }
 .studio-feedback-locked.studio-feedback-good { color: #22c55e; }
 .studio-feedback-locked.studio-feedback-bad { color: #ef4444; }
+.studio-metric-warn { color: #ef4444 !important; font-weight: bold; }
 .studio-cartridge-output {
     flex: 1; padding: 12px; overflow: auto;
     background: #0a0a0a; color: #e2e8f0;
