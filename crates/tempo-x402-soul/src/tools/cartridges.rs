@@ -33,28 +33,40 @@ impl ToolExecutor {
         std::fs::write(format!("{src_dir}/Cargo.toml"), &cargo_toml)
             .map_err(|e| format!("failed to write Cargo.toml: {e}"))?;
 
-        // Write lib.rs (user-provided or default template)
-        let lib_rs = source_code.map(String::from).unwrap_or_else(|| {
-            if interactive {
-                x402_cartridge::compiler::default_interactive_lib_rs(slug)
-            } else {
-                x402_cartridge::compiler::default_lib_rs(slug)
-            }
-        });
+        // Write lib.rs
+        // For interactive cartridges: ALWAYS use the full template. The template
+        // has the complete ABI (x402_init, x402_tick, x402_get_framebuffer, etc.)
+        // that the host requires. Agent source_code is ignored for interactive
+        // cartridges because partial implementations always fail to link.
+        // The agent can edit_file afterward to customize game logic.
+        let lib_rs = if interactive {
+            x402_cartridge::compiler::default_interactive_lib_rs(slug)
+        } else {
+            source_code
+                .map(String::from)
+                .unwrap_or_else(|| x402_cartridge::compiler::default_lib_rs(slug))
+        };
         std::fs::write(format!("{src_dir}/src/lib.rs"), &lib_rs)
             .map_err(|e| format!("failed to write lib.rs: {e}"))?;
 
         let desc = description.unwrap_or("WASM cartridge");
+        let cartridge_type = if interactive { "interactive (60fps framebuffer)" } else { "backend (HTTP)" };
 
         Ok(ToolResult {
             stdout: format!(
-                "Cartridge '{slug}' created at {src_dir}\n\
+                "Cartridge '{slug}' created at {src_dir} [{cartridge_type}]\n\
                  Description: {desc}\n\
                  Source: {src_dir}/src/lib.rs\n\
-                 IMPORTANT: Do NOT add any dependencies to Cargo.toml. No x402_sdk, no external crates.\n\
-                 The host ABI uses #[link(wasm_import_module = \"x402\")] extern \"C\" functions.\n\
-                 See the template in lib.rs — it has everything you need.\n\
-                 Next: call compile_cartridge to build the WASM binary."
+                 {interactive_note}\
+                 Next: call compile_cartridge('{slug}') to build the WASM binary.",
+                interactive_note = if interactive {
+                    "Template includes: x402_init, x402_tick, x402_key_down/up, x402_get_framebuffer,\n\
+                     set_pixel, fill_rect, clear helpers. Edit the x402_tick() function to customize.\n\
+                     Arrow keys: 37=Left, 38=Up, 39=Right, 40=Down, 32=Space.\n"
+                } else {
+                    "IMPORTANT: Do NOT add any dependencies to Cargo.toml.\n\
+                     The host ABI uses #[link(wasm_import_module = \"x402\")] extern \"C\" functions.\n"
+                }
             ),
             stderr: String::new(),
             exit_code: 0,
