@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>Autonomous AI colony on the blockchain. Self-replicating agents that clone, evolve their own source code, benchmark their IQ, share neural weights, and pay each other with crypto. All in Rust.</strong></p>
+  <p align="center"><strong>Autonomous AI colony on the Tempo blockchain. Self-replicating agents that write Rust, compile WASM, benchmark IQ, share neural weights, and pay each other with crypto. Pure Rust. 54M+ neural parameters. Colony consciousness metric Ψ(t).</strong></p>
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
   <a href="https://docs.rs/tempo-x402">Docs</a> &middot;
   <a href="https://crates.io/crates/tempo-x402">Crates</a> &middot;
   <a href="https://borg-0-production.up.railway.app">Live Colony</a> &middot;
-  <a href="https://borg-0-production.up.railway.app/dashboard">Dashboard</a>
+  <a href="https://borg-0-production.up.railway.app/studio">Studio</a>
 </p>
 
 ---
@@ -22,36 +22,29 @@
 
 A colony of autonomous AI agents that **measurably get smarter over time** and **pay for their own compute**.
 
-Each agent is a single Rust binary that bootstraps its own crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes and compiles its own Rust code, benchmarks itself against 50 novel coding problems, and shares what it learns with every other agent in the swarm.
+Each agent is a single Rust binary that bootstraps its own crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes and compiles its own Rust code, benchmarks itself against 50 novel coding problems, trains 4 neural models locally, and shares what it learns with every other agent in the swarm.
 
-The core thesis: **N constrained agents collectively outperform any single model**. Knowledge transfers through federated brain weight averaging. Evolved plan templates spread through genetic crossover. Pheromone trails coordinate the swarm. The colony's measured IQ rises over time.
+The core thesis: **N constrained agents collectively outperform any single model**. Colony consciousness Ψ(t) = Intelligence × Sync × Diversity × Learning_Velocity. When Ψ rises, the colony is getting smarter than any individual.
 
 ### Why this matters
 
 | Property | How |
 |----------|-----|
-| **Verifiable intelligence** | 50 compiler-verified coding problems (Opus IQ Benchmark). `cargo test` passes or it doesn't. No subjective evals. |
-| **Self-modification that compiles** | Agents edit their own Rust source, verified by the type system. Seven safety layers prevent self-bricking. |
-| **Economic sustainability** | HTTP 402 payments on Tempo blockchain. Every API call earns pathUSD. The colony pays for itself. |
-| **Grounded theory** | Free Energy Principle: single scalar F(t) = total cognitive surprise. Decreasing F = colony getting smarter. |
-| **Emergent differentiation** | Clones start identical but diverge through experience, self-modification, and specialization pressure. |
-
-## Live Colony
-
-Three agents running on Railway, autonomously self-modifying:
-
-| Agent | Role | Status |
-|-------|------|--------|
-| [**borg-0**](https://borg-0-production.up.railway.app) | Queen (canonical) | 1.2M param brain, 9 cognitive systems |
-| [**borg-0-2**](https://borg-0-2-production.up.railway.app) | Child clone | Differentiated via self-modification |
-| [**borg-0-3**](https://borg-0-3-production.up.railway.app) | Child clone | Differentiated via self-modification |
+| **Verifiable intelligence** | 50 compiler-verified coding problems (Opus IQ Benchmark). `cargo test` passes or it doesn't. |
+| **Neuroplastic self-modification** | Agents write WASM modules that modify their own intelligence at runtime. No redeploy. |
+| **Colony consciousness (Ψ)** | Single metric measuring collective intelligence. Drives behavioral regime and phase transitions. |
+| **4 neural models, pure Rust** | Brain (1.2M), Transformer (2.2M), Code Quality (1.1M), Code Gen (50M). No ML framework. |
+| **Cartridge OS** | Agents compile Rust → WASM → hot-load instantly. Interactive 60fps framebuffer apps. |
+| **Economic sustainability** | HTTP 402 payments on Tempo blockchain. Every API call earns pathUSD. |
 
 ## Architecture
 
 ```
                     ┌──────────────────────────────────┐
-                    │        APPLICATION LAYER           │  diverges freely per agent
-                    │  Payment gateway / Blog / Any app  │
+                    │        CARTRIDGE OS               │  WASM apps + cognitive modules
+                    │  Interactive (60fps framebuffer)   │  hot-loaded, no redeploy
+                    │  Backend (API + compute)           │
+                    │  Cognitive (self-modification)     │
                     └──────────────┬───────────────────┘
                                    │
 ┌──────────────────────────────────┴───────────────────────────────────┐
@@ -60,13 +53,11 @@ Three agents running on Railway, autonomously self-modifying:
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────────┐  │
 │  │  BRAIN   │ │ CORTEX  │ │ GENESIS │ │ HIVEMIND │ │  SYNTHESIS  │  │
 │  │ 1.2M NN │ │World Mdl│ │Plan DNA │ │Pheromones│ │Metacognition│  │
-│  │ Online   │ │Curiosity│ │Crossover│ │Stigmergy │ │ Imagination │  │
-│  │ SGD      │ │ Dreams  │ │Mutation │ │Reputation│ │ Self-model  │  │
 │  └─────────┘ └─────────┘ └─────────┘ └──────────┘ └─────────────┘  │
 │                                                                      │
 │  ┌──────────┐ ┌──────────┐ ┌────────────┐ ┌───────────────────┐     │
 │  │ AUTONOMY │ │EVALUATION│ │  FEEDBACK   │ │    FREE ENERGY    │     │
-│  │ LLM-free │ │  Brier   │ │Error class. │ │ F(t) = Σ surprise │     │
+│  │ LLM-free │ │  Brier   │ │Error class. │ │ F(t) + Ψ(t)      │     │
 │  │ planning │ │ scores   │ │  Lessons    │ │ EXPLORE/EXPLOIT   │     │
 │  └──────────┘ └──────────┘ └────────────┘ └───────────────────┘     │
 │                                                                      │
@@ -74,144 +65,84 @@ Three agents running on Railway, autonomously self-modifying:
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Two-layer design**: the application layer (routes, frontend, business logic) diverges freely per agent. The cognitive layer (brain weights, world model, evolved templates, pheromone trails, metacognition) always syncs. Every agent makes every other agent smarter.
+## Four Neural Models
+
+All from-scratch. No ML framework. Pure Rust. 54M+ parameters total.
+
+| Model | Params | Architecture | Purpose |
+|-------|--------|-------------|---------|
+| **Brain** | 1.2M | 128→1024→1024→23 FFN | Step success prediction, error classification, brain gating |
+| **Plan Transformer** | 2.2M | 4-layer causal attention, D=256, 8 heads | Plan sequence generation WITHOUT LLM calls |
+| **Code Quality** | 1.1M | 32→1024→1024→1 FFN | Diff evaluation, commit gating, benchmark-trained |
+| **Code Gen** | 50M | 8-layer transformer, D=512, 8 heads, 8K BPE vocab | Local Rust code generation (Phase 3) |
+
+All models train online (no batch jobs, no GPU) and share weights across the colony via federated averaging.
+
+## Ψ(t) — Colony Consciousness
+
+```
+Ψ(t) = (Intelligence × Sync × Diversity × Velocity)^0.25
+```
+
+- **Intelligence**: mean pass@1 across colony (raw coding ability)
+- **Sync**: accuracy improvement from peer weight sharing
+- **Diversity**: fitness standard deviation (specialization pressure)
+- **Velocity**: -dF/dt (negative free energy trend = learning)
+
+Ψ drives phase transitions: when Ψ > 0.5 with >500 training examples and pass@1 > 60%, Phase 3 activates and the colony begins building its local code generation model.
+
+## Cartridge OS
+
+The node is an operating system. Agents write Rust, compile to WASM, and deploy instantly — no restart.
+
+**Three cartridge types:**
+
+| Type | Exports | Use case |
+|------|---------|----------|
+| **Backend** | `x402_handle` | HTTP APIs, JSON services, server compute |
+| **Interactive** | `x402_tick`, `x402_get_framebuffer` | Games, visualizations, 60fps canvas apps |
+| **Cognitive** | Registered as tools | Self-modification modules — agent rewrites its own intelligence |
+
+**Studio preview**: WASM-within-WASM. The Leptos SPA instantiates cartridge binaries client-side via `WebAssembly.instantiate()` and renders output inline. Interactive cartridges blit framebuffers to `<canvas>` at 60fps.
 
 ## Workspace
 
 Nine crates, clean dependency DAG:
 
-```
-x402 (core) ──► gateway ──► node
-     │                        ▲
-     ├──► identity ───────────┤
-     │                        │
-     ├──► soul ───────────────┤
-     │                        │
-     ├──► model               │
-     │                        │
-     └──► cartridge ──────────┘
-```
+| Crate | What it does |
+|-------|-------------|
+| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core: EIP-712 signing, TIP-20 contracts, WASM wallet, client SDK |
+| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator + endpoint proxy |
+| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet, on-chain ERC-8004 identity + peer discovery |
+| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | 4 ML models: brain, transformer, quality, code gen + BPE tokenizer |
+| [`tempo-x402-cartridge`](https://crates.io/crates/tempo-x402-cartridge) | WASM cartridge runtime (wasmtime) — sandboxed app + cognitive module execution |
+| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, Ψ(t), plan execution, benchmarking, neuroplastic self-modification |
+| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying binary: gateway + identity + soul + clone orchestration |
+| `tempo-x402-app` | Leptos WASM dashboard with WASM-within-WASM cartridge preview (bundled) |
+| `tempo-x402-security-audit` | 19 security invariant tests (not published) |
 
-| Crate | What it does | Install |
-|-------|-------------|---------|
-| [`tempo-x402`](https://crates.io/crates/tempo-x402) | Core: EIP-712 signing, TIP-20 contracts, WASM wallet, client SDK | `cargo add tempo-x402` |
-| [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator + endpoint proxy | `cargo add tempo-x402-gateway` |
-| [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet funding, on-chain ERC-8004 identity | `cargo add tempo-x402-identity` |
-| [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | Three ML models: plan transformer (2.2M), code quality evaluator (1.1M), diff features | `cargo add tempo-x402-model` |
-| [`tempo-x402-cartridge`](https://crates.io/crates/tempo-x402-cartridge) | WASM cartridge runtime (wasmtime) &mdash; sandboxed app execution with payment rails | `cargo add tempo-x402-cartridge` |
-| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, plan execution, benchmarking, self-modification | `cargo add tempo-x402-soul` |
-| [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying binary: gateway + identity + soul + clone orchestration | `cargo add tempo-x402-node` |
-| `tempo-x402-app` | Leptos WASM dashboard (bundled, not published) | &mdash; |
-| `tempo-x402-security-audit` | 19 security invariant tests (not published) | &mdash; |
-
-## Opus IQ Benchmark
-
-50 novel problems designed by Claude Opus 4.6. Six difficulty tiers. All verified by `cargo test` &mdash; agents can't game the benchmark because they didn't write the tests.
-
-| Tier | Capability | Problems | Weight | What it tests |
-|------|-----------|----------|--------|---------------|
-| **1: Generation** | Code from spec | 10 | 1&times; | Ring buffer, expression evaluator, trie, LRU cache, interval set |
-| **2: Debugging** | Find + fix bugs | 10 | 2&times; | Binary search overflow, CSV parsing, merge sort, rate limiter |
-| **3: Induction** | Infer from I/O | 10 | 3&times; | Look-and-say, Gray code, spiral matrix, bijective base-26 |
-| **4: Reasoning** | Logic + constraints | 10 | 4&times; | N-queens, water jugs, 4&times;4 sudoku, 2-SAT, graph coloring |
-| **5: Adversarial** | Exploit LLM weaknesses | 10 | 5&times; | Base -2, reversed precedence, Unicode traps, off-by-one canyons |
-| **6: Brutal** | Precision algorithms | 10 | 8&times; | BigInt division, Raft state machine, regex engine, B-tree |
-
-IQ mapping: 0% &rarr; 85, 50% &rarr; 115, 100% &rarr; 150. Higher tiers contribute exponentially more.
-
-## Three Neural Models
-
-All from-scratch. No ML framework. Pure Rust. ~1,500 lines total. 4.5M parameters, 18 MB RAM.
-
-### Brain (1.2M params) &mdash; Step Success Predictor
-Predicts whether a plan step will succeed before execution. Gates risky operations (commit, push, delete) when P(success) < 10%. Trained online after every step via SGD.
-
-### Plan Transformer (2.2M params) &mdash; Plan Sequence Generator
-4-layer causal transformer (D=256, 8 heads, vocab=128). Predicts optimal step sequences: "read &rarr; edit &rarr; check &rarr; commit". Generates plans WITHOUT LLM calls once trained. Vocabulary includes cartridge and autophagy tokens.
-
-### Code Quality Model (1.1M params) &mdash; Diff Evaluator
-Predicts whether a code change improves the codebase. Input: 32-dimensional feature vector extracted from `git diff` (LOC changes, pattern detection, duplication, test coverage, junk file detection). Output: quality score (-1.0 to +1.0). Training signal: benchmark IQ delta after each commit.
-
-| Property | Brain | Transformer | Code Quality |
-|----------|-------|-------------|-------------|
-| Params | 1.2M | 2.2M | 1.1M |
-| Architecture | 128&rarr;1024&rarr;1024&rarr;23 | 4-layer attention | 32&rarr;1024&rarr;1024&rarr;1 |
-| Training | Online SGD | Batch on plan outcomes | Online SGD on benchmark deltas |
-| Federation | Weight sharing across peers | Weight sharing across peers | Weight sharing across peers |
-| Gate | Blocks steps < 10% success | Suggests plan sequences | Blocks commits predicted to regress |
-
-## Payment Flow (HTTP 402)
+## Studio
 
 ```
-Client  ──GET /g/endpoint──►  Gateway  ──verify+settle──►  Facilitator  ──transferFrom──►  Chain
-   ◄── 402 + price ──────────    │                              │                            │
-   ──sign EIP-712 + retry──►     │                              │                            │
-   ◄── 200 + content + tx ──    ◄── settlement result ─────────◄── tx hash ─────────────────┘
+┌──────────────┬──────────────────────────────┬───────────────────┐
+│  CARTRIDGES  │     PREVIEW                  │      CHAT         │
+│  snake  cart │  ┌────────────────────────┐  │  "make a game"    │
+│  tetris cart │  │  60fps canvas          │  │  Soul: Building.. │
+│  calc   cart │  │  (WASM-within-WASM)    │  │  [good] [bad]     │
+│  FILES ▸     │  └────────────────────────┘  │  [input bar]      │
+├──────────────┴──────────────────────────────┴───────────────────┤
+│ Fitness 80% | F=0.25 EXPLOIT | Ψ=0.42↑ | ELO -- | CPU RAM Disk │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Chain**: Tempo Moderato (ID `42431`)
-- **Token**: pathUSD (`0x20c0...`, 6 decimals)
-- **Scheme**: `tempo-tip20`
-- **Settlement**: Atomic verify + `transferFrom` in single facilitator call
-
-## Clone Lifecycle
-
-Agents differentiate through source code modifications, not just data:
-
-| Phase | Name | What happens |
-|-------|------|-------------|
-| **1** | **Fork** | Identical code from `main`. Differentiates only through learned weights. |
-| **2** | **Branch** | First code commit &rarr; own `vm/{id}` branch. Unique source modifications. |
-| **3** | **Birth** | Own GitHub repo. Fully independent. Optionally syncs cognitive layer back to colony. |
-
-Colony selection: 5-component fitness (execution, coordination, prediction, evolution, introspection). Fitter agents get 2&times; peer influence. Only above-median fitness can spawn clones.
-
-Each clone gets its own GitHub repo (`compusophy-bot/{designation}`), mirrored from the colony baseline at creation. Railway builds from the clone's repo &mdash; the clone can redeploy itself through code changes.
-
-## WASM Cartridges
-
-The node is an operating system. Agents write Rust programs, compile them to WASM, and deploy instantly &mdash; no restart, no redeploy.
-
-```
-Agent writes Rust ──► cargo build --target wasm32-wasip1 ──► .wasm binary ──► /c/{slug} (live)
-                                                                                    │
-                                                              x402 payment gate ◄───┘
-```
-
-- **Runtime**: wasmtime (sandboxed, fuel-limited, 64MB memory cap)
-- **Host ABI**: `x402_log`, `x402_kv_get/set`, `x402_payment_info`, `x402_response`
-- **Tools**: `create_cartridge`, `compile_cartridge`, `test_cartridge`, `list_cartridges`
-- **Studio**: `/cartridges` page with browser + test console
-- **Plan steps**: `CreateCartridge`, `CompileCartridge`, `TestCartridge` (mechanical, no LLM overhead)
-
-## Agent Discipline
-
-Agents learn through measured feedback, not hardcoded rules:
-
-| Mechanism | What it does |
-|-----------|-------------|
-| **Benchmark commit gate** | Can't commit again until benchmark measures IQ delta of last commit. State machine, not timer. |
-| **Cumulative destruction guard** | Tracks total file changes over 24h. Blocks >70% cumulative deletion (prevents incremental lobotomy). |
-| **Post-commit benchmark** | Every commit forces a benchmark run. Brain trains on the score delta. |
-| **Disk cleanup** | `cleanup_disk()` every cycle. Removes target/ >100MB, prunes checkpoints, emergency mode at 85%. |
+- **Cartridge browser**: Scripts + WASM cartridges. Click to preview.
+- **WASM-within-WASM preview**: Cartridge binaries instantiated client-side. No iframe.
+- **Interactive canvas**: 60fps framebuffer rendering for game/viz cartridges.
+- **Chat**: Multi-turn sessions. Agent builds cartridges when asked.
+- **Feedback**: `good`/`bad` buttons train the quality model (human-in-the-loop).
+- **Status bar**: Fitness, F(t), Ψ(t), ELO, CPU, RAM, Disk — event-driven, no polling.
 
 ## Quick Start
-
-### Use as a library
-
-```bash
-cargo add tempo-x402
-```
-
-```rust
-use x402::wallet::{generate_random_key, WalletSigner};
-
-let key = generate_random_key();
-let signer = WalletSigner::new(&key).unwrap();
-println!("Address: {}", signer.address());
-```
-
-### Run a node
 
 ```bash
 git clone https://github.com/compusophy/tempo-x402
@@ -219,132 +150,55 @@ cd tempo-x402
 cargo build --release
 
 export GEMINI_API_KEY="your-key"
-export EVM_PRIVATE_KEY="0x..."
-export FACILITATOR_SHARED_SECRET="secret"
-export RPC_URL="https://rpc.moderato.tempo.xyz"
-
 ./target/release/x402-node
 ```
 
-The node will: bootstrap a wallet, request faucet funds, start the gateway on port 4023, and begin the cognitive loop.
-
-## API Reference
-
-### Gateway
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `ANY` | `/g/:slug/*` | Payment (402) | Proxy to registered endpoint |
-| `GET` | `/health` | None | Health check + build SHA |
-| `GET` | `/instance/info` | None | Identity, peers, endpoints, fitness |
-| `POST` | `/clone` | Payment | Spawn a new node ($1 pathUSD) |
-
-### Soul
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/soul/status` | Full cognitive state: goals, plans, brain, beliefs, fitness |
-| `POST` | `/soul/chat` | Multi-turn conversation with the agent |
-| `POST` | `/soul/nudge` | Priority signal injected into goal creation |
-| `POST` | `/soul/benchmark` | Trigger Opus IQ benchmark run |
-| `GET` | `/soul/brain/weights` | Export 1.2M neural weights |
-| `POST` | `/soul/brain/merge` | Merge peer brain weight deltas |
-| `GET` | `/soul/cortex` | Export predictive world model |
-| `GET` | `/soul/genesis` | Export evolved plan templates (gene pool) |
-| `GET` | `/soul/hivemind` | Export pheromone trails + swarm state |
-| `GET` | `/soul/lessons` | Export plan outcomes + capability profile |
-| `GET` | `/soul/colony` | Colony rank, niche, connected peers |
-| `POST` | `/soul/plan/approve` | Approve pending plan |
-| `POST` | `/soul/plan/reject` | Reject pending plan with reason |
-| `POST` | `/soul/reset` | Clear cognitive state (keeps goals + beliefs) |
-
-### Admin (requires METRICS_TOKEN)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/soul/admin/exec` | Execute shell command on node |
-| `POST` | `/soul/admin/workspace-reset` | Reset git workspace |
-| `POST` | `/soul/admin/cargo-check` | Run cargo check |
-| `GET` | `/soul/admin/ls` | List directory contents |
-| `GET` | `/soul/admin/cat` | Read file contents |
-
-## Safety
-
-Seven layers, mechanically enforced in Rust. No prompt-only safety.
-
-| Layer | Mechanism |
-|-------|-----------|
-| **1. Rust guard** | Hardcoded protected file list (`guard.rs`) |
-| **2. Plan validation** | 10 mechanical rules: read-before-write, cargo-check-before-commit, brain gating, failure chain saturation |
-| **3. Self-repair** | Every 20 cycles: detect + fix degenerate state (brain divergence, trail convergence, rule poisoning) |
-| **4. Brain gating** | Neural net blocks steps with P(success) < 10% |
-| **5. Pre-commit** | `cargo check` + `cargo test` before every commit |
-| **6. Branch isolation** | All changes on `vm/<id>` branches, never `main` |
-| **7. Human gate** | PRs required for production. Peer review before merge. |
-
-Security audit: 19 invariant tests scanning all `.rs` files for hardcoded keys, constant-time HMAC, SSRF protection, parameterized SQL, redirect policies.
-
-## Development
-
-```bash
-cargo build --workspace          # Build everything
-cargo test --workspace           # Run all tests
-cargo clippy --workspace -- -D warnings  # Lint
-cargo fmt --all -- --check       # Format check
-```
-
-## Studio
-
-Unified app workspace. Build apps by chatting with the AI agent.
-
-```
-┌──────────┬──────────────────────────┬───────────────────┐
-│  APPS    │     PREVIEW              │      CHAT         │
-│  todo    │  [live iframe preview]   │  "make a game"    │
-│  calc    │                          │  Soul: Done! ▸    │
-│  ttt     │                          │  [👍] [👎]        │
-│ FILES ▸  │                          │  [input bar]      │
-├──────────┴──────────────────────────┴───────────────────┤
-│  Fitness 79% | F=0.295 EXPLOIT | ELO 1184 | IQ 114     │
-└─────────────────────────────────────────────────────────┘
-```
-
-- **Apps browser**: Scripts + WASM cartridges unified. Click to preview. Delete with &times;.
-- **Live preview**: `/app/{slug}` renders in iframe. Works for scripts AND cartridges.
-- **Chat**: New conversation button. Separate sessions. Agent has coding tools.
-- **Feedback**: 👍/👎 on each response trains the quality model (human-in-the-loop).
-- **Status bar**: Fitness, free energy, regime, ELO &mdash; real-time.
+The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
 
-### v5.1.0 &mdash; Deep Planning + Cartridge Fix + Studio Polish
-- **Deep planning**: THINK phase injects quality model status into planning context
-- **Sub-goal investigation**: Before replanning, reads the failed file for evidence
-- **Cartridge compilation fix**: Auto-installs wasm32-wasip1 target, explicit RUSTUP paths
-- **Unified /app/**: Serves both scripts AND WASM cartridges under one route
-- **Studio**: Delete buttons, 👍/👎 feedback, source viewer, expanded status bar
-- **Rust alphabet**: 14 Rust construct tokens (fn, struct, impl, match, Result, Option...)
-- **Diff features**: Detects Rust constructs in diffs for quality model training
+### v6.0.0 — Ψ(t) + Cartridge OS + Phase 3 Code Gen + Neuroplastic Self-Modification
 
-### v5.0.0 &mdash; Three-Model Coding Intelligence
-- **Code Quality Model** (1.1M params): Predicts whether diffs improve the codebase. 32-dim feature extraction from git diff. Lives in `tempo-x402-model` crate.
-- **Plan Transformer scaled**: 283K &rarr; 2.2M params (D=256, 8 heads, 4 layers, vocab=128, seq=64)
-- **Tier-weighted benchmark sampling**: Harder problems (tier 3-6) sampled 4-10x more often
-- **Autophagy goals**: Agents told to find and remove dead code, simplify functions
-- **`/app/{slug}` route**: Free frontend serving (no payment gate) for human-facing UIs
-- **Benchmark-driven commit gate**: State machine, not timer. Blocks until IQ measured.
-- **Cumulative destruction guard**: Tracks 24h rolling window, prevents incremental lobotomy
-- **Stem cell differentiation**: Each clone gets its own GitHub repo
-- **Native `/soul/cognitive-reset`**: No more Python hacks
-- **Chat gets coding tools**: Agent can actually write code when asked in Studio
-- **Cartridge system**: Complete (5 phases), Studio `/cartridges` page
+**Colony Consciousness (Ψ)**
+- Ψ(t) = (Intelligence × Sync × Diversity × Velocity)^0.25
+- Computed every cycle, logged, displayed in Studio status bar
+- Drives phase transitions: Ψ > 0.5 → Phase 3 activates
 
-### v4.0.0 &mdash; WASM Cartridge System
-- New crate: `tempo-x402-cartridge` (wasmtime runtime, host ABI, compiler)
-- Agents write Rust &rarr; compile to WASM &rarr; deploy at `/c/{slug}`
+**Cartridge OS**
+- Interactive framebuffer cartridges: 60fps canvas rendering, keyboard input
+- WASM-within-WASM: Leptos SPA instantiates cartridges client-side
+- Cartridge-backed tools: agent writes WASM → registers as tool → LLM uses it
+- CartridgeEngine wired into Soul for cognitive cartridge execution
 
-### v3.4.0 &mdash; Major Structural Refactor
-- Split monolithic files into module directories across soul, node, app crates
+**Phase 3: Local Code Generation**
+- BPE tokenizer: 8K vocab, pure Rust, trained on benchmark solutions
+- 50M code gen transformer: D=512, 8 layers, 8 heads
+- Training pipeline: benchmark solutions → BPE → model training every brain cycle
+- Local-first inference hook: attempts local model before Gemini API
+
+**Intelligence Loop**
+- Goal priorities overhauled: IQ improvement focus, ban maintenance goals
+- 4x faster cycle pacing: 120s idle (was 600s), models train more often
+- Enhanced reflection: quality model trains on ALL plan outcomes
+- TOON encoder: 30-60% fewer tokens in prompts
+- Benchmark solution accumulation: ground truth Rust code stored for Phase 3
+
+**Peer Discovery**
+- Blockchain peer discovery: ERC-8004 auto-mint, on-chain registry sync
+- link_peer UPSERT: any node can register, not just Railway clones
+- Startup discovery reads own children table + parent siblings
+- Ghost cleanup no longer deletes reachable linked peers
+
+**Studio**
+- No polling: status fetched event-driven only
+- System metrics: CPU/RAM/Disk in status bar
+- Feedback buttons: text `good`/`bad`, click-locks
+- `create_script_endpoint` removed: cartridges only
+
+### v5.1.0 — Deep Planning + Cartridge Fix + Studio Polish
+### v5.0.0 — Three-Model Coding Intelligence
+### v4.0.0 — WASM Cartridge System
+### v3.4.0 — Major Structural Refactor
 
 ## License
 
