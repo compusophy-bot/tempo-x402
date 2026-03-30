@@ -156,6 +156,16 @@ impl ThinkingLoop {
         }
     }
 
+    /// Set the cartridge engine for cognitive cartridge execution (Phase 4).
+    /// Called by the node after construction to wire in the engine.
+    pub fn set_cartridge_engine(&mut self, engine: std::sync::Arc<x402_cartridge::CartridgeEngine>) {
+        self.tool_executor = std::mem::replace(
+            &mut self.tool_executor,
+            ToolExecutor::new(0, String::new()),
+        )
+        .with_cartridge_engine(engine);
+    }
+
     /// Run the thinking loop.
     /// The `alive` flag is set to `true` each cycle so external code can detect liveness.
     pub async fn run(&self, alive: Arc<AtomicBool>) {

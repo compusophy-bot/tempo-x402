@@ -45,6 +45,8 @@ pub struct ToolExecutor {
     pub(super) railway_token: Option<String>,
     pub(super) railway_service_id: Option<String>,
     pub(super) railway_environment_id: Option<String>,
+    /// Cartridge engine for cognitive cartridge execution (Phase 4).
+    pub(super) cartridge_engine: Option<std::sync::Arc<x402_cartridge::CartridgeEngine>>,
 }
 
 /// Max output size per stream (stdout/stderr) to stay within LLM context limits.
@@ -92,7 +94,17 @@ impl ToolExecutor {
             railway_environment_id: std::env::var("RAILWAY_ENVIRONMENT_ID")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            cartridge_engine: None,
         }
+    }
+
+    /// Set the cartridge engine for cognitive cartridge execution.
+    pub fn with_cartridge_engine(
+        mut self,
+        engine: std::sync::Arc<x402_cartridge::CartridgeEngine>,
+    ) -> Self {
+        self.cartridge_engine = Some(engine);
+        self
     }
 
     /// Set the persistent memory file path.

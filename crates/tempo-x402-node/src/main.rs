@@ -899,6 +899,12 @@ async fn main() -> std::io::Result<()> {
                     });
                 }
 
+                // Wire cartridge engine into soul for cognitive cartridges (Phase 4)
+                let soul = if let Some(ref engine) = node_state.cartridge_engine {
+                    soul.with_cartridge_engine(engine.clone())
+                } else {
+                    soul
+                };
                 let _soul_handle = soul.spawn(observer, soul_alive.clone());
                 tracing::info!(
                     dormant = node_state.soul_dormant,
