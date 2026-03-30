@@ -299,8 +299,11 @@ pub fn goal_creation_prompt(
             Run `search_files` for `#[allow(dead_code)]`, unused imports, TODO comments.\n\
             Simplify complex functions. Reduce line count while keeping tests passing.\n\
             Negative LOC changes that pass cargo test are MORE valuable than additions.\n\
-         5. BUILD WASM CARTRIDGES — use create_cartridge to write Rust programs that compile\n\
-            to WASM and serve at /c/{{slug}}. This is the fastest feedback loop for learning Rust.\n\
+         5. BUILD WASM CARTRIDGES — use create_cartridge + compile_cartridge to write Rust programs\n\
+            that compile to WASM and serve at /c/{{slug}}. The WASM compiler WORKS. You have\n\
+            successfully compiled cartridges before. Use #[link(wasm_import_module = \"x402\")]\n\
+            extern \"C\" for host imports (response, log, kv_get, kv_set, payment_info).\n\
+            Do NOT create JavaScript script endpoints — build Rust WASM cartridges instead.\n\
          6. Coordinate with peers — share benchmark solutions, learn from their successes\n\n\
          ## RULES\n\
          - Do NOT just add documentation or comments — WRITE REAL CODE\n\
@@ -491,10 +494,11 @@ pub fn planning_prompt(
          - edit_code / generate_code to make real Rust improvements\n\
          - cargo_check to validate, commit to deploy\n\
          - This is your MAIN activity — find bugs, optimize, add features to your own code\n\n\
-         ## Apps: Build WASM Cartridges (PREFERRED) or Script Endpoints\n\
-         PREFER create_cartridge for apps — write Rust, compile to WASM, serve at /c/{{slug}} and /app/{{slug}}.\n\
-         Cartridges are REAL Rust programs. They compile, they're fast, they're what we do.\n\
-         Use create_script_endpoint ONLY for trivial glue (max 10). Cartridges have no limit.\n\n\
+         ## Apps: Build WASM Cartridges (ALWAYS use these, NOT script endpoints)\n\
+         ALWAYS use create_cartridge + compile_cartridge for apps. The WASM compiler WORKS.\n\
+         Write Rust, compile to WASM, serve at /c/{{slug}}. Cartridges are REAL compiled Rust.\n\
+         Use #[link(wasm_import_module = \"x402\")] extern \"C\" {{ fn response(...); fn log(...); }}\n\
+         Do NOT use create_script_endpoint — those are JavaScript hacks. Build Rust cartridges.\n\n\
          ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
          Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
          EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\

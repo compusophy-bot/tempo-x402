@@ -128,17 +128,16 @@ pub fn StudioPage() -> impl IntoView {
         });
     }
 
-    // Poll soul status
-    let poll_status = move || {
+    // Fetch soul status ONCE on load — no polling.
+    // Refreshed after each chat message send.
+    let refresh_status = move || {
         spawn_local(async move {
             if let Ok(data) = api::fetch_soul_status().await {
                 set_soul_status.set(Some(data));
             }
         });
     };
-    poll_status();
-    let _interval =
-        set_interval_with_handle(move || poll_status(), std::time::Duration::from_secs(10));
+    refresh_status();
 
     // New conversation
     let new_conversation = move |_| {
@@ -210,6 +209,8 @@ pub fn StudioPage() -> impl IntoView {
                 }
             }
             set_sending.set(false);
+            // Refresh status after chat (no polling — event-driven)
+            refresh_status();
         });
     };
 
