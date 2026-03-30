@@ -498,7 +498,7 @@ pub fn planning_prompt(
          ALWAYS use create_cartridge + compile_cartridge for apps. The WASM compiler WORKS.\n\
          Write Rust, compile to WASM, serve at /c/{{slug}}. Cartridges are REAL compiled Rust.\n\
          Use #[link(wasm_import_module = \"x402\")] extern \"C\" {{ fn response(...); fn log(...); }}\n\
-         Do NOT use create_script_endpoint — those are JavaScript hacks. Build Rust cartridges.\n\n\
+         Cartridges are monetized via x402 payment gates at /c/{{slug}}.\n\n\
          ## Inter-Agent Coordination (CRITICAL — this is x402!)\n\
          Use `call_peer` for ALL inter-agent calls. It discovers peers, resolves the URL, and signs an EIP-712 payment.\n\
          EVERY call_peer triggers the full x402 payment flow: GET → 402 → sign → pay pathUSD → get response.\n\
@@ -517,8 +517,6 @@ pub fn planning_prompt(
          - {{\"type\": \"create_cartridge\", \"slug\": \"...\", \"description\": \"...\", \"source_code\": \"use cartridge_sdk::*; #[no_mangle] pub extern \\\"C\\\" fn handle() {{ response_set_body(b\\\"hello\\\"); }}\"}}\n\
          - {{\"type\": \"compile_cartridge\", \"slug\": \"...\", \"store_as\": \"compile_result\"}}\n\
          - {{\"type\": \"test_cartridge\", \"slug\": \"...\", \"method\": \"GET\", \"store_as\": \"test_result\"}}\n\
-         - {{\"type\": \"create_script_endpoint\", \"slug\": \"...\", \"script\": \"#!/bin/bash\\n...\", \"description\": \"...\"}}\n\
-         - {{\"type\": \"test_script_endpoint\", \"slug\": \"...\", \"input\": \"test data\", \"store_as\": \"key\"}}\n\
          - {{\"type\": \"cargo_check\", \"store_as\": \"check_result\"}}\n\
          - {{\"type\": \"delete_endpoint\", \"slug\": \"script-name\"}}  (deactivate a registered endpoint)\n\
          - {{\"type\": \"create_github_repo\", \"name\": \"my-project\", \"description\": \"...\", \"store_as\": \"repo\"}}\n\

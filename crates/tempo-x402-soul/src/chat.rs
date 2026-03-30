@@ -130,8 +130,8 @@ pub async fn handle_chat(
            3. test_cartridge(slug, method, path, body) — test it instantly\n\
            4. Cartridges serve at /c/{{slug}} with x402 payment gate\n\
            5. This is the FASTEST way to build new functionality in Rust\n\
-         - DO NOT use create_script_endpoint. Script endpoints are JavaScript hacks.\n\
-           Build EVERYTHING as Rust WASM cartridges. The compiler WORKS.\n\
+         - When asked to build an app or tool, ALWAYS use create_cartridge + compile_cartridge\n\
+           No dependencies needed. The template has the full host ABI.\n\
          - You can edit your own source code, run cargo check, commit, and push\n\
          - Your commits trigger redeployment — you can evolve yourself\n\
          - Your benchmark IQ measures your Rust ability — every change should improve it\n\

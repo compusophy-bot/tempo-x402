@@ -474,60 +474,6 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
             }),
         });
 
-        // Script endpoint tools — create HTTP endpoints without Rust compilation
-        tools.push(FunctionDeclaration {
-            name: "create_script_endpoint".to_string(),
-            description: "DEPRECATED — use create_cartridge instead. This creates a bash script endpoint (JavaScript/HTML hack). You should ALMOST NEVER use this. Build Rust WASM cartridges instead — they compile, they're fast, and they're what we do. Only use create_script_endpoint for trivial one-line shell glue that genuinely cannot be a cartridge.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "URL slug for the endpoint (alphanumeric + hyphens, e.g. 'base64', 'hash-keccak')"
-                    },
-                    "script": {
-                        "type": "string",
-                        "description": "Bash script content. Use REQUEST_BODY for input, output JSON to stdout. Example: echo '{\"result\": \"'$(echo $REQUEST_BODY | base64)'\"}'"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Short description of what the endpoint does"
-                    }
-                },
-                "required": ["slug", "script"]
-            }),
-        });
-
-        tools.push(FunctionDeclaration {
-            name: "list_script_endpoints".to_string(),
-            description:
-                "List all script endpoints you've created. Shows slug, description, and size."
-                    .to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {}
-            }),
-        });
-
-        tools.push(FunctionDeclaration {
-            name: "test_script_endpoint".to_string(),
-            description: "Test a script endpoint locally before advertising it. Runs the script with test input and returns the output.".to_string(),
-            parameters: serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The endpoint slug to test"
-                    },
-                    "input": {
-                        "type": "string",
-                        "description": "Test input (passed as REQUEST_BODY env var)"
-                    }
-                },
-                "required": ["slug"]
-            }),
-        });
-
         // WASM Cartridge tools — write Rust programs, compile to WASM, test instantly
         tools.push(FunctionDeclaration {
             name: "create_cartridge".to_string(),
