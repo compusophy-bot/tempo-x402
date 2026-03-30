@@ -46,6 +46,9 @@ impl ToolExecutor {
                 "Cartridge '{slug}' created at {src_dir}\n\
                  Description: {desc}\n\
                  Source: {src_dir}/src/lib.rs\n\
+                 IMPORTANT: Do NOT add any dependencies to Cargo.toml. No x402_sdk, no external crates.\n\
+                 The host ABI uses #[link(wasm_import_module = \"x402\")] extern \"C\" functions.\n\
+                 See the template in lib.rs — it has everything you need.\n\
                  Next: call compile_cartridge to build the WASM binary."
             ),
             stderr: String::new(),

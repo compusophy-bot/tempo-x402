@@ -920,6 +920,7 @@ async fn main() -> std::io::Result<()> {
         let self_instance = std::env::var("INSTANCE_ID").unwrap_or_default();
         let soul_db_clone = soul_db.clone();
         let db_path_clone = db_path.clone();
+        let gateway_db_clone = node_state.gateway.db.clone();
 
         tokio::spawn(async move {
             // Wait a moment for the server to be ready
@@ -1040,6 +1041,16 @@ async fn main() -> std::io::Result<()> {
             }
 
             if !catalog.is_empty() {
+                // Link discovered peers into the gateway DB so /instance/siblings returns them.
+                // This ensures clones see each other, not just the parent.
+                for entry in &catalog {
+                    let peer_id = entry.get("peer").and_then(|v| v.as_str()).unwrap_or("");
+                    let peer_url = entry.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    if !peer_id.is_empty() && !peer_url.is_empty() {
+                        let _ = db::link_peer(&gateway_db_clone, peer_id, "", peer_url);
+                    }
+                }
+
                 if let Ok(json) = serde_json::to_string(&catalog) {
                     let _ = soul_db_clone.set_state("peer_endpoint_catalog", &json);
                 }
