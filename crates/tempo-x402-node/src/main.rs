@@ -1181,24 +1181,26 @@ async fn main() -> std::io::Result<()> {
             });
         }
 
+        // ERC-8004: ALWAYS load persisted registry addresses (needed for peer discovery).
+        // This must run even if the node already has an agent_token_id.
+        #[cfg(feature = "erc8004")]
+        let registries_path = {
+            let path = std::env::var("ERC8004_REGISTRIES_PATH")
+                .unwrap_or_else(|_| "/data/erc8004_registries.json".to_string());
+            let loaded = x402_identity::load_persisted_registries(&path);
+            let registry = x402_identity::identity_registry();
+            tracing::info!(
+                loaded,
+                registry = %registry,
+                agent_token_id = ?id.agent_token_id,
+                "ERC-8004: registry config loaded"
+            );
+            path
+        };
+
         // ERC-8004 auto-deploy + auto-mint (if enabled and no token ID yet)
         #[cfg(feature = "erc8004")]
-        {
-            let mint_enabled = x402_identity::auto_mint_enabled();
-            let has_token = id.agent_token_id.is_some();
-            tracing::info!(
-                mint_enabled,
-                has_token,
-                agent_token_id = ?id.agent_token_id,
-                "ERC-8004: checking auto-mint condition"
-            );
-        }
-        #[cfg(feature = "erc8004")]
         if x402_identity::auto_mint_enabled() && id.agent_token_id.is_none() {
-            // Try loading previously deployed registries from disk
-            let registries_path = std::env::var("ERC8004_REGISTRIES_PATH")
-                .unwrap_or_else(|_| "/data/erc8004_registries.json".to_string());
-            x402_identity::load_persisted_registries(&registries_path);
 
             let rpc_clone = rpc_url.clone();
             let owner = id.address;
