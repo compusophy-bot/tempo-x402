@@ -407,31 +407,29 @@ pub fn Mandala() -> impl IntoView {
                     }).collect::<Vec<_>>()
                 }}
 
-                // ── System ring (outer) — health-driven, event-brightened ──
+                // ── System ring (outer) — phyllotaxis clusters encoding real system data ──
                 {move || {
                     let s = soul.get().unwrap_or_default();
                     let p = pulses.get();
                     let now = js_sys::Date::now();
-                    systems.iter().map(|(name, i, evt_prefix)| {
+                    systems.iter().flat_map(|(name, i, evt_prefix)| {
                         let angle = (*i as f64) * std::f64::consts::TAU / 9.0 - std::f64::consts::FRAC_PI_2;
                         let sx = cx + r_outer * angle.cos();
                         let sy = cy + r_outer * angle.sin();
-                        let (node_r, color) = system_health(&s, name);
                         let pulse = pulse_intensity(&p, evt_prefix, now);
-                        let opacity = 0.7 + pulse * 0.3;
-                        let filter = if pulse > 0.3 { "url(#glow-pulse)" } else { "" };
+                        let cluster = system_cluster(&s, name, sx, sy, pulse);
 
-                        view! {
-                            <circle cx=sx.to_string() cy=sy.to_string() r=node_r.to_string()
-                                fill="none" stroke=color.clone() stroke-width="1.5"
-                                opacity=opacity.to_string() filter=filter />
-                            <circle cx=sx.to_string() cy=sy.to_string() r=(node_r * 0.6).to_string()
-                                fill=color.clone() opacity="0.15"/>
-                            <text x=sx.to_string() y=(sy + 1.0).to_string()
-                                text-anchor="middle" class="mandala-text-system" fill=color>
-                                {name.to_string()}
-                            </text>
-                        }
+                        // Label below cluster
+                        let label_y = sy + 22.0;
+                        let (_, color) = system_health(&s, name);
+                        let mut elements = cluster;
+                        elements.push(format!(
+                            "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" class=\"mandala-text-system\" fill=\"{}\">{}</text>",
+                            sx, label_y, color, name
+                        ));
+                        elements
+                    }).map(|svg_str| {
+                        view! { <g inner_html=svg_str /> }
                     }).collect::<Vec<_>>()
                 }}
 
@@ -651,6 +649,150 @@ fn render_sparkline_ring(data: &[f64], cx: f64, cy: f64, radius: f64, color: &st
     view! {
         <path d=path_d fill="none" stroke=color stroke-width="1" opacity=opacity stroke-linecap="round"/>
     }.into_view()
+}
+
+/// Golden angle for phyllotaxis: 2π × (1 - 1/φ) ≈ 2.39996 radians
+const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
+
+/// Generate a phyllotaxis cluster of SVG elements for a cognitive system.
+/// Each system's internal structure is encoded visually:
+/// - Number of dots = data richness / activity level
+/// - Dot size = relative importance of that sub-component
+/// - Color = health gradient
+/// - Arrangement = golden spiral (self-similar, no overlaps)
+fn system_cluster(soul: &serde_json::Value, name: &str, cx: f64, cy: f64, pulse: f64) -> Vec<String> {
+    let (_, base_color) = system_health(soul, name);
+    let mut elements = Vec::new();
+
+    // Extract system-specific sub-components as (relative_size, health_0_to_1) pairs
+    let parts: Vec<(f64, f64)> = match name {
+        "BRAIN" => {
+            // 4 layers of the feedforward net, sized by param count proportion
+            let b = soul.get("brain");
+            let loss = b.and_then(|b| b.get("running_loss")).and_then(|v| v.as_f64()).unwrap_or(1.0);
+            let steps = b.and_then(|b| b.get("train_steps")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let health = 1.0 - loss.min(1.0);
+            // Input(32) → Hidden1(1024) → Hidden2(1024) → Output(23)
+            let s = (steps as f64 / 10000.0).min(1.0);
+            vec![(0.3, health * s), (1.0, health), (1.0, health), (0.2, health), // layers
+                 (0.5, s), (0.5, s), (0.4, s), (0.3, s)] // training progress dots
+        }
+        "CORTEX" => {
+            let c = soul.get("cortex");
+            let exp = c.and_then(|c| c.get("total_experiences")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let edges = c.and_then(|c| c.get("causal_edges")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let dreams = c.and_then(|c| c.get("dream_cycles")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let acc = c.and_then(|c| c.get("prediction_accuracy")).and_then(|v| v.as_str())
+                .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok()).unwrap_or(0.0) / 100.0;
+            // Each experience cluster, causal edge cluster, dream cluster
+            let n_exp = ((exp as f64).sqrt().min(6.0)) as usize;
+            let n_edges = ((edges as f64).sqrt().min(4.0)) as usize;
+            let n_dreams = (dreams.min(3) as usize);
+            let mut parts = Vec::new();
+            for _ in 0..n_exp { parts.push((0.6, acc)); }
+            for _ in 0..n_edges { parts.push((0.4, acc * 0.8)); }
+            for _ in 0..n_dreams { parts.push((0.8, 0.9)); } // dreams are bright
+            if parts.is_empty() { parts.push((0.5, 0.2)); }
+            parts
+        }
+        "GENESIS" => {
+            let g = soul.get("genesis");
+            let gen = g.and_then(|g| g.get("generation")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let templates = g.and_then(|g| g.get("templates")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let mutations = g.and_then(|g| g.get("total_mutations")).and_then(|v| v.as_u64()).unwrap_or(0);
+            // Templates as dots, generation determines ring count
+            let n = (templates.min(12)) as usize;
+            let health = (gen as f64 / 100.0).min(1.0);
+            let mut parts: Vec<(f64, f64)> = (0..n.max(3)).map(|i| {
+                let age = 1.0 - (i as f64 / n.max(1) as f64) * 0.5; // newer = brighter
+                (0.5 + (mutations as f64 / 100.0).min(0.5), health * age)
+            }).collect();
+            parts
+        }
+        "HIVEMND" => {
+            let h = soul.get("hivemind");
+            let trails = h.and_then(|h| h.get("total_trails")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let deposits = h.and_then(|h| h.get("total_deposits")).and_then(|v| v.as_u64()).unwrap_or(0);
+            // Trails as dots radiating outward
+            let n = (trails.min(10)) as usize;
+            let intensity = (deposits as f64 / 50.0).min(1.0);
+            (0..n.max(3)).map(|i| {
+                (0.4 + (i as f64 * 0.1).min(0.4), intensity * (1.0 - i as f64 * 0.08))
+            }).collect()
+        }
+        "SYNTH" => {
+            // 4 quadrants = 4 system weights (brain, cortex, genesis, hivemind)
+            let sy = soul.get("synthesis");
+            let state = sy.and_then(|s| s.get("state")).and_then(|v| v.as_str()).unwrap_or("--");
+            let health = match state { "coherent" | "exploiting" => 0.9, "exploring" => 0.6, "conflicted" => 0.3, _ => 0.5 };
+            let preds = sy.and_then(|s| s.get("total_predictions")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let n = ((preds as f64).sqrt().min(8.0)) as usize;
+            (0..n.max(4)).map(|i| {
+                // 4 sectors for the 4 sub-systems
+                let sector_health = health * (1.0 - (i % 4) as f64 * 0.1);
+                (0.6, sector_health)
+            }).collect()
+        }
+        "EVAL" => {
+            let e = soul.get("evaluation");
+            let records = e.and_then(|e| e.get("total_records")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let n = ((records as f64).sqrt().min(7.0)) as usize;
+            let health = (records as f64 / 100.0).min(1.0);
+            (0..n.max(3)).map(|i| (0.5, health * (1.0 - i as f64 * 0.05))).collect()
+        }
+        "FREE-E" => {
+            // Free energy components from each sub-system
+            let fe = soul.get("free_energy");
+            let f_val = fe.and_then(|f| f.get("F")).and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.5);
+            let health = 1.0 - f_val.min(1.0);
+            // 5 surprise components (brain, cortex, genesis, hivemind, synthesis)
+            vec![(0.8, health), (0.6, health * 0.9), (0.5, health * 0.8),
+                 (0.4, health * 0.7), (0.3, health * 0.6)]
+        }
+        "AUTON" => {
+            // Autonomous planning: compiled plans
+            vec![(0.5, 0.5), (0.4, 0.4), (0.3, 0.3)]
+        }
+        "FEEDBACK" => {
+            // Plan outcomes
+            let health = soul.get("cycle_health");
+            let completed = health.and_then(|h| h.get("completed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let failed = health.and_then(|h| h.get("failed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
+            let total = (completed + failed).max(1);
+            let rate = completed as f64 / total as f64;
+            let n = (total.min(10)) as usize;
+            (0..n.max(3)).map(|i| {
+                if (i as u64) < completed { (0.6, rate) } else { (0.4, 0.2) }
+            }).collect()
+        }
+        _ => vec![(0.5, 0.5)],
+    };
+
+    // Render phyllotaxis cluster
+    let scale = 2.2; // base radius for dot placement
+    for (i, (rel_size, health)) in parts.iter().enumerate() {
+        let theta = (i as f64) * GOLDEN_ANGLE;
+        let r = scale * ((i as f64) + 1.0).sqrt(); // sunflower spiral
+        let dx = r * theta.cos();
+        let dy = r * theta.sin();
+        let dot_r = 1.0 + rel_size * 2.0 + pulse * 1.0;
+        let opacity = 0.3 + health * 0.6 + pulse * 0.2;
+        let color = health_color(*health);
+        elements.push(format!(
+            "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{}\" opacity=\"{:.2}\"/>",
+            cx + dx, cy + dy, dot_r, color, opacity.min(1.0)
+        ));
+    }
+
+    // Outer boundary ring (faint)
+    let max_r = scale * ((parts.len() as f64) + 1.0).sqrt() + 4.0;
+    elements.push(format!(
+        "<circle cx=\"{}\" cy=\"{}\" r=\"{:.1}\" fill=\"none\" stroke=\"{}\" stroke-width=\"0.5\" opacity=\"0.2\"/>",
+        cx, cy, max_r, base_color
+    ));
+
+    elements
 }
 
 fn system_health(soul: &serde_json::Value, name: &str) -> (f64, String) {
