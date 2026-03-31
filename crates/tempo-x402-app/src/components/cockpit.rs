@@ -243,9 +243,9 @@ pub fn CockpitPage() -> impl IntoView {
                         <div class="panel-title">{"\u{03A8}(t)"}</div>
                         {move || {
                             let s = soul.get().unwrap_or_default();
-                            let colony = s.get("colony");
-                            let psi = colony.and_then(|c| c.get("psi")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            let psi_trend = colony.and_then(|c| c.get("psi_trend")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let role = s.get("role");
+                            let psi = role.and_then(|r| r.get("psi")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let psi_trend = role.and_then(|r| r.get("psi_trend")).and_then(|v| v.as_f64()).unwrap_or(0.0);
 
                             let fe = s.get("free_energy");
                             let f_val = fe.and_then(|f| f.get("F")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
@@ -254,12 +254,18 @@ pub fn CockpitPage() -> impl IntoView {
                             let trend_class = if psi_trend > 0.001 { "psi-trend up" } else if psi_trend < -0.001 { "psi-trend down" } else { "psi-trend" };
                             let trend_arrow = if psi_trend > 0.001 { "\u{2191}" } else if psi_trend < -0.001 { "\u{2193}" } else { "\u{2192}" };
 
+                            let colony_size = role.and_then(|r| r.get("colony_size")).and_then(|v| v.as_u64()).unwrap_or(1);
+                            let phase3 = role.and_then(|r| r.get("phase3_ready")).and_then(|v| v.as_bool()).unwrap_or(false);
+
                             view! {
                                 <div class="psi-value">{format!("\u{03A8}={:.4}", psi)}</div>
                                 <div class=trend_class>{trend_arrow}{format!("{:+.4}", psi_trend)}</div>
                                 <div class="fe-row">
                                     <span class="fe-value">{"F="}{f_val}</span>
                                     <span class={format!("regime-badge {}", regime.to_lowercase())}>{regime}</span>
+                                </div>
+                                <div style="margin-top:4px;font-size:9px;color:var(--text-dim)">
+                                    {format!("colony={} ph3={}", colony_size, if phase3 { "YES" } else { "no" })}
                                 </div>
                             }
                         }}
@@ -443,14 +449,15 @@ pub fn CockpitPage() -> impl IntoView {
                                 Some(b) => {
                                     let pass = b.get("pass_at_1").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                     let elo = b.get("elo_display").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                    let iq = b.get("opus_iq").and_then(|v| v.as_str()).unwrap_or("--").to_string();
                                     let passed = b.get("problems_passed").and_then(|v| v.as_u64()).unwrap_or(0);
                                     let attempted = b.get("problems_attempted").and_then(|v| v.as_u64()).unwrap_or(0);
                                     view! {
                                         <div class="bench-row">
-                                            <span class="bench-big">{format!("{:.1}%", pass)}</span>
-                                            <span class="bench-label">"pass@1"</span>
+                                            <span class="bench-big">{format!("IQ {}", iq)}</span>
+                                            <span class="bench-label">{format!("{:.1}%", pass)}</span>
                                             <span class="bench-label">{elo}</span>
-                                            <span class="bench-label">{format!("{}/{} solved", passed, attempted)}</span>
+                                            <span class="bench-label">{format!("{}/{}", passed, attempted)}</span>
                                         </div>
                                     }.into_view()
                                 }
@@ -678,6 +685,17 @@ pub fn CockpitPage() -> impl IntoView {
                                         {format!("sync: {} peers, \u{0394}{:+.3}", syncs, delta)}
                                     </div>
                                 })}
+                                {move || {
+                                    let s2 = soul.get().unwrap_or_default();
+                                    let role = s2.get("role");
+                                    let niche = role.and_then(|r| r.get("recommended_niche")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                    let col_elo = role.and_then(|r| r.get("colony_elo")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                    view! {
+                                        <div style="font-size:9px;color:var(--text-dim);margin-top:2px">
+                                            {format!("niche={} col_elo={:.0}", niche, col_elo)}
+                                        </div>
+                                    }
+                                }}
                             }
                         }}
                     </div>

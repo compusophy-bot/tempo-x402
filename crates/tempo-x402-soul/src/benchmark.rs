@@ -1484,9 +1484,9 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
     total_cycles / interval > last_benchmark_cycle / interval
 }
 
-/// Run benchmark every 5 cycles — the benchmark IS the Rust training curriculum.
-/// Every problem solved teaches Rust patterns. Every failure identifies weaknesses.
-pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 5;
+/// Run benchmark every 15 cycles — conserve Gemini credits while still measuring.
+/// Each run samples 15 problems × 1 Gemini call each = 15 API calls per session.
+pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 15;
 /// Sample 15 problems per session (was 10) — broader coverage per run.
 pub const DEFAULT_SAMPLE_SIZE: usize = 15;
 

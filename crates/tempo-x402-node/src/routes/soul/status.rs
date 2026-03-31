@@ -550,6 +550,11 @@ pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             let cg = x402_soul::codegen::status(soul_db);
             Some(cg)
         },
+        colony: {
+            // Expose psi/colony data under both "role" and "colony" for convenience
+            x402_soul::colony::load_status(soul_db)
+                .and_then(|s| serde_json::to_value(&s).ok())
+        },
     })
 }
 

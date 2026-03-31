@@ -93,6 +93,9 @@ struct SoulStatus {
     /// Code generation model: 50M param Rust code generator (Phase 3).
     #[serde(skip_serializing_if = "Option::is_none")]
     codegen: Option<serde_json::Value>,
+    /// Colony consciousness: Psi, colony size, phase3 readiness (alias of role for convenience).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    colony: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]

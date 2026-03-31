@@ -57,11 +57,11 @@ impl AdaptivePacer {
     pub(super) fn next_interval(&mut self, snapshot: &NodeSnapshot, step_type: StepType) -> u64 {
         self.prev_snapshot = Some(snapshot.clone());
         let base = match step_type {
-            StepType::Mechanical => 15,     // fast, keep making progress
-            StepType::Llm => 60,            // LLM step, moderate pause
-            StepType::PlanCompleted => 60,  // create next plan quickly
-            StepType::NoGoals => 120,       // idle — but still train models locally
-            StepType::Observe => 30,        // quick observation only
+            StepType::Mechanical => 15,     // fast, no Gemini, keep progressing
+            StepType::Llm => 120,           // LLM step — conserve Gemini credits
+            StepType::PlanCompleted => 120, // reflection + next plan — Gemini call
+            StepType::NoGoals => 300,       // idle — Gemini creates goals, slow down
+            StepType::Observe => 30,        // quick observation only, no Gemini
         };
         (base as f64 * self.multiplier) as u64
     }
