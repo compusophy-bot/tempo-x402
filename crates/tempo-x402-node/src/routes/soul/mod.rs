@@ -93,6 +93,9 @@ struct SoulStatus {
     /// Code generation model: 50M param Rust code generator (Phase 3).
     #[serde(skip_serializing_if = "Option::is_none")]
     codegen: Option<serde_json::Value>,
+    /// Learning acceleration α — second derivative of intelligence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acceleration: Option<serde_json::Value>,
     /// Colony consciousness: Psi, colony size, phase3 readiness (alias of role for convenience).
     #[serde(skip_serializing_if = "Option::is_none")]
     colony: Option<serde_json::Value>,
@@ -317,6 +320,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::post().to(brain::merge_transformer_delta),
         )
         .route("/soul/events", web::get().to(status::soul_events))
+        .route(
+            "/soul/events/stream",
+            web::get().to(status::soul_event_stream),
+        )
         .route("/soul/history", web::get().to(status::soul_history))
         .route("/soul/health", web::get().to(status::soul_health))
         // Cognitive architecture sharing endpoints

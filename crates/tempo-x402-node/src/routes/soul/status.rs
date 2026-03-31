@@ -550,6 +550,9 @@ pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             let cg = x402_soul::codegen::status(soul_db);
             Some(cg)
         },
+        acceleration: {
+            Some(x402_soul::acceleration::status(soul_db))
+        },
         colony: {
             // Expose psi/colony data under both "role" and "colony" for convenience
             x402_soul::colony::load_status(soul_db)
@@ -1156,4 +1159,72 @@ pub(super) async fn soul_history(
         },
         "total_cycles": total_cycles,
     }))
+}
+
+/// `GET /soul/events/stream` — Server-Sent Events stream of cognitive events.
+///
+/// Polls the events DB every 2s for new events since the last seen timestamp.
+/// Frontend subscribes with `EventSource` for real-time visualization.
+pub(super) async fn soul_event_stream(state: web::Data<NodeState>) -> HttpResponse {
+    let soul_db = match &state.soul_db {
+        Some(db) => db.clone(),
+        None => {
+            return HttpResponse::ServiceUnavailable()
+                .json(serde_json::json!({"error": "soul not active"}));
+        }
+    };
+
+    // Use a channel-based stream (no futures crate needed)
+    let (tx, rx) =
+        tokio::sync::mpsc::channel::<Result<actix_web::web::Bytes, std::io::Error>>(32);
+
+    tokio::spawn(async move {
+        let mut last_ts = chrono::Utc::now().timestamp();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let filter = x402_soul::events::EventFilter {
+                since: Some(last_ts),
+                limit: 50,
+                ..Default::default()
+            };
+
+            let events = soul_db.query_events(&filter).unwrap_or_default();
+
+            let mut output = String::new();
+            for event in &events {
+                if event.created_at > last_ts {
+                    last_ts = event.created_at;
+                }
+                let data = serde_json::json!({
+                    "id": event.id,
+                    "code": event.code,
+                    "level": event.level,
+                    "message": event.message,
+                    "context": event.context,
+                    "timestamp": event.created_at,
+                });
+                output.push_str(&format!("event: soul_event\ndata: {}\n\n", data));
+            }
+
+            if events.is_empty() {
+                output.push_str("event: heartbeat\ndata: {}\n\n");
+            }
+
+            if tx
+                .send(Ok(actix_web::web::Bytes::from(output)))
+                .await
+                .is_err()
+            {
+                break; // Client disconnected
+            }
+        }
+    });
+
+    HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/event-stream"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("Connection", "keep-alive"))
+        .insert_header(("Access-Control-Allow-Origin", "*"))
+        .streaming(tokio_stream::wrappers::ReceiverStream::new(rx))
 }

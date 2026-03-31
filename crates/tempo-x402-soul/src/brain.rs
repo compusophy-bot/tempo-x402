@@ -947,6 +947,22 @@ pub fn train_cycle(db: &SoulDatabase) -> (usize, f32) {
 
     save_brain(db, &brain);
 
+    // Track loss history for learning acceleration metric (α)
+    let now = chrono::Utc::now().timestamp();
+    let mut loss_hist: Vec<(i64, f64)> = db
+        .get_state("brain_loss_history")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    loss_hist.push((now, brain.running_loss as f64));
+    if loss_hist.len() > 100 {
+        loss_hist.drain(..loss_hist.len() - 100);
+    }
+    if let Ok(json) = serde_json::to_string(&loss_hist) {
+        let _ = db.set_state("brain_loss_history", &json);
+    }
+
     (count, avg_loss)
 }
 

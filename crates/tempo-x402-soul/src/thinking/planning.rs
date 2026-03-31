@@ -230,12 +230,15 @@ impl ThinkingLoop {
         // Lifecycle: tell the agent what phase it's in and encourage differentiation
         let lifecycle_section = crate::lifecycle::prompt_section(&self.db);
 
+        let accel_section = crate::acceleration::prompt_section(&self.db);
+
         let extra = [
             template_section,
             cortex_section,
             hive_section,
             synth_section,
             fe_section,
+            accel_section,
             colony_section,
             imagine_section,
             transformer_section,

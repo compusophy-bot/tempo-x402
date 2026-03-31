@@ -310,6 +310,14 @@ impl ThinkingLoop {
                 "Free energy"
             );
 
+            // Learning acceleration α — the second derivative of intelligence
+            let accel = crate::acceleration::measure(&self.db);
+            tracing::info!(
+                alpha = format!("{:+.4}", accel.alpha),
+                regime = %accel.regime,
+                "Learning acceleration \u{03B1}"
+            );
+
             // Colony selection + Ψ(t) consciousness metric
             let colony_status =
                 crate::colony::evaluate(&self.db, fitness.total, fe.total, fe.trend);
@@ -427,6 +435,12 @@ impl ThinkingLoop {
                         loss = format!("{:.4}", loss),
                         "Brain training cycle"
                     );
+                    crate::events::emit_event(
+                        &self.db, "info", "brain.trained",
+                        &format!("Brain trained on {} examples, loss={:.4}", examples, loss),
+                        Some(serde_json::json!({"examples": examples, "loss": loss})),
+                        crate::events::EventRefs::default(),
+                    );
                 }
 
                 // Plan transformer training — online learning from successful plans
@@ -437,10 +451,15 @@ impl ThinkingLoop {
                         loss = format!("{:.4}", model_loss),
                         "Plan transformer training cycle"
                     );
+                    crate::events::emit_event(
+                        &self.db, "info", "transformer.trained",
+                        &format!("Transformer trained on {} plans, loss={:.4}", model_trained, model_loss),
+                        Some(serde_json::json!({"trained": model_trained, "loss": model_loss})),
+                        crate::events::EventRefs::default(),
+                    );
                 }
 
                 // Phase 3: code gen model training (every brain training cycle)
-                // BPE + model train alongside brain — no extra LLM calls, pure local compute
                 crate::codegen::train_tokenizer(&self.db);
                 crate::codegen::train_model(&self.db);
             }

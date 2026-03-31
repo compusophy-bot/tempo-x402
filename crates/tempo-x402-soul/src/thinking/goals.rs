@@ -178,12 +178,14 @@ impl ThinkingLoop {
         let synth_report = synth.prompt_section();
         let improvement_report = crate::autonomy::improvement_prompt(&self.db);
         let fe_report = crate::free_energy::prompt_section(&self.db);
+        let accel_report = crate::acceleration::prompt_section(&self.db);
         let extra_intel = [
             cortex_report,
             hive_report,
             synth_report,
             improvement_report,
             fe_report,
+            accel_report,
         ]
         .into_iter()
         .filter(|s| !s.is_empty())

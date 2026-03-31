@@ -51,6 +51,7 @@
 //!
 //! Part of the [`tempo-x402`](https://docs.rs/tempo-x402) workspace.
 
+pub mod acceleration;
 pub mod autonomy;
 pub mod benchmark;
 pub mod brain;
