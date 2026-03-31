@@ -965,13 +965,32 @@ pub async fn run_benchmark_session(
         let solution = match generate_solution(llm, db, problem, &all_failures).await {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!(
-                    slug = %problem.slug,
-                    difficulty = %problem.difficulty,
-                    error = %e,
-                    "Benchmark: failed to generate solution"
-                );
-                record_run(db, problem, false, "", &e, 0);
+                let is_api_error = e.contains("429")
+                    || e.contains("quota")
+                    || e.contains("rate limit")
+                    || e.contains("Too Many Requests")
+                    || e.contains("503")
+                    || e.contains("500");
+                if is_api_error {
+                    // API unavailable — don't count this as an attempt.
+                    // Poisoning the score with 0% when the LLM can't respond
+                    // teaches the brain that problems are unsolvable.
+                    attempted -= 1;
+                    total_weight -= weight;
+                    tracing::warn!(
+                        slug = %problem.slug,
+                        error = %e,
+                        "Benchmark: LLM API error — NOT counting as attempt"
+                    );
+                } else {
+                    tracing::warn!(
+                        slug = %problem.slug,
+                        difficulty = %problem.difficulty,
+                        error = %e,
+                        "Benchmark: failed to generate solution"
+                    );
+                    record_run(db, problem, false, "", &e, 0);
+                }
                 continue;
             }
         };
@@ -1200,6 +1219,16 @@ pub async fn run_benchmark_session(
             &error_output,
             elapsed_ms,
         );
+    }
+
+    // Guard: if no problems were actually attempted (all API errors), skip scoring.
+    // Recording 0% when the LLM is unavailable poisons ELO, brain weights, and IQ.
+    if attempted == 0 {
+        tracing::warn!(
+            "Benchmark: ALL problems skipped due to API errors — NOT updating score. \
+             Fix the LLM API key/quota and scores will resume."
+        );
+        return Ok(0.0);
     }
 
     // Weighted score: difficulty-adjusted pass rate
@@ -1618,8 +1647,20 @@ pub async fn run_opus_benchmark_session(
         let solution = match generate_solution(llm, db, problem, &all_failures).await {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!(slug = %problem.slug, tier = %problem.difficulty, error = %e, "Opus: gen failed");
-                record_run(db, problem, false, "", &e, 0);
+                let is_api_error = e.contains("429")
+                    || e.contains("quota")
+                    || e.contains("rate limit")
+                    || e.contains("Too Many Requests")
+                    || e.contains("503")
+                    || e.contains("500");
+                if is_api_error {
+                    attempted -= 1;
+                    total_weight -= weight;
+                    tracing::warn!(slug = %problem.slug, error = %e, "Opus: LLM API error — NOT counting");
+                } else {
+                    tracing::warn!(slug = %problem.slug, tier = %problem.difficulty, error = %e, "Opus: gen failed");
+                    record_run(db, problem, false, "", &e, 0);
+                }
                 continue;
             }
         };
@@ -1696,6 +1737,15 @@ pub async fn run_opus_benchmark_session(
             &error_output,
             elapsed_ms,
         );
+    }
+
+    // Guard: if no problems were actually attempted (all API errors), skip scoring.
+    if attempted == 0 {
+        tracing::warn!(
+            "Opus IQ: ALL problems skipped due to API errors — NOT updating score/ELO/IQ. \
+             Fix the LLM API key/quota and scores will resume."
+        );
+        return Ok(0.0);
     }
 
     let weighted_score = if total_weight > 0.0 {
