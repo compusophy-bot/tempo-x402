@@ -36,58 +36,7 @@ pub fn Mandala() -> impl IntoView {
     // Track last-fired timestamp per event code prefix for connection pulses
     let (pulses, set_pulses) = create_signal(std::collections::HashMap::<String, f64>::new());
 
-    // ── History buffers for sparkline rings ──
-    let (psi_history, set_psi_history) = create_signal(Vec::<f64>::new());
-    let (fe_history, set_fe_history) = create_signal(Vec::<f64>::new());
-    let (fitness_history, set_fitness_history) = create_signal(Vec::<f64>::new());
-
-    // ── Load historical data on mount (so sparklines show the LIFE of the agent, not just this session) ──
-    {
-        spawn_local(async move {
-            let base = api::gateway_base_url();
-            // /soul/history has free_energy, elo, fitness arrays with real historical data
-            if let Ok(resp) = gloo_net::http::Request::get(&format!("{}/soul/history?limit=200", base))
-                .send().await
-            {
-                if resp.ok() {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        // Free energy history
-                        if let Some(fe_arr) = data.get("free_energy").and_then(|v| v.as_array()) {
-                            let vals: Vec<f64> = fe_arr.iter()
-                                .filter_map(|v| v.get("total").and_then(|t| t.as_f64()))
-                                .collect();
-                            if !vals.is_empty() {
-                                set_fe_history.set(vals.into_iter().rev().take(60).collect::<Vec<_>>().into_iter().rev().collect());
-                            }
-                        }
-                        // ELO history → use as proxy for psi sparkline (psi doesn't have its own history endpoint)
-                        if let Some(elo_arr) = data.get("elo").and_then(|v| v.as_array()) {
-                            let vals: Vec<f64> = elo_arr.iter()
-                                .filter_map(|v| v.get("rating").and_then(|r| r.as_f64()))
-                                .collect();
-                            if !vals.is_empty() {
-                                // Normalize ELO to 0-1 range for sparkline
-                                let min = vals.iter().cloned().fold(f64::INFINITY, f64::min);
-                                let max = vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                                let range = (max - min).max(1.0);
-                                let normed: Vec<f64> = vals.iter().map(|v| (v - min) / range).collect();
-                                set_psi_history.set(normed.into_iter().rev().take(60).collect::<Vec<_>>().into_iter().rev().collect());
-                            }
-                        }
-                        // Fitness history
-                        if let Some(fit_arr) = data.get("fitness").and_then(|v| v.as_array()) {
-                            let vals: Vec<f64> = fit_arr.iter()
-                                .filter_map(|v| v.get("total").and_then(|t| t.as_f64()))
-                                .collect();
-                            if !vals.is_empty() {
-                                set_fitness_history.set(vals.into_iter().rev().take(60).collect::<Vec<_>>().into_iter().rev().collect());
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
+    // (sparkline history signals removed — sparklines removed in v6.4.5)
 
     // ── Fetch current state (polling) ──
     let fetch_all = move || {
@@ -103,12 +52,6 @@ pub fn Mandala() -> impl IntoView {
                 }
             }
             if let Ok(data) = api::fetch_soul_status().await {
-                let fe = data.get("free_energy").and_then(|f| f.get("F")).and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0);
-                let fit = data.get("fitness").and_then(|f| f.get("total")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                // Append to history (grows from the server-loaded baseline)
-                set_fe_history.update(|h| { h.push(fe); if h.len() > 60 { h.drain(..h.len()-60); } });
-                set_fitness_history.update(|h| { h.push(fit); if h.len() > 60 { h.drain(..h.len()-60); } });
                 set_soul.set(Some(data));
             }
             if let Ok(resp) = gloo_net::http::Request::get(&format!("{}/soul/system", base))
@@ -172,9 +115,7 @@ pub fn Mandala() -> impl IntoView {
     let r_inner = 100.0f64;
     let r_outer = 185.0f64;
     let r_colony = 280.0f64;
-    let r_spark_psi = 225.0f64;
-    let r_spark_fe = 238.0f64;
-    let r_spark_fit = 251.0f64;
+    // (sparkline radii removed)
 
     // 9 cognitive systems with their associated event code prefixes
     let systems: [(& str, usize, &str); 9] = [

@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402-identity"
-version = "6.4.5"
+version = "6.4.6"
 edition = "2021"
 description = "Identity management for x402 instances: wallet generation, persistence, faucet funding, on-chain ERC-8004 agent identity"
 license = "MIT"
