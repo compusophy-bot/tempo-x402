@@ -368,11 +368,18 @@ pub fn CockpitPage() -> impl IntoView {
                                 }).unwrap_or_else(|| render_cog_item("QUALITY", vec![]))}
                                 // CODEGEN
                                 {s.get("codegen").map(|c| {
+                                    let steps = c.get("model_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let solutions = c.get("solutions_stored").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let loss = c.get("model_loss").and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                                    let can_gen = c.get("can_generate").and_then(|v| v.as_bool()).unwrap_or(false);
+                                    let params = c.get("model_params").and_then(|v| v.as_u64()).unwrap_or(0);
                                     render_cog_item("CODEGEN", vec![
-                                        ("params", format!("{}M", c.get("parameters").and_then(|v| v.as_u64()).unwrap_or(0) / 1_000_000)),
-                                        ("loss", format!("{:.2}", c.get("running_loss").and_then(|v| v.as_f64()).unwrap_or(0.0))),
+                                        ("params", format!("{}M", params / 1_000_000)),
+                                        ("steps", steps.to_string()),
+                                        ("data", solutions.to_string()),
+                                        ("gen", if can_gen { "YES" } else { "no" }.to_string()),
                                     ])
-                                }).unwrap_or_else(|| render_cog_item("CODEGEN", vec![]))}
+                                }).unwrap_or_else(|| render_cog_item("CODEGEN", vec![("status", "not loaded".to_string())]))}
                                 // CORTEX
                                 {render_cog_item("CORTEX",
                                     s.get("cortex").map(|c| {

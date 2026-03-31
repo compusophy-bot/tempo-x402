@@ -90,6 +90,9 @@ struct SoulStatus {
     /// Temporal binding: adaptive cognitive scheduling via neural oscillators.
     #[serde(skip_serializing_if = "Option::is_none")]
     temporal: Option<serde_json::Value>,
+    /// Code generation model: 50M param Rust code generator (Phase 3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codegen: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]

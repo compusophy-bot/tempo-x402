@@ -546,6 +546,10 @@ pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
                 None
             }
         },
+        codegen: {
+            let cg = x402_soul::codegen::status(soul_db);
+            Some(cg)
+        },
     })
 }
 

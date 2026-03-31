@@ -1,10 +1,11 @@
 //! Code generation model orchestration — Phase 3.
 //!
-//! Thin wrapper around the model crate's BPE tokenizer and (future)
-//! code generation transformer. Handles:
+//! Thin wrapper around the model crate's BPE tokenizer and code generation
+//! transformer. Handles:
 //! - Loading/saving BPE tokenizer from soul_state
-//! - Periodic training on accumulated benchmark solutions
-//! - (Future) Local-first code generation with Gemini fallback
+//! - Periodic training on accumulated benchmark solutions + commit diffs
+//! - Local-first code generation with Gemini fallback
+//! - Full observability: every gate logs why it blocks
 
 use crate::db::SoulDatabase;
 
@@ -27,14 +28,8 @@ pub fn save_tokenizer(db: &SoulDatabase, tok: &x402_model::bpe::BpeTokenizer) {
     }
 }
 
-/// Train the BPE tokenizer on accumulated benchmark solutions.
-///
-/// Called periodically (every ~50 cycles). Loads all stored solutions,
-/// concatenates their code, and trains the tokenizer to learn Rust
-/// source code patterns. More solutions → better tokenization → better
-/// code generation when the full model is built.
+/// Train the BPE tokenizer on accumulated code (benchmark solutions + commit diffs).
 pub fn train_tokenizer(db: &SoulDatabase) {
-    // Load accumulated solutions
     let solutions: Vec<serde_json::Value> = db
         .get_state("codegen_solutions")
         .ok()
@@ -43,10 +38,10 @@ pub fn train_tokenizer(db: &SoulDatabase) {
         .unwrap_or_default();
 
     if solutions.is_empty() {
+        tracing::debug!("codegen: BPE skip — 0 training examples (need benchmark passes or commits)");
         return;
     }
 
-    // Concatenate all solution code into training corpus
     let mut corpus = String::new();
     for sol in &solutions {
         if let Some(code) = sol.get("code").and_then(|v| v.as_str()) {
@@ -56,10 +51,14 @@ pub fn train_tokenizer(db: &SoulDatabase) {
     }
 
     if corpus.len() < 100 {
-        return; // Not enough data
+        tracing::debug!(
+            solutions = solutions.len(),
+            corpus_bytes = corpus.len(),
+            "codegen: BPE skip — corpus too small (<100 bytes)"
+        );
+        return;
     }
 
-    // Train tokenizer
     let mut tok = load_tokenizer(db);
     let before_vocab = tok.current_vocab_size();
     tok.train(&corpus);
@@ -74,7 +73,7 @@ pub fn train_tokenizer(db: &SoulDatabase) {
         vocab_before = before_vocab,
         vocab_after = after_vocab,
         compression_ratio = format!("{ratio:.2}"),
-        "BPE tokenizer trained on benchmark solutions"
+        "codegen: BPE tokenizer trained"
     );
 }
 
@@ -98,13 +97,12 @@ pub fn save_model(db: &SoulDatabase, model: &x402_model::codegen::CodeGenModel) 
 }
 
 /// Train the code generation model on accumulated solutions.
-///
-/// Loads solutions, tokenizes with BPE, feeds token sequences to the model.
-/// Called periodically alongside BPE training.
+/// Minimum 2 solutions (was 5). Every training step counts when bootstrapping.
 pub fn train_model(db: &SoulDatabase) {
     let tok = load_tokenizer(db);
     if tok.merges.is_empty() {
-        return; // BPE not trained yet
+        tracing::debug!("codegen: model skip — BPE not trained yet (0 merges)");
+        return;
     }
 
     let solutions: Vec<serde_json::Value> = db
@@ -114,8 +112,12 @@ pub fn train_model(db: &SoulDatabase) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    if solutions.len() < 5 {
-        return; // Not enough data
+    if solutions.len() < 2 {
+        tracing::debug!(
+            solutions = solutions.len(),
+            "codegen: model skip — need >=2 training examples"
+        );
+        return;
     }
 
     let mut model = load_model(db);
@@ -161,23 +163,28 @@ pub fn train_model(db: &SoulDatabase) {
             running_loss = format!("{:.4}", model.running_loss),
             steps = model.train_steps,
             params = model.param_count(),
-            "Code gen model training cycle"
+            "codegen: model training cycle complete"
         );
     }
 }
 
 /// Generate code given a prompt. Returns None if model not ready.
-///
-/// Uses greedy decoding (argmax) for now. Temperature sampling later.
+/// Minimum 10 training steps (was 100) — let it try earlier.
 pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<String> {
     let tok = load_tokenizer(db);
     if tok.merges.is_empty() {
+        tracing::debug!("codegen: generate skip — BPE not trained");
         return None;
     }
 
     let model = load_model(db);
-    if model.train_steps < 100 {
-        return None; // Not enough training
+    if model.train_steps < 10 {
+        tracing::debug!(
+            steps = model.train_steps,
+            "codegen: generate skip — need >=10 training steps (have {})",
+            model.train_steps
+        );
+        return None;
     }
 
     // Tokenize prompt
@@ -210,26 +217,63 @@ pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<St
     // Decode (skip BOS + prompt tokens)
     let prompt_len = 1 + tok.encode(prompt).len();
     if tokens.len() <= prompt_len {
+        tracing::debug!("codegen: generate produced no tokens");
         return None;
     }
 
     let generated = tok.decode(&tokens[prompt_len..]);
     if generated.trim().is_empty() {
+        tracing::debug!("codegen: generate produced empty output");
         return None;
     }
 
+    tracing::info!(
+        prompt_tokens = prompt_len,
+        generated_tokens = tokens.len() - prompt_len,
+        "codegen: local model generated code"
+    );
     Some(generated)
 }
 
-/// Get status for observability.
-pub fn status(db: &SoulDatabase) -> serde_json::Value {
-    let tok = load_tokenizer(db);
-    let training_count: u64 = db
-        .get_state("codegen_training_count")
+/// Record a successful code diff as training data for the codegen model.
+/// Called after successful commits — supplements benchmark solutions.
+pub fn record_training_example(db: &SoulDatabase, code: &str, source: &str) {
+    if code.len() < 50 {
+        return; // Too small to be useful
+    }
+
+    let mut solutions: Vec<serde_json::Value> = db
+        .get_state("codegen_solutions")
         .ok()
         .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    solutions.push(serde_json::json!({
+        "code": code,
+        "source": source,
+        "ts": chrono::Utc::now().timestamp(),
+    }));
+
+    // Cap at 1000
+    if solutions.len() > 1000 {
+        solutions.drain(..solutions.len() - 1000);
+    }
+
+    if let Ok(json) = serde_json::to_string(&solutions) {
+        let _ = db.set_state("codegen_solutions", &json);
+        tracing::info!(
+            total = solutions.len(),
+            source,
+            bytes = code.len(),
+            "codegen: recorded training example"
+        );
+    }
+}
+
+/// Get status for observability — wired into /soul/status.
+pub fn status(db: &SoulDatabase) -> serde_json::Value {
+    let tok = load_tokenizer(db);
     let solutions_count: usize = db
         .get_state("codegen_solutions")
         .ok()
@@ -238,31 +282,18 @@ pub fn status(db: &SoulDatabase) -> serde_json::Value {
         .map(|v| v.len())
         .unwrap_or(0);
 
-    let phase3_ready = x402_model::codegen::ready_for_phase3(
-        db.get_state("psi_value")
-            .ok()
-            .flatten()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0.0),
-        solutions_count,
-        db.get_state("benchmark_pass_at_1")
-            .ok()
-            .flatten()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0.0),
-    );
-
     let model = load_model(db);
+
+    let can_generate = !tok.merges.is_empty() && model.train_steps >= 10;
 
     serde_json::json!({
         "bpe_vocab_size": tok.current_vocab_size(),
         "bpe_merges": tok.merges.len(),
-        "training_count": training_count,
         "solutions_stored": solutions_count,
-        "phase3_ready": phase3_ready,
         "model_params": model.param_count(),
         "model_steps": model.train_steps,
         "model_loss": format!("{:.4}", model.running_loss),
+        "can_generate": can_generate,
         "target_params": x402_model::codegen::CODEGEN_PARAMS,
         "target_vocab": x402_model::codegen::CODEGEN_VOCAB_SIZE,
     })

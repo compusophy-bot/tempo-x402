@@ -62,6 +62,20 @@ impl ToolExecutor {
         // Enter AWAITING_BENCHMARK state — next commit blocked until benchmark runs
         if result.success {
             coding::record_commit(db);
+
+            // Feed committed code to codegen model as training data
+            // Get the diff of what was just committed
+            if let Ok(diff_out) = tokio::process::Command::new("git")
+                .args(["diff", "HEAD~1", "HEAD", "--", "*.rs"])
+                .current_dir(&workspace)
+                .output()
+                .await
+            {
+                let diff = String::from_utf8_lossy(&diff_out.stdout);
+                if !diff.is_empty() {
+                    crate::codegen::record_training_example(db, &diff, "commit");
+                }
+            }
         }
 
         // Link mutation to highest-priority active goal (if any)
