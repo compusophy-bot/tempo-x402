@@ -1,5 +1,6 @@
 use leptos::*;
 use leptos_meta::*;
+use leptos_router::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -84,7 +85,14 @@ pub fn App() -> impl IntoView {
         <Meta name="viewport" content="width=device-width, initial-scale=1" />
         <Title text="tempo-x402 cockpit" />
         <Stylesheet href="/style.css" />
-        <CockpitPage />
+
+        <Router>
+            <Routes>
+                <Route path="/" view=CockpitPage />
+                <Route path="/studio" view=studio::StudioPage />
+                <Route path="/*any" view=CockpitPage />
+            </Routes>
+        </Router>
     }
 }
 

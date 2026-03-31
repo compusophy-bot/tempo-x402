@@ -2,7 +2,7 @@ use leptos::*;
 
 use crate::*;
 
-/// Header (legacy — cockpit replaces this)
+/// Minimal header — only used by Studio page.
 #[component]
 pub fn Header() -> impl IntoView {
     view! { <div></div> }

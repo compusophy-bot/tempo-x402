@@ -228,6 +228,7 @@ pub fn CockpitPage() -> impl IntoView {
                     }}
                 </div>
                 <div class="top-bar-right">
+                    <a href="/studio" class="nav-link">"STUDIO"</a>
                     <WalletButtons wallet=wallet set_wallet=set_wallet />
                 </div>
             </div>
