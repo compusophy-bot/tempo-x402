@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402-gateway"
-version = "6.4.4"
+version = "6.4.5"
 edition = "2021"
 description = "x402 API gateway: proxy with per-request payment rails + embedded facilitator"
 license = "MIT"

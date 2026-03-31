@@ -271,10 +271,7 @@ pub fn Mandala() -> impl IntoView {
                     }).collect::<Vec<_>>()
                 }}
 
-                // ── Sparkline rings (loaded from server history on mount — shows the agent's life) ──
-                {move || render_sparkline_ring(&psi_history.get(), cx, cy, r_spark_psi, "#00ff41", 0.4)}
-                {move || render_sparkline_ring(&fe_history.get(), cx, cy, r_spark_fe, "#00e5ff", 0.3)}
-                {move || render_sparkline_ring(&fitness_history.get(), cx, cy, r_spark_fit, "#ffa000", 0.3)}
+                // Sparkline rings removed — caused polygon artifacts with sparse data
 
                 // ── α compass (above center orb) ──
                 {move || {
@@ -627,7 +624,7 @@ fn event_abbr(code: &str) -> &'static str {
 }
 
 fn render_sparkline_ring(data: &[f64], cx: f64, cy: f64, radius: f64, color: &str, opacity: f64) -> leptos::View {
-    if data.len() < 2 {
+    if data.len() < 3 {
         return view! { <g></g> }.into_view();
     }
     let min = data.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -636,14 +633,34 @@ fn render_sparkline_ring(data: &[f64], cx: f64, cy: f64, radius: f64, color: &st
     let n = data.len();
     let arc_span = std::f64::consts::TAU * 0.75;
     let start_angle = std::f64::consts::FRAC_PI_2 + std::f64::consts::FRAC_PI_4;
-    let points: Vec<String> = data.iter().enumerate().map(|(i, v)| {
+
+    // Compute (x,y) for each data point along the arc
+    let pts: Vec<(f64, f64)> = data.iter().enumerate().map(|(i, v)| {
         let t = i as f64 / (n - 1) as f64;
         let angle = start_angle + t * arc_span;
         let norm = (v - min) / range;
-        let r = radius + norm * 15.0 - 7.5;
-        format!("{:.1},{:.1}", cx + r * angle.cos(), cy + r * angle.sin())
+        let r = radius + norm * 12.0 - 6.0;
+        (cx + r * angle.cos(), cy + r * angle.sin())
     }).collect();
-    let path_d = format!("M {} L {}", points[0], points[1..].join(" L "));
+
+    // Build smooth cubic bezier path (Catmull-Rom → cubic bezier)
+    let mut path_d = format!("M {:.1},{:.1}", pts[0].0, pts[0].1);
+    for i in 0..pts.len() - 1 {
+        let p0 = if i > 0 { pts[i - 1] } else { pts[i] };
+        let p1 = pts[i];
+        let p2 = pts[i + 1];
+        let p3 = if i + 2 < pts.len() { pts[i + 2] } else { pts[i + 1] };
+
+        // Catmull-Rom to cubic bezier control points
+        let cp1x = p1.0 + (p2.0 - p0.0) / 6.0;
+        let cp1y = p1.1 + (p2.1 - p0.1) / 6.0;
+        let cp2x = p2.0 - (p3.0 - p1.0) / 6.0;
+        let cp2y = p2.1 - (p3.1 - p1.1) / 6.0;
+
+        path_d.push_str(&format!(" C {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}",
+            cp1x, cp1y, cp2x, cp2y, p2.0, p2.1));
+    }
+
     let color = color.to_string();
     let opacity = opacity.to_string();
     view! {
