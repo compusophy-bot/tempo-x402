@@ -1782,11 +1782,14 @@ async fn main() -> std::io::Result<()> {
         }
 
         // Serve SPA static files last (catch-all) if configured
+        // Cache-bust: no-cache on WASM/JS so deploys take effect immediately
         if let Some(ref dir) = spa_dir {
             let index_path = format!("{}/index.html", dir);
             app = app.service(
                 actix_files::Files::new("/", dir)
                     .index_file("index.html")
+                    .use_etag(true)
+                    .use_last_modified(true)
                     .default_handler(web::to(move || {
                         let path = index_path.clone();
                         async move { actix_files::NamedFile::open_async(path).await }

@@ -224,10 +224,22 @@ pub fn Mandala() -> impl IntoView {
                     }).collect::<Vec<_>>()
                 }}
 
-                // ── Sparkline rings ──
-                {move || render_sparkline_ring(&psi_history.get(), cx, cy, r_spark_psi, "#00ff41", 0.4)}
-                {move || render_sparkline_ring(&fe_history.get(), cx, cy, r_spark_fe, "#00e5ff", 0.3)}
-                {move || render_sparkline_ring(&fitness_history.get(), cx, cy, r_spark_fit, "#ffa000", 0.3)}
+                // ── Sparkline rings (only render when enough data to look like curves, not polygons) ──
+                {move || {
+                    let h = psi_history.get();
+                    if h.len() >= 15 { render_sparkline_ring(&h, cx, cy, r_spark_psi, "#00ff41", 0.4) }
+                    else { view! { <g></g> }.into_view() }
+                }}
+                {move || {
+                    let h = fe_history.get();
+                    if h.len() >= 15 { render_sparkline_ring(&h, cx, cy, r_spark_fe, "#00e5ff", 0.3) }
+                    else { view! { <g></g> }.into_view() }
+                }}
+                {move || {
+                    let h = fitness_history.get();
+                    if h.len() >= 15 { render_sparkline_ring(&h, cx, cy, r_spark_fit, "#ffa000", 0.3) }
+                    else { view! { <g></g> }.into_view() }
+                }}
 
                 // ── α compass (above center orb) ──
                 {move || {
