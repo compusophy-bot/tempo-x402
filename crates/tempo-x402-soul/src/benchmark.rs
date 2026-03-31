@@ -1706,6 +1706,14 @@ pub async fn run_opus_benchmark_session(
         if success {
             passed += 1;
             earned_weight += weight;
+
+            // Phase 3: store passing solution for codegen training
+            crate::codegen::record_training_example(
+                db,
+                &last_solution,
+                &format!("opus/{}", problem.slug),
+            );
+
             tracing::info!(slug = %problem.slug, tier = %problem.difficulty, "Opus: PASS");
         } else {
             tracing::info!(
