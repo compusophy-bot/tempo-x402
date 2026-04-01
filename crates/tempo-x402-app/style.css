@@ -1345,6 +1345,14 @@ h3 { font-size: 11px; color: var(--text); font-weight: 600; }
     color: var(--text-muted);
 }
 
+.eb-loading {
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 40px;
+    text-align: center;
+    letter-spacing: 0.1em;
+}
+
 .eb-dot-on { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
 .eb-dot-off { width: 6px; height: 6px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
 .eb-ver { color: var(--text-muted); }

@@ -64,6 +64,11 @@ pub fn Mandala() -> impl IntoView {
 
     view! {
         <div class="engine-bay">
+            // Loading state — show until first data arrives
+            <Show when=move || soul.get().is_some() fallback=move || view! {
+                <div class="eb-loading">"connecting..."</div>
+            }>
+
             // ═══ TOP BAR: IQ / ELO / α ═══
             {move || {
                 let s = soul.get().unwrap_or_default();
@@ -365,6 +370,8 @@ pub fn Mandala() -> impl IntoView {
                     </div>
                 }
             }}
+
+            </Show>
 
             // ═══ CONTROLS ═══
             <div class="mandala-controls">
