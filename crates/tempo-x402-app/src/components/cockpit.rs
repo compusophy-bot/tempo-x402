@@ -256,7 +256,17 @@ pub fn CockpitPage() -> impl IntoView {
                             let trend_arrow = if psi_trend > 0.001 { "\u{2191}" } else if psi_trend < -0.001 { "\u{2193}" } else { "\u{2192}" };
 
                             let colony_size = role.and_then(|r| r.get("colony_size")).and_then(|v| v.as_u64()).unwrap_or(1);
-                            let phase3 = role.and_then(|r| r.get("phase3_ready")).and_then(|v| v.as_bool()).unwrap_or(false);
+
+                            // Learning acceleration
+                            let accel = s.get("acceleration");
+                            let alpha = accel.and_then(|a| a.get("alpha")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let accel_regime = accel.and_then(|a| a.get("regime")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                            let alpha_symbol = match accel_regime.as_str() {
+                                "ACCELERATING" => "\u{25B2}",
+                                "DECELERATING" => "\u{25BC}",
+                                "CRUISING" => "\u{25C6}",
+                                _ => "\u{25CB}",
+                            };
 
                             view! {
                                 <div class="psi-value">{format!("\u{03A8}={:.4}", psi)}</div>
@@ -266,7 +276,7 @@ pub fn CockpitPage() -> impl IntoView {
                                     <span class={format!("regime-badge {}", regime.to_lowercase())}>{regime}</span>
                                 </div>
                                 <div style="margin-top:4px;font-size:9px;color:var(--text-dim)">
-                                    {format!("colony={} ph3={}", colony_size, if phase3 { "YES" } else { "no" })}
+                                    {format!("\u{03B1}={:+.4} {} | colony={}", alpha, alpha_symbol, colony_size)}
                                 </div>
                             }
                         }}
@@ -373,18 +383,17 @@ pub fn CockpitPage() -> impl IntoView {
                                         ("loss", format!("{:.3}", q.get("running_loss").and_then(|v| v.as_f64()).unwrap_or(0.0))),
                                     ])
                                 }).unwrap_or_else(|| render_cog_item("QUALITY", vec![]))}
-                                // CODEGEN
+                                // CODEGEN (Phase 3 — continuous learning, always active)
                                 {s.get("codegen").map(|c| {
                                     let steps = c.get("model_steps").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let loss = c.get("model_loss").and_then(|v| v.as_f64()).unwrap_or(0.0);
                                     let solutions = c.get("solutions_stored").and_then(|v| v.as_u64()).unwrap_or(0);
-                                    let loss = c.get("model_loss").and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                                    let can_gen = c.get("can_generate").and_then(|v| v.as_bool()).unwrap_or(false);
                                     let params = c.get("model_params").and_then(|v| v.as_u64()).unwrap_or(0);
                                     render_cog_item("CODEGEN", vec![
                                         ("params", format!("{}M", params / 1_000_000)),
-                                        ("steps", steps.to_string()),
+                                        ("L", format!("{:.2}", loss)),
+                                        ("steps", format!("{}K", steps / 1000)),
                                         ("data", solutions.to_string()),
-                                        ("gen", if can_gen { "YES" } else { "no" }.to_string()),
                                     ])
                                 }).unwrap_or_else(|| render_cog_item("CODEGEN", vec![("status", "not loaded".to_string())]))}
                                 // CORTEX
@@ -441,7 +450,7 @@ pub fn CockpitPage() -> impl IntoView {
                         }}
                     </div>
 
-                    // Benchmark Panel
+                    // Benchmark Panel — core learning heartbeat
                     <div class="panel">
                         <div class="panel-title">"BENCHMARK"</div>
                         {move || {
@@ -453,12 +462,28 @@ pub fn CockpitPage() -> impl IntoView {
                                     let iq = b.get("opus_iq").and_then(|v| v.as_str()).unwrap_or("--").to_string();
                                     let passed = b.get("problems_passed").and_then(|v| v.as_u64()).unwrap_or(0);
                                     let attempted = b.get("problems_attempted").and_then(|v| v.as_u64()).unwrap_or(0);
+
+                                    // Collective stats (total unique solved)
+                                    let collective = b.get("collective");
+                                    let unique_solved = collective.and_then(|c| c.get("unique_solved")).and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let total_problems = collective.and_then(|c| c.get("total_problems")).and_then(|v| v.as_u64()).unwrap_or(100);
+
+                                    // ELO history for sparkline
+                                    let history = b.get("elo_history").and_then(|v| v.as_array());
+                                    let history_len = history.map(|h| h.len()).unwrap_or(0);
+
                                     view! {
                                         <div class="bench-row">
                                             <span class="bench-big">{format!("IQ {}", iq)}</span>
-                                            <span class="bench-label">{format!("{:.1}%", pass)}</span>
+                                            <span class="bench-label">{format!("{:.1}% pass@1", pass)}</span>
+                                        </div>
+                                        <div class="bench-row" style="margin-top:2px">
                                             <span class="bench-label">{elo}</span>
-                                            <span class="bench-label">{format!("{}/{}", passed, attempted)}</span>
+                                        </div>
+                                        <div class="bench-row" style="margin-top:2px">
+                                            <span class="bench-label" style="color:var(--green)">{format!("{}/{} solved", unique_solved, total_problems)}</span>
+                                            <span class="bench-label">{format!("{}/{} session", passed, attempted)}</span>
+                                            <span class="bench-label" style="color:var(--text-dim)">{format!("{} runs", history_len)}</span>
                                         </div>
                                     }.into_view()
                                 }

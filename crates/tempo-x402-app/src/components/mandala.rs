@@ -80,13 +80,15 @@ pub fn Mandala() -> impl IntoView {
                 let alpha: f64 = a.and_then(|a| a.get("alpha")).and_then(|v| v.as_str()).and_then(|s| s.parse().ok()).unwrap_or(0.0);
                 let regime = a.and_then(|a| a.get("regime")).and_then(|v| v.as_str()).unwrap_or("STALLED");
                 let (sym, cls) = match regime { "ACCELERATING" => ("\u{25B2}", "acc-up"), "DECELERATING" => ("\u{25BC}", "acc-down"), "CRUISING" => ("\u{25C6}", "acc-flat"), _ => ("\u{25CB}", "acc-stall") };
+                let collective = b.and_then(|b| b.get("collective"));
+                let unique_solved = collective.and_then(|c| c.get("unique_solved")).and_then(|v| v.as_u64()).unwrap_or(0);
                 view! {
                     <div class="eb-top">
                         <span class="eb-iq">{format!("IQ {}", iq)}</span>
                         <span class="eb-sep">"|"</span>
                         <span class="eb-stat">{format!("ELO {:.0}", elo)}</span>
                         <span class="eb-sep">"|"</span>
-                        <span class="eb-stat">{format!("{:.1}%", pass)}</span>
+                        <span class="eb-stat">{format!("{:.1}% ({}/100)", pass, unique_solved)}</span>
                         <span class="eb-sep">"|"</span>
                         <span class={format!("eb-alpha {}", cls)}>{format!("{} \u{03B1}={:+.4} {}", sym, alpha, regime)}</span>
                     </div>
@@ -298,9 +300,9 @@ pub fn Mandala() -> impl IntoView {
                         let loss = cg.and_then(|c| c.get("model_loss")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
                         let can = cg.and_then(|c| c.get("can_generate")).and_then(|v| v.as_bool()).unwrap_or(false);
                         let params = cg.and_then(|c| c.get("model_params")).and_then(|v| v.as_u64()).unwrap_or(0);
-                        let badge_cls = if can { "eb-badge-ok" } else { "eb-badge-off" };
                         let loss_num: f64 = loss.parse().unwrap_or(10.0);
                         let bar_pct = ((1.0 - (loss_num / 10.0).min(1.0)) * 100.0) as u32;
+                        let loss_color = if loss_num < 2.0 { "var(--green)" } else if loss_num < 4.0 { "var(--amber)" } else { "var(--red)" };
                         view! {
                             <div class="eb-module">
                                 <div class="eb-label">"CODEGEN"</div>
@@ -308,9 +310,10 @@ pub fn Mandala() -> impl IntoView {
                                     <div class="eb-fe-fill eb-regime-exploit" style=format!("width:{}%", bar_pct)></div>
                                 </div>
                                 <div class="eb-stats">
-                                    <span>{format!("{}M L={} {}d {}s", params/1_000_000, loss, sols, steps)}</span>
+                                    <span>{format!("{}M", params/1_000_000)}</span>
+                                    <span style=format!("color:{}", loss_color)>{format!(" L={}", loss)}</span>
+                                    <span>{format!(" {}d {}Ks", sols, steps/1000)}</span>
                                 </div>
-                                <span class={format!("eb-badge {}", badge_cls)}>{if can { "CAN GEN" } else { "NO GEN" }}</span>
                             </div>
                         }
                     }}
