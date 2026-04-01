@@ -332,7 +332,7 @@ impl ThinkingLoop {
                     let intersection = desc_words.intersection(&existing_words).count();
                     let union = desc_words.union(&existing_words).count();
                     let similarity = intersection as f64 / union as f64;
-                    similarity > 0.5 // 50% overlap with abandoned = retread
+                    similarity > 0.3 // 30% overlap with abandoned = retread (was 50%, too lenient)
                 });
                 if is_retread {
                     tracing::info!(%description, "Skipping retread of abandoned goal");

@@ -47,14 +47,12 @@ use crate::synthesis::{self, CognitiveState};
 // ── Constants ────────────────────────────────────────────────────────
 
 /// Minimum cortex simulation confidence to accept an autonomous plan.
-/// Lowered from 0.5 to 0.3 — let autonomous plans attempt more often and learn from failures.
-const AUTONOMOUS_CONFIDENCE_THRESHOLD: f32 = 0.3;
+const AUTONOMOUS_CONFIDENCE_THRESHOLD: f32 = 0.4;
 /// Minimum genesis template match score.
-/// Lowered from 0.3 to 0.15 — partial keyword matches are still useful scaffolding.
-const TEMPLATE_MATCH_THRESHOLD: f32 = 0.15;
+/// Raised from 0.15 to 0.35 — low matches produced trivial loops.
+const TEMPLATE_MATCH_THRESHOLD: f32 = 0.35;
 /// Minimum cortex simulation success probability.
-/// Lowered from 0.3 to 0.2 — even 20% predicted success is worth attempting.
-const SIMULATION_SUCCESS_THRESHOLD: f32 = 0.2;
+const SIMULATION_SUCCESS_THRESHOLD: f32 = 0.3;
 
 // ── Autonomous Plan Compilation ──────────────────────────────────────
 
@@ -92,6 +90,22 @@ pub fn compile_autonomous_plan(
         return CompilationResult::FallbackToLlm(format!(
             "Best template match too low: {:.0}%",
             match_score * 100.0
+        ));
+    }
+
+    // Refuse non-substantive templates — they produce trivial read-only loops
+    if !best_template.substantive {
+        return CompilationResult::FallbackToLlm(
+            "Best template is non-substantive (read-only) — falling back to LLM".to_string(),
+        );
+    }
+
+    // Refuse templates with high failure rate (tried many times, mostly fails)
+    if best_template.uses > 3 && best_template.success_rate() < 0.3 {
+        return CompilationResult::FallbackToLlm(format!(
+            "Best template has poor track record: {:.0}% success over {} uses",
+            best_template.success_rate() * 100.0,
+            best_template.uses,
         ));
     }
 

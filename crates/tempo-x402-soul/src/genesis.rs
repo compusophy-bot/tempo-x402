@@ -110,17 +110,21 @@ impl PlanTemplate {
     }
 
     /// Compute fitness: success rate weighted by recency and generation.
-    /// Non-substantive templates are capped at 0.3 — read-only plans aren't real success.
+    /// Non-substantive templates capped at 0.1 (was 0.3 — too high, allowed reselection).
+    /// Templates with high uses but low success rate get additional penalty.
     pub fn compute_fitness(&self, now: i64) -> f32 {
         let success = self.success_rate();
         let age_hours = ((now - self.created_at) as f32 / 3600.0).max(1.0);
-        let recency = 1.0 / (1.0 + age_hours / 168.0); // Half-life: 1 week
-        let gen_bonus = 1.0 + (self.generation as f32 * 0.05).min(0.5); // Evolved templates get slight bonus
+        let recency = 1.0 / (1.0 + age_hours / 168.0);
+        let gen_bonus = 1.0 + (self.generation as f32 * 0.05).min(0.5);
         let raw = success * recency * gen_bonus;
+        // High-use low-success penalty: templates tried many times that mostly fail
+        let use_penalty = if self.uses > 5 && success < 0.3 { 0.1 } else { 1.0 };
+        let adjusted = raw * use_penalty;
         if !self.substantive {
-            raw.min(0.3) // Cap trivial templates
+            adjusted.min(0.1) // Cap trivial templates hard (was 0.3)
         } else {
-            raw
+            adjusted
         }
     }
 }
@@ -243,12 +247,19 @@ impl GenePool {
     }
 
     /// Record that a plan based on a template failed.
+    /// Trivial failures (read-only loops) get HEAVY penalty to prevent reselection.
     pub fn record_failure(&mut self, template_id: u64) {
         if let Some(t) = self.templates.iter_mut().find(|t| t.id == template_id) {
-            t.uses += 1;
+            t.uses += 3; // Triple-count failures to rapidly degrade fitness
             let now = chrono::Utc::now().timestamp();
             t.fitness = t.compute_fitness(now);
+            // If fitness is very low after this, just remove the template
+            if t.fitness < 0.05 {
+                tracing::info!(template_id, fitness = t.fitness, "Pruning dead template");
+            }
         }
+        // Cull templates below 0.05 fitness
+        self.templates.retain(|t| t.fitness >= 0.05 || t.uses < 3);
     }
 
     /// Record that a plan based on a template succeeded.

@@ -257,19 +257,19 @@ impl ThinkingLoop {
             }
         }
 
-        // Circuit breaker 3: goal has too many consecutive trivial completions
-        // If the last N plans for this goal were all trivial, the goal is stuck and
-        // the agent is just looping reads/thinks without producing real work.
+        // Circuit breaker 3: goal has too many trivial completions (TOTAL, not consecutive).
+        // Even one interspersed failure shouldn't save a goal that keeps producing
+        // trivial read-only plans. 2 trivial completions = abandon immediately.
         if let Ok(Some(goal)) = self.db.get_goal(&plan.goal_id) {
             let recent_outcomes = self.db.get_recent_plan_outcomes(10).unwrap_or_default();
-            let consecutive_trivial = recent_outcomes
+            let total_trivial = recent_outcomes
                 .iter()
-                .take_while(|o| o.goal_id == plan.goal_id && o.status == "completed_trivial")
+                .filter(|o| o.goal_id == plan.goal_id && o.status == "completed_trivial")
                 .count();
-            if consecutive_trivial >= 3 {
+            if total_trivial >= 2 {
                 tracing::warn!(
                     goal_id = %plan.goal_id,
-                    consecutive_trivial,
+                    total_trivial,
                     "Goal stuck in trivial completion loop — abandoning"
                 );
                 let _ = self.db.update_goal(
@@ -282,8 +282,8 @@ impl ThinkingLoop {
                 let _ = self.db.update_plan(&plan);
                 let _ = self.db.set_state("active_plan_id", "");
                 let trivial_err = format!(
-                    "{} consecutive trivial completions — goal is stuck in read-only loop",
-                    consecutive_trivial
+                    "{} trivial completions — goal is stuck in read-only loop",
+                    total_trivial
                 );
                 feedback::record_outcome(&self.db, &plan, &goal.description, Some(&trivial_err));
                 crate::events::emit_event(
@@ -292,9 +292,9 @@ impl ThinkingLoop {
                     "goal.trivial_loop",
                     &format!(
                         "Goal abandoned after {} trivial completions: {}",
-                        consecutive_trivial, goal.description
+                        total_trivial, goal.description
                     ),
-                    Some(serde_json::json!({"consecutive_trivial": consecutive_trivial})),
+                    Some(serde_json::json!({"total_trivial": total_trivial})),
                     crate::events::EventRefs {
                         plan_id: Some(plan.id.clone()),
                         goal_id: Some(plan.goal_id.clone()),
@@ -308,7 +308,7 @@ impl ThinkingLoop {
                         "Goal '{}' completed trivially {} times in a row — it only did reads/thinks. \
                          Pick a goal that requires CONCRETE actions: editing code, creating endpoints, \
                          running shell commands, or making commits.",
-                        desc_preview, consecutive_trivial
+                        desc_preview, total_trivial
                     ),
                     4,
                 );
@@ -318,7 +318,7 @@ impl ThinkingLoop {
                     entered_code: false,
                     summary: format!(
                         "abandoned goal after {} consecutive trivial completions",
-                        consecutive_trivial
+                        total_trivial
                     ),
                 });
             }
