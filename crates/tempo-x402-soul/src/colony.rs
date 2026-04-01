@@ -198,7 +198,10 @@ pub fn evaluate(
         .flatten()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.0);
-    let phase3_ready = psi > 0.5 && training_examples > 500 && self_pass > 60.0;
+    // Phase 3 is always active — the codegen model learns continuously.
+    // The old gate (psi > 0.5 && examples > 500 && pass > 60%) was unreachable
+    // while the system was stuck. Phase 3 is a gradient, not a gate.
+    let phase3_ready = training_examples > 0;
 
     let status = ColonyStatus {
         self_fitness,

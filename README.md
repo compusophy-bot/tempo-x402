@@ -174,6 +174,16 @@ The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chai
 
 ## Changelog
 
+### v6.8.0 — Benchmark as Core Learning Engine
+
+The benchmark is the heartbeat of intelligence, not an optional side-task.
+
+- **Benchmark runs every cycle** (cooldown-gated only, not oscillator-gated). Cooldown reduced from 15 min to 5 min. Benchmark fires every ~7 min instead of every ~30+ min.
+- **Codegen weaning fixed**: local model now receives full problem context (instructions + test code), not just slug name. Quality gate lowered to let cargo test be the judge.
+- **Tight training loop**: codegen model trains immediately after each benchmark (not waiting for separate brain training oscillator).
+- **Phase 3 always active**: removed unreachable readiness gate (was: Psi > 0.5 AND 500+ examples AND pass@1 > 60%). Codegen model always tries, always fails, always learns.
+- **Codegen success tracking**: attempts, successes, and Gemini weaning events logged and tracked.
+
 ### v6.7.0 — Fix Intelligence Learning Pipeline
 
 Five interconnected blockages were preventing the agent from learning past IQ 114. All fixed.

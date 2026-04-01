@@ -330,15 +330,14 @@ impl ThinkingLoop {
                 );
             }
 
-            // Run Exercism Rust benchmark (driven by temporal binding + cooldown)
+            // Run benchmark EVERY cycle (cooldown-gated only, not oscillator-gated).
+            // The benchmark IS the training loop — it's core, not optional.
             if let Some(llm) = &self.llm {
-                if fired_ops.contains(&crate::temporal::OP_BENCHMARK.to_string())
-                    && crate::benchmark::should_run_benchmark(
-                        &self.db,
-                        crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
-                    )
-                {
-                    tracing::info!("Starting periodic Exercism Rust benchmark session");
+                if crate::benchmark::should_run_benchmark(
+                    &self.db,
+                    crate::benchmark::DEFAULT_BENCHMARK_INTERVAL,
+                ) {
+                    tracing::info!("Starting benchmark session (core learning loop)");
                     let current_cycle: u64 = self
                         .db
                         .get_state("total_think_cycles")
@@ -442,6 +441,12 @@ impl ThinkingLoop {
                                             let _ = self.db.set_state("benchmark_stagnation_count", "0");
                                         }
                                     }
+                                    // Train codegen IMMEDIATELY after benchmark (tight feedback loop).
+                                    // Don't wait for the brain training oscillator — the benchmark
+                                    // just produced fresh training data, train on it NOW.
+                                    crate::codegen::train_tokenizer(&self.db);
+                                    crate::codegen::train_model(&self.db);
+                                    tracing::info!("Codegen trained immediately after benchmark");
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Opus IQ benchmark failed");

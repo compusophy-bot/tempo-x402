@@ -485,19 +485,50 @@ pub async fn generate_solution(
     problem: &ExercismProblem,
     peer_failures: &[SharedFailure],
 ) -> Result<String, String> {
-    // Phase 3 weaning: try local codegen model first (saves Gemini credits)
-    let prompt = format!("// Rust solution for: {}\n", problem.slug);
-    if let Some(local_code) = crate::codegen::generate(db, &prompt, 512) {
-        if local_code.len() > 50 && local_code.contains("fn ") {
-            tracing::info!(
-                slug = %problem.slug,
-                chars = local_code.len(),
-                "Benchmark: attempting local codegen solution (weaning)"
-            );
-            let _ = db.set_state("codegen_benchmark_attempts",
-                &(db.get_state("codegen_benchmark_attempts").ok().flatten()
-                    .and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) + 1).to_string());
-            return Ok(local_code);
+    // Phase 3 weaning: try local codegen model first (saves Gemini credits).
+    // Feed it real problem context, not just the slug.
+    {
+        let codegen_prompt = format!(
+            "// Rust solution for: {}\n// Instructions: {}\n// Tests:\n{}\n\n",
+            problem.slug,
+            problem.instructions.chars().take(500).collect::<String>(),
+            problem.test_code.chars().take(1000).collect::<String>(),
+        );
+        let attempts: u64 = db.get_state("codegen_benchmark_attempts").ok().flatten()
+            .and_then(|s| s.parse().ok()).unwrap_or(0);
+        let successes: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
+            .and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        match crate::codegen::generate(db, &codegen_prompt, 512) {
+            Some(local_code) if local_code.len() > 30 => {
+                let _ = db.set_state("codegen_benchmark_attempts", &(attempts + 1).to_string());
+                // Log every attempt — we need visibility into codegen quality
+                tracing::info!(
+                    slug = %problem.slug,
+                    chars = local_code.len(),
+                    has_fn = local_code.contains("fn "),
+                    total_attempts = attempts + 1,
+                    total_successes = successes,
+                    "Codegen: local model produced output (weaning attempt)"
+                );
+                // Use it if it looks like Rust (lowered bar — let cargo test be the judge)
+                if local_code.contains("fn ") || local_code.contains("pub ") || local_code.contains("struct ") {
+                    // Flag that this solution came from local codegen (for success tracking)
+                    let _ = db.set_state("codegen_last_used", "1");
+                    return Ok(local_code);
+                }
+                tracing::info!(slug = %problem.slug, "Codegen: output rejected (no Rust patterns)");
+            }
+            Some(local_code) => {
+                tracing::debug!(
+                    slug = %problem.slug,
+                    chars = local_code.len(),
+                    "Codegen: output too short, falling back to Gemini"
+                );
+            }
+            None => {
+                tracing::debug!(slug = %problem.slug, "Codegen: model not ready or produced nothing");
+            }
         }
     }
 
@@ -1493,7 +1524,9 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     let now = chrono::Utc::now().timestamp();
-    if now - last_benchmark < 900 {
+    // 5-minute cooldown (was 15 min). Each run is ~2.5 min (15 problems × 10s).
+    // Benchmark is the core learning heartbeat — run it frequently.
+    if now - last_benchmark < 300 {
         return false;
     }
 
@@ -1787,6 +1820,11 @@ pub async fn run_opus_benchmark_session(
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
+        // Check if codegen was used for this solution
+        let codegen_used = db.get_state("codegen_last_used").ok().flatten()
+            .map(|v| v == "1").unwrap_or(false);
+        let _ = db.set_state("codegen_last_used", "0"); // Reset flag
+
         if success {
             passed += 1;
             earned_weight += weight;
@@ -1798,7 +1836,20 @@ pub async fn run_opus_benchmark_session(
                 &format!("opus/{}", problem.slug),
             );
 
-            tracing::info!(slug = %problem.slug, tier = %problem.difficulty, "Opus: PASS");
+            // Track codegen success
+            if codegen_used {
+                let s: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
+                    .and_then(|s| s.parse().ok()).unwrap_or(0);
+                let _ = db.set_state("codegen_benchmark_successes", &(s + 1).to_string());
+                tracing::info!(
+                    slug = %problem.slug,
+                    tier = %problem.difficulty,
+                    total_codegen_successes = s + 1,
+                    "Opus: PASS (LOCAL CODEGEN — Gemini weaning!)"
+                );
+            } else {
+                tracing::info!(slug = %problem.slug, tier = %problem.difficulty, "Opus: PASS");
+            }
         } else {
             tracing::info!(
                 slug = %problem.slug,

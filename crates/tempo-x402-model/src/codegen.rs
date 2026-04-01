@@ -41,16 +41,11 @@ pub enum TrainingSource {
     },
 }
 
-/// Readiness check: should we start building the local model?
-///
-/// Conditions:
-/// - Ψ(t) > 0.5 (colony is healthy and learning)
-/// - >500 training examples accumulated
-/// - benchmark pass@1 > 60% (baseline competence established)
-///
-/// The colony watches these signals and begins Phase 3 when ready.
-pub fn ready_for_phase3(psi: f64, training_examples: usize, pass_at_1: f64) -> bool {
-    psi > 0.5 && training_examples > 500 && pass_at_1 > 60.0
+/// Phase 3 is always active. The codegen model learns continuously from
+/// benchmark solutions. The old gate (Ψ > 0.5, 500+ examples, pass@1 > 60%)
+/// was unreachable while the system was bootstrapping.
+pub fn ready_for_phase3(_psi: f64, training_examples: usize, _pass_at_1: f64) -> bool {
+    training_examples > 0
 }
 
 /// Estimated memory usage for the target model at fp16.
