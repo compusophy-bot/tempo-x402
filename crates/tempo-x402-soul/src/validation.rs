@@ -120,7 +120,9 @@ pub fn validate_plan_with_coding(
     check_read_before_write(steps, &mut violations);
 
     // ── Rule 2: Commit Gate Check ──
-    // Prevent commits if waiting for benchmarks (moved from coding.rs)
+    // Soft warning only — the actual gate with safety valve is in coding.rs check_commit_readiness().
+    // Previously this was Hard severity which blocked plans before the tool-level safety valve
+    // could fire (30-min auto-clear), causing 0% git ops success.
     if let Ok(Some(awaiting)) = db.get_state("commit_awaiting_benchmark") {
         if awaiting == "1" {
             for (i, step) in steps.iter().enumerate() {
@@ -128,9 +130,10 @@ pub fn validate_plan_with_coding(
                     violations.push(PlanViolation {
                         rule: "commit-gate",
                         step_index: Some(i),
-                        detail: "Commit gated: awaiting benchmark results from previous commit."
+                        detail: "Commit gated: awaiting benchmark results from previous commit. \
+                                 The tool-level gate will block or auto-clear after 30 minutes."
                             .to_string(),
-                        severity: Severity::Hard,
+                        severity: Severity::Soft,
                     });
                 }
             }

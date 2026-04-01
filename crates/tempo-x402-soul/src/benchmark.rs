@@ -1005,7 +1005,7 @@ pub async fn run_benchmark_session(
                         error = %e,
                         "Benchmark: failed to generate solution"
                     );
-                    record_run(db, problem, false, "", &e, 0);
+                    record_run(db, problem, false, "", &e, 0, &task_id);
                 }
                 continue;
             }
@@ -1182,7 +1182,7 @@ pub async fn run_benchmark_session(
                         slug = %problem.slug,
                         "Benchmark: PASS (original — reviewer's fix was WRONG)"
                     );
-                    record_run(db, problem, true, &solution, "", elapsed_ms);
+                    record_run(db, problem, true, &solution, "", elapsed_ms, &task_id);
                     continue;
                 }
                 tracing::info!(
@@ -1216,6 +1216,7 @@ pub async fn run_benchmark_session(
             elo_rating: current_elo,
             pass_at_1: current_pass_at_1,
             peer_count: current_peer_count,
+            problem_slug: problem.slug.clone(),
         });
         // Record each retry as a separate training example
         for r in 0..retry_count {
@@ -1229,6 +1230,7 @@ pub async fn run_benchmark_session(
                 elo_rating: current_elo,
                 pass_at_1: current_pass_at_1,
                 peer_count: current_peer_count,
+                problem_slug: problem.slug.clone(),
             });
         }
 
@@ -1239,6 +1241,7 @@ pub async fn run_benchmark_session(
             &final_solution,
             &error_output,
             elapsed_ms,
+            &task_id,
         );
     }
 
@@ -1324,10 +1327,11 @@ fn record_run(
     solution: &str,
     error: &str,
     total_ms: u64,
+    task_id: &str,
 ) {
     let run = BenchmarkRun {
         id: uuid::Uuid::new_v4().to_string(),
-        task_id: format!("exercism/{}", problem.slug),
+        task_id: task_id.to_string(),
         entry_point: problem.slug.clone(),
         passed,
         generated_solution: solution.chars().take(2000).collect(),
@@ -1551,15 +1555,48 @@ pub async fn run_opus_benchmark_session(
     }
 
     // Build set of already-solved problems to prioritize unsolved
-    let solved_slugs: std::collections::HashSet<String> = db
-        .get_all_benchmark_runs()
-        .unwrap_or_default()
+    let all_runs = db.get_all_benchmark_runs().unwrap_or_default();
+    let solved_slugs: std::collections::HashSet<String> = all_runs
         .iter()
         .filter(|r| r.passed)
         .map(|r| r.entry_point.clone())
         .collect();
+
+    // Count consecutive failures per problem (only for never-solved problems).
+    // Problems with 5+ consecutive failures are "stuck" — deprioritize them.
+    let stuck_slugs: std::collections::HashSet<String> = {
+        let mut fail_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        // Runs are ordered by created_at DESC, so we iterate recent-first
+        for run in &all_runs {
+            if solved_slugs.contains(&run.entry_point) {
+                continue; // Skip problems that have been solved at least once
+            }
+            if !run.task_id.starts_with("opus/") {
+                continue; // Only count Opus runs
+            }
+            let count = fail_counts.entry(run.entry_point.clone()).or_insert(0);
+            if !run.passed {
+                *count += 1;
+            }
+        }
+        fail_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 5)
+            .map(|(slug, _)| slug)
+            .collect()
+    };
+
+    if !stuck_slugs.is_empty() {
+        tracing::info!(
+            stuck = stuck_slugs.len(),
+            slugs = %stuck_slugs.iter().cloned().collect::<Vec<_>>().join(", "),
+            "Opus: deprioritizing stuck problems (5+ consecutive failures, never solved)"
+        );
+    }
+
     // Stratified sampling: guarantee at least 1 problem from EACH tier,
-    // then fill remaining slots randomly. This ensures harder tiers are always tested.
+    // then fill remaining slots. Skip stuck problems (except 1 retry slot).
     let sample = {
         let mut by_tier: std::collections::HashMap<String, Vec<&ExercismProblem>> =
             std::collections::HashMap::new();
@@ -1571,32 +1608,58 @@ pub async fn run_opus_benchmark_session(
         let seed = chrono::Utc::now().timestamp() as usize;
         let mut rng = seed;
 
-        // Phase 1: one from each tier (guaranteed representation)
+        // Phase 1: one from each tier (guaranteed representation, prefer non-stuck)
         let mut tiers: Vec<String> = by_tier.keys().cloned().collect();
-        tiers.sort(); // deterministic order
+        tiers.sort();
         for tier in &tiers {
             if let Some(tier_problems) = by_tier.get(tier) {
-                if !tier_problems.is_empty() {
+                // Prefer non-stuck problems for tier guarantee
+                let non_stuck: Vec<&&ExercismProblem> = tier_problems
+                    .iter()
+                    .filter(|p| !stuck_slugs.contains(&p.slug))
+                    .collect();
+                let pool = if non_stuck.is_empty() {
+                    tier_problems.iter().collect::<Vec<_>>()
+                } else {
+                    non_stuck
+                };
+                if !pool.is_empty() {
                     rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1))
-                        % tier_problems.len();
-                    selected.push(tier_problems[rng].clone());
+                        % pool.len();
+                    selected.push((*pool[rng]).clone());
                 }
             }
         }
 
-        // Phase 2: fill remaining slots, preferring unsolved + higher tiers
+        // Phase 2: fill remaining slots from unsolved NON-STUCK problems, harder first
         let selected_slugs: std::collections::HashSet<String> =
             selected.iter().map(|p| p.slug.clone()).collect();
         let mut remaining: Vec<&ExercismProblem> = problems
             .iter()
-            .filter(|p| !selected_slugs.contains(&p.slug) && !solved_slugs.contains(&p.slug))
+            .filter(|p| {
+                !selected_slugs.contains(&p.slug)
+                    && !solved_slugs.contains(&p.slug)
+                    && !stuck_slugs.contains(&p.slug)
+            })
             .collect();
-        // Sort by tier descending (harder first)
         remaining.sort_by(|a, b| b.difficulty.cmp(&a.difficulty));
 
-        let slots_left = sample_size.saturating_sub(selected.len());
+        let slots_left = sample_size.saturating_sub(selected.len() + 1); // reserve 1 for retry
         for p in remaining.iter().take(slots_left) {
             selected.push((*p).clone());
+        }
+
+        // Phase 3: 1 retry slot for a stuck problem (occasional re-attempt)
+        if !stuck_slugs.is_empty() {
+            let stuck_problems: Vec<&ExercismProblem> = problems
+                .iter()
+                .filter(|p| stuck_slugs.contains(&p.slug))
+                .collect();
+            if !stuck_problems.is_empty() {
+                rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1))
+                    % stuck_problems.len();
+                selected.push(stuck_problems[rng].clone());
+            }
         }
 
         selected
@@ -1680,7 +1743,7 @@ pub async fn run_opus_benchmark_session(
                     tracing::warn!(slug = %problem.slug, error = %e, "Opus: LLM API error — NOT counting");
                 } else {
                     tracing::warn!(slug = %problem.slug, tier = %problem.difficulty, error = %e, "Opus: gen failed");
-                    record_run(db, problem, false, "", &e, 0);
+                    record_run(db, problem, false, "", &e, 0, &task_id);
                 }
                 continue;
             }
@@ -1756,6 +1819,7 @@ pub async fn run_opus_benchmark_session(
             elo_rating: current_elo,
             pass_at_1: current_pass_at_1,
             peer_count: 0,
+            problem_slug: problem.slug.clone(),
         });
 
         record_run(
@@ -1765,6 +1829,7 @@ pub async fn run_opus_benchmark_session(
             &last_solution,
             &error_output,
             elapsed_ms,
+            &task_id,
         );
     }
 

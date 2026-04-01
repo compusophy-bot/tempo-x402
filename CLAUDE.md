@@ -73,9 +73,11 @@ Agents write Rust → compile to WASM → deploy instantly at `/c/{slug}` with p
 
 ## Agent Discipline
 
-- **Benchmark-driven commit gate**: Agent can't commit again until benchmark measures IQ delta of last commit. No hardcoded timers — clears when system confirms measurement.
+- **Benchmark-driven commit gate**: Agent can't commit again until benchmark measures IQ delta of last commit. Tool-level gate with 30-minute safety valve (plan validation is soft warning only).
 - **Cumulative destruction guard**: Tracks total file changes over 24h against deploy baseline. Blocks >70% cumulative deletion (prevents incremental lobotomy).
 - **Post-commit benchmark**: Every commit forces benchmark run. Brain trains on the delta.
+- **Stuck problem deprioritization**: Problems with 5+ consecutive failures are deprioritized in sampling (1 retry slot per session instead of consuming majority of slots).
+- **Stagnation detection**: If IQ is unchanged for 3+ benchmark runs, a high-priority nudge is injected to investigate stuck problems and try new approaches.
 
 ## Chain
 

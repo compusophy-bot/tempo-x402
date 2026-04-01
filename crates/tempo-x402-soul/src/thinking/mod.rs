@@ -394,6 +394,54 @@ impl ThinkingLoop {
                                             &self.db, delta,
                                         );
                                     }
+
+                                    // Stagnation detection: if IQ hasn't changed for 3+ runs,
+                                    // inject a nudge to investigate stuck benchmark problems.
+                                    {
+                                        let prev_iq: f64 = self.db
+                                            .get_state("benchmark_last_iq")
+                                            .ok()
+                                            .flatten()
+                                            .and_then(|s| s.parse().ok())
+                                            .unwrap_or(0.0);
+                                        let stagnation: u32 = self.db
+                                            .get_state("benchmark_stagnation_count")
+                                            .ok()
+                                            .flatten()
+                                            .and_then(|s| s.parse().ok())
+                                            .unwrap_or(0);
+                                        let iq_delta = (iq - prev_iq).abs();
+                                        let new_stagnation = if iq_delta < 1.0 {
+                                            stagnation + 1
+                                        } else {
+                                            0 // IQ moved — reset
+                                        };
+                                        let _ = self.db.set_state("benchmark_last_iq", &format!("{:.1}", iq));
+                                        let _ = self.db.set_state("benchmark_stagnation_count", &new_stagnation.to_string());
+
+                                        if new_stagnation >= 3 {
+                                            tracing::warn!(
+                                                iq = format!("{:.0}", iq),
+                                                stagnation = new_stagnation,
+                                                "IQ stagnant for {} benchmark runs — injecting investigation nudge",
+                                                new_stagnation,
+                                            );
+                                            let _ = self.db.insert_nudge(
+                                                "system",
+                                                &format!(
+                                                    "IQ has been stagnant at {:.0} for {} consecutive benchmark runs. \
+                                                     The same problems keep failing. Analyze the failed benchmark problems, \
+                                                     study the error patterns, and try fundamentally different approaches. \
+                                                     Focus on problems that fail with logic errors (not compile errors) — \
+                                                     those are closest to being solved.",
+                                                    iq, new_stagnation,
+                                                ),
+                                                5, // high priority
+                                            );
+                                            // Reset counter so we don't spam nudges every run
+                                            let _ = self.db.set_state("benchmark_stagnation_count", "0");
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Opus IQ benchmark failed");

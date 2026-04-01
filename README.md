@@ -174,6 +174,37 @@ The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chai
 
 ## Changelog
 
+### v6.7.0 — Fix Intelligence Learning Pipeline
+
+Five interconnected blockages were preventing the agent from learning past IQ 114. All fixed.
+
+**Critical Bug Fix: Benchmark Failure Blindness**
+- `record_run()` hardcoded `task_id = "exercism/{slug}"` for ALL benchmark modes including Opus
+- The Opus benchmark loop looked up past failures with `"opus/{slug}"` — **past failures were never found**
+- Agent was flying blind every retry, unable to learn from its own mistakes
+- Now `record_run` accepts the correct task_id per benchmark mode
+
+**Stuck Problem Deprioritization**
+- Opus sampling now counts consecutive failures per problem
+- Problems with 5+ consecutive failures (never solved) classified as "stuck"
+- 14 of 15 sample slots go to solvable problems, 1 retry slot for stuck problems
+- Prevents 9 impossible problems from consuming 60% of every benchmark session
+
+**Commit Gate Fix (Git Ops 0% → Functional)**
+- Plan validation Rule 2 was HARD-blocking any plan with a Commit step when awaiting benchmark
+- This prevented the tool-level safety valve (30-min auto-clear) from ever firing
+- Changed to Soft severity — tool-level gate handles actual blocking with its escape hatch
+
+**Brain Per-Problem Learning**
+- Added `problem_slug` to `BenchmarkAttemptContext` with 4-feature slug hash
+- Added 6 Opus tier one-hot features (tier1-tier6) alongside legacy easy/medium/hard
+- Brain can now learn per-problem and per-tier patterns, not just aggregate difficulty
+
+**Stagnation-Driven Goal Injection**
+- Tracks IQ across consecutive benchmark runs
+- After 3+ runs with unchanged IQ, injects high-priority nudge to investigate stuck problems
+- Closes the loop: measurement stagnation triggers behavioral change
+
 ### v6.1.0 — Hacker's Cockpit + Queen Audit
 
 **Cockpit Frontend**

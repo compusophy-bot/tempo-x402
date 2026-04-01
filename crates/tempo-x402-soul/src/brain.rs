@@ -634,7 +634,7 @@ pub fn events_to_examples(db: &SoulDatabase) -> Vec<TrainingExample> {
 /// Context for a single benchmark attempt — used to generate training data.
 #[derive(Debug, Clone)]
 pub struct BenchmarkAttemptContext {
-    /// "easy", "medium", "hard"
+    /// "easy", "medium", "hard" or "tier1".."tier6"
     pub difficulty: String,
     /// Did this attempt pass?
     pub passed: bool,
@@ -652,6 +652,8 @@ pub struct BenchmarkAttemptContext {
     pub pass_at_1: f32,
     /// Number of peers available
     pub peer_count: u32,
+    /// Problem slug — gives the brain a per-problem signal (hashed to feature space)
+    pub problem_slug: String,
 }
 
 /// Generate training examples from benchmark self-play attempts.
@@ -685,11 +687,18 @@ pub fn benchmark_attempts_to_examples(
         // Feature 28: peer count
         features[28] = (attempt.peer_count as f32 / 10.0).min(1.0);
 
-        // Features 36-38: difficulty one-hot
+        // Features 36-38: difficulty one-hot (legacy easy/medium/hard)
+        // Features 43-48: Opus tier one-hot (tier1-tier6)
         match attempt.difficulty.as_str() {
             "easy" => features[36] = 1.0,
             "medium" => features[37] = 1.0,
             "hard" => features[38] = 1.0,
+            "tier1" => { features[36] = 1.0; features[43] = 1.0; }
+            "tier2" => { features[36] = 1.0; features[44] = 1.0; }
+            "tier3" => { features[37] = 1.0; features[45] = 1.0; }
+            "tier4" => { features[37] = 1.0; features[46] = 1.0; }
+            "tier5" => { features[38] = 1.0; features[47] = 1.0; }
+            "tier6" => { features[38] = 1.0; features[48] = 1.0; }
             _ => features[36] = 1.0,
         }
 
@@ -704,6 +713,19 @@ pub fn benchmark_attempts_to_examples(
 
         // Feature 42: compiled successfully
         features[42] = if attempt.compiled { 1.0 } else { 0.0 };
+
+        // Features 49-52: problem slug hash (4 features from deterministic hash)
+        // Gives the brain a unique per-problem fingerprint
+        if !attempt.problem_slug.is_empty() {
+            let mut hash: u64 = 5381;
+            for b in attempt.problem_slug.bytes() {
+                hash = hash.wrapping_mul(33).wrapping_add(b as u64);
+            }
+            features[49] = ((hash & 0xFF) as f32) / 255.0;
+            features[50] = (((hash >> 8) & 0xFF) as f32) / 255.0;
+            features[51] = (((hash >> 16) & 0xFF) as f32) / 255.0;
+            features[52] = (((hash >> 24) & 0xFF) as f32) / 255.0;
+        }
 
         // Determine error category for failed attempts
         let error_category = if attempt.passed {
