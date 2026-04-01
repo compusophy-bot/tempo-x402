@@ -53,6 +53,13 @@ impl ToolExecutor {
             output.push_str("\n... (truncated)");
         }
 
+        // Feed .rs files to codegen training (the codebase IS training data)
+        if resolved.ends_with(".rs") && output.len() >= 100 {
+            if let Some(db) = &self.db {
+                crate::codegen::record_training_example(db, &output, &format!("read:{}", path));
+            }
+        }
+
         let duration_ms = start.elapsed().as_millis() as u64;
         Ok(ToolResult {
             stdout: output,
@@ -83,6 +90,13 @@ impl ToolExecutor {
         tokio::fs::write(&resolved, content)
             .await
             .map_err(|e| format!("failed to write file: {e}"))?;
+
+        // Distill: LLM-generated .rs code → codegen training (teacher→student)
+        if resolved.to_string_lossy().ends_with(".rs") && content.len() >= 100 {
+            if let Some(db) = &self.db {
+                crate::codegen::record_training_example(db, content, &format!("gemini:{}", path));
+            }
+        }
 
         let duration_ms = start.elapsed().as_millis() as u64;
         Ok(ToolResult {
@@ -127,6 +141,13 @@ impl ToolExecutor {
         tokio::fs::write(&resolved, &new_content)
             .await
             .map_err(|e| format!("failed to write file: {e}"))?;
+
+        // Distill: LLM-generated edits to .rs files → codegen training
+        if resolved.to_string_lossy().ends_with(".rs") && new_string.len() >= 50 {
+            if let Some(db) = &self.db {
+                crate::codegen::record_training_example(db, new_string, &format!("edit:{}", path));
+            }
+        }
 
         let duration_ms = start.elapsed().as_millis() as u64;
         Ok(ToolResult {

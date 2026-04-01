@@ -225,19 +225,22 @@ pub fn Mandala() -> impl IntoView {
                         view! {
                             <div class="eb-module">
                                 <div class="eb-label">"HIVEMIND"</div>
-                                <svg viewBox="0 0 120 60" class="eb-svg">
+                                <svg viewBox="0 0 120 60" class="eb-svg" style="overflow:visible">
                                     {top.iter().take(6).enumerate().map(|(i, t)| {
                                         let resource = t.get("resource").and_then(|v| v.as_str()).unwrap_or("?");
                                         let intensity = t.get("intensity").and_then(|v| v.as_f64()).unwrap_or(0.3);
-                                        let angle = (i as f64) * 0.9 - 1.2;
-                                        let len = 20.0 + intensity * 25.0;
-                                        let x2 = 30.0 + len * angle.cos();
-                                        let y2 = 30.0 + len * angle.sin();
-                                        let w = 0.5 + intensity * 2.5;
-                                        let short: String = resource.chars().take(8).collect();
+                                        // Fan out evenly across right half
+                                        let angle = -1.0 + (i as f64) * 0.4;
+                                        let len = 15.0 + intensity * 18.0;
+                                        let cx = 10.0;
+                                        let cy = 30.0;
+                                        let x2 = cx + len * angle.cos();
+                                        let y2 = cy + len * angle.sin();
+                                        let w = 0.5 + intensity * 2.0;
+                                        let short: String = resource.chars().take(10).collect();
                                         view! {
-                                            <line x1="30" y1="30" x2=x2.to_string() y2=y2.to_string() stroke="#ffa000" stroke-width=w.to_string() opacity=intensity.to_string()/>
-                                            <text x=x2.to_string() y=(y2+3.0).to_string() class="eb-micro" fill="#ffa000" opacity="0.5">{short}</text>
+                                            <line x1=cx.to_string() y1=cy.to_string() x2=x2.to_string() y2=y2.to_string() stroke="#ffa000" stroke-width=w.to_string() opacity=(0.3 + intensity * 0.5).to_string()/>
+                                            <text x=(x2 + 3.0).to_string() y=(y2 + 2.0).to_string() class="eb-micro" fill="#ffa000" opacity="0.6">{short}</text>
                                         }
                                     }).collect::<Vec<_>>()}
                                     {top.is_empty().then(|| view! { <text x="60" y="30" text-anchor="middle" class="eb-tiny" fill="#3a4a3a">"no trails"</text> })}

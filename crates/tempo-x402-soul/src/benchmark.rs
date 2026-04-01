@@ -485,6 +485,22 @@ pub async fn generate_solution(
     problem: &ExercismProblem,
     peer_failures: &[SharedFailure],
 ) -> Result<String, String> {
+    // Phase 3 weaning: try local codegen model first (saves Gemini credits)
+    let prompt = format!("// Rust solution for: {}\n", problem.slug);
+    if let Some(local_code) = crate::codegen::generate(db, &prompt, 512) {
+        if local_code.len() > 50 && local_code.contains("fn ") {
+            tracing::info!(
+                slug = %problem.slug,
+                chars = local_code.len(),
+                "Benchmark: attempting local codegen solution (weaning)"
+            );
+            let _ = db.set_state("codegen_benchmark_attempts",
+                &(db.get_state("codegen_benchmark_attempts").ok().flatten()
+                    .and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) + 1).to_string());
+            return Ok(local_code);
+        }
+    }
+
     // Extract accumulated lessons from past benchmark runs
     let benchmark_hints = load_benchmark_hints(db);
 
@@ -1076,6 +1092,11 @@ pub async fn run_benchmark_session(
                         retry = retry_count,
                         "Benchmark: PASS on retry {} (self-play worked!)",
                         retry_count
+                    );
+                    // Self-play data amplification: save every passing solution variant
+                    crate::codegen::record_training_example(
+                        db, &retry_solution,
+                        &format!("selfplay:{}/r{}", problem.slug, retry_count),
                     );
                     success = true;
                     error_output = String::new();

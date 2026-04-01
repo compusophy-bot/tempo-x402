@@ -389,21 +389,44 @@ impl CodeGenModel {
             }
         }
 
-        // 4. Backprop through last FFN layer (most impactful frozen layer)
+        // 4. Backprop through last layer's FFN with proper gradients
+        // Recompute the FFN forward for the last position to get exact activations
         if let Some(layer) = self.layers.last_mut() {
             let ff = SMALL_D_FF;
-            // We have d_hidden (gradient at layer output).
-            // FFN: residual[j] += sum_k(ff_hidden[k] * ff_w2[j*ff+k])
-            // ff_hidden[k] = relu(sum_j(input[j] * ff_w1[k*d+j]))
-            // We need the pre-relu FFN hidden values — recompute from the layer input.
-            // Use the hidden state BEFORE the last layer as approximation.
-            // (This is approximate — the true input is after residual + attn + layernorm)
-            let lr_ff = learning_rate * 0.01; // very damped — approximate gradient
+            let last_pos = seq_len - 1;
+
+            // Recompute FFN forward for last position (we need ff_hidden activations)
+            // Use last_hidden as input (approximate — true input is after LN2)
+            let mut ff_hidden = vec![0.0f32; ff];
+            for k in 0..ff {
+                let w_idx = k * d;
+                let val: f32 = (0..d).map(|j| last_hidden[j] * layer.ff_w1[w_idx + j]).sum();
+                ff_hidden[k] = val.max(0.0); // ReLU
+            }
+
+            // Backprop: d_hidden → ff_w2 gradient
+            // residual[j] += sum_k(ff_hidden[k] * ff_w2[j*ff+k])
+            // d(loss)/d(ff_w2[j*ff+k]) = d_hidden[j] * ff_hidden[k]
+            let lr_ff = learning_rate * 0.1;
+            let mut d_ff_hidden = vec![0.0f32; ff];
             for j in 0..d {
-                for k in 0..ff.min(256) { // limit to first 256 ff dims for speed
+                for k in 0..ff {
                     let w2_idx = j * ff + k;
-                    let grad = d_hidden[j] * 0.5; // approximate ff_hidden activation
-                    layer.ff_w2[w2_idx] -= lr_ff * grad;
+                    // Update ff_w2
+                    layer.ff_w2[w2_idx] -= lr_ff * d_hidden[j] * ff_hidden[k];
+                    // Accumulate gradient for ff_hidden
+                    d_ff_hidden[k] += d_hidden[j] * layer.ff_w2[w2_idx];
+                }
+            }
+
+            // Backprop through ReLU → ff_w1
+            // ff_hidden[k] = relu(sum_j(input[j] * ff_w1[k*d+j]))
+            // d(loss)/d(ff_w1[k*d+j]) = d_ff_hidden[k] * input[j] * (pre_relu > 0)
+            for k in 0..ff {
+                if ff_hidden[k] <= 0.0 { continue; } // ReLU gate: dead = no gradient
+                let w_idx = k * d;
+                for j in 0..d {
+                    layer.ff_w1[w_idx + j] -= lr_ff * d_ff_hidden[k] * last_hidden[j];
                 }
             }
         }
