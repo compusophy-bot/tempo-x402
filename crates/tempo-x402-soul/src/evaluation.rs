@@ -189,6 +189,8 @@ pub struct Evaluation {
     pub colony: ColonyBenefit,
     /// Per-sync accuracy snapshots for colony benefit measurement.
     sync_accuracy_snapshots: Vec<(i64, f32)>,
+    /// Record count at pre-sync snapshot (to measure only NEW predictions after sync).
+    pre_sync_record_count: usize,
 }
 
 impl Default for Evaluation {
@@ -217,6 +219,7 @@ impl Evaluation {
                 avg_sync_benefit: 0.0,
             },
             sync_accuracy_snapshots: Vec::new(),
+            pre_sync_record_count: 0,
         }
     }
 
@@ -273,12 +276,13 @@ impl Evaluation {
     }
 
     /// Snapshot accuracy before a peer sync (for colony benefit measurement).
-    /// Records the count of records so we can compare ONLY new predictions after sync.
+    /// Records the prediction count so we can compare ONLY new predictions after sync.
     pub fn pre_sync_snapshot(&mut self) {
         let now = chrono::Utc::now().timestamp();
-        // Use RECENT accuracy (last 30 predictions), not all-time
         let recent_acc = self.compute_recent_accuracy(30);
         self.colony.accuracy_before_sync = recent_acc;
+        // Store the current record count so post_sync can measure NEW predictions only
+        self.pre_sync_record_count = self.records.len();
         self.sync_accuracy_snapshots.push((now, recent_acc));
         if self.sync_accuracy_snapshots.len() > 50 {
             self.sync_accuracy_snapshots
@@ -287,17 +291,31 @@ impl Evaluation {
     }
 
     /// Measure accuracy after a peer sync and compute benefit.
-    /// Compares RECENT predictions (not all-time) to detect actual improvement.
+    /// Compares predictions made AFTER sync to the pre-sync baseline.
+    /// If no new predictions since sync, uses the most recent 30 as fallback.
     pub fn post_sync_measurement(&mut self) {
-        let recent_acc = self.compute_recent_accuracy(30);
+        // Count predictions made SINCE the pre_sync snapshot
+        let new_predictions = self.records.len().saturating_sub(self.pre_sync_record_count);
+
+        let recent_acc = if new_predictions >= 5 {
+            // Enough new predictions — measure only those
+            let new_recs: Vec<&PredictionRecord> = self.records.iter().rev().take(new_predictions).collect();
+            let correct = new_recs.iter().filter(|r| (r.predicted_prob > 0.5) == r.actual).count();
+            correct as f32 / new_recs.len() as f32
+        } else {
+            // Not enough new predictions yet — use recent 30 (will still show some benefit
+            // as merged weights influence the brain's predictions on existing data)
+            self.compute_recent_accuracy(30)
+        };
+
         self.colony.accuracy_after_sync = recent_acc;
         self.colony.sync_delta = recent_acc - self.colony.accuracy_before_sync;
         self.colony.syncs_measured += 1;
 
-        // Running average of sync benefit
-        let n = self.colony.syncs_measured as f32;
+        // Running average of sync benefit (exponential moving average for recency bias)
+        let alpha = 0.1_f32; // Weight recent syncs more heavily
         self.colony.avg_sync_benefit =
-            self.colony.avg_sync_benefit * ((n - 1.0) / n) + self.colony.sync_delta * (1.0 / n);
+            self.colony.avg_sync_benefit * (1.0 - alpha) + self.colony.sync_delta * alpha;
     }
 
     /// Compute accuracy of the most recent N predictions.

@@ -583,6 +583,77 @@ pub async fn sync_cognitive_systems(
         _ => {}
     }
 
+    // ── Fetch peer's brain weights ──
+    // Brain was previously missing from sync — the primary predictor never shared knowledge.
+    match http_client
+        .get(format!("{peer_url}/soul/brain/weights"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                if let Some(weights_json) = data.get("weights").and_then(|v| v.as_str()) {
+                    if let Some(peer_brain) = crate::brain::Brain::from_json(weights_json) {
+                        let peer_steps = peer_brain.train_steps;
+                        // Only merge if peer has meaningful training
+                        if peer_steps >= 100 {
+                            let mut local_brain = crate::brain::load_brain(db);
+                            let delta = peer_brain.compute_delta(&local_brain, peer_id);
+                            local_brain.merge_delta(&delta, effective_rate);
+                            crate::brain::save_brain(db, &local_brain);
+                            tracing::info!(
+                                peer = %peer_id,
+                                peer_steps,
+                                rate = format!("{:.3}", effective_rate),
+                                "Merged peer BRAIN weights (fitness-weighted)"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            tracing::debug!(peer = %peer_id, "Failed to fetch peer brain weights");
+        }
+    }
+
+    // ── Fetch peer's benchmark solutions for codegen training ──
+    // Import peer solutions so our codegen model trains on colony-wide data.
+    match http_client
+        .get(format!("{peer_url}/soul/benchmark/solutions"))
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                if let Some(solutions) = data.get("solutions").and_then(|v| v.as_array()) {
+                    let mut imported = 0u32;
+                    for sol in solutions.iter().take(20) {
+                        if let (Some(code), Some(source)) = (
+                            sol.get("code").and_then(|v| v.as_str()),
+                            sol.get("entry_point").and_then(|v| v.as_str()),
+                        ) {
+                            if !code.is_empty() && code.len() > 50 {
+                                crate::codegen::record_training_example(
+                                    db,
+                                    code,
+                                    &format!("peer/{}/{}", peer_id.chars().take(8).collect::<String>(), source),
+                                );
+                                imported += 1;
+                            }
+                        }
+                    }
+                    if imported > 0 {
+                        tracing::info!(peer = %peer_id, imported, "Imported peer benchmark solutions for codegen training");
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
     // ── Fetch peer's hivemind trails ──
     match http_client
         .get(format!("{peer_url}/soul/hivemind"))
