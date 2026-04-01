@@ -88,314 +88,249 @@ pub fn Mandala() -> impl IntoView {
                 }
             }}
 
-            // ═══ ROW 1: BRAIN / CORTEX / GENESIS (prediction systems) ═══
-            <div class="eb-row">
-                // BRAIN — neural network layer diagram
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let b = s.get("brain");
-                    let loss = b.and_then(|b| b.get("running_loss")).and_then(|v| v.as_f64()).unwrap_or(1.0);
-                    let steps = b.and_then(|b| b.get("train_steps")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let params = b.and_then(|b| b.get("parameters")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let p = pulses.get();
-                    let pulse = pulse_intensity(&p, "brain", js_sys::Date::now());
-                    let glow = if pulse > 0.2 { " eb-glow" } else { "" };
-                    // Layer heights (proportional, scaled to fit ~50px)
-                    let layers = [(32, 6), (1024, 48), (1024, 48), (23, 5)];
-                    view! {
-                        <div class={format!("eb-module{}", glow)}>
-                            <div class="eb-label">"BRAIN"</div>
-                            <svg viewBox="0 0 120 60" class="eb-svg">
-                                {layers.iter().enumerate().map(|(i, (neurons, h))| {
-                                    let x = 10 + i * 28;
-                                    let y = 30 - h / 2;
-                                    let health = (1.0 - loss.min(1.0)) * 0.7 + 0.3;
-                                    let opacity = format!("{:.2}", health);
-                                    view! {
-                                        <rect x=x.to_string() y=y.to_string() width="18" height=h.to_string()
-                                            fill="#00ff41" opacity=opacity rx="2"/>
-                                        <text x=(x + 9).to_string() y="58" text-anchor="middle"
-                                            class="eb-tiny" fill="#3a4a3a">{neurons.to_string()}</text>
-                                    }
-                                }).collect::<Vec<_>>()}
-                                // Connection lines between layers
-                                {[0,1,2].iter().map(|i| {
-                                    let x1 = 28 + i * 28;
-                                    let x2 = x1 + 10;
-                                    view! { <line x1=x1.to_string() y1="30" x2=x2.to_string() y2="30" stroke="#00ff41" stroke-width="0.5" opacity="0.3"/> }
-                                }).collect::<Vec<_>>()}
-                            </svg>
-                            <div class="eb-stats">
-                                <span>{format!("loss={:.3}", loss)}</span>
-                                <span>{format!("{}K steps", steps / 1000)}</span>
-                            </div>
-                        </div>
-                    }
-                }}
+            // ═══ MAIN: THINK (φ) | SENSE (1) ═══
+            <div class="eb-main">
 
-                // CORTEX — mini node-link graph
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let c = s.get("cortex");
-                    let exp = c.and_then(|c| c.get("total_experiences")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let edges = c.and_then(|c| c.get("causal_edges")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let acc = c.and_then(|c| c.get("prediction_accuracy")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                    let curiosity = c.and_then(|c| c.get("curiosity_score")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let n_nodes = ((exp as f64).sqrt().min(12.0)) as usize;
-                    let n_nodes = n_nodes.max(4);
-                    // Generate pseudo-random but deterministic node positions
-                    let nodes: Vec<(f64, f64)> = (0..n_nodes).map(|i| {
-                        let angle = (i as f64) * 2.399 + 0.5; // golden angle
-                        let r = 15.0 + ((i as f64) * 7.3) % 20.0;
-                        (60.0 + r * angle.cos(), 30.0 + r * angle.sin())
-                    }).collect();
-                    // Edges (connect nearby nodes)
-                    let n_edges = (edges as usize).min(n_nodes * 2);
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"CORTEX"</div>
-                            <svg viewBox="0 0 120 60" class="eb-svg">
-                                // Edges
-                                {(0..n_edges.min(nodes.len().saturating_sub(1))).map(|i| {
-                                    let a = i % nodes.len();
-                                    let b = (i + 1 + (i * 3) % 2) % nodes.len();
-                                    view! {
-                                        <line x1=nodes[a].0.to_string() y1=nodes[a].1.to_string()
-                                            x2=nodes[b].0.to_string() y2=nodes[b].1.to_string()
-                                            stroke="#00e5ff" stroke-width="0.5" opacity="0.3"/>
-                                    }
-                                }).collect::<Vec<_>>()}
-                                // Nodes
-                                {nodes.iter().enumerate().map(|(i, (x, y))| {
-                                    let brightness = 0.3 + (1.0 - (i as f64 / n_nodes as f64)) * 0.5;
-                                    view! {
-                                        <circle cx=x.to_string() cy=y.to_string() r="2.5"
-                                            fill="#00e5ff" opacity=brightness.to_string()/>
-                                    }
-                                }).collect::<Vec<_>>()}
-                                // Curiosity frontier (dangling edge)
-                                {(curiosity > 0.1).then(|| view! {
-                                    <line x1="95" y1="15" x2="110" y2="8" stroke="#ffa000" stroke-width="1" opacity="0.5" stroke-dasharray="2 2"/>
-                                    <circle cx="110" cy="8" r="1.5" fill="none" stroke="#ffa000" stroke-width="0.5" opacity="0.5"/>
-                                })}
-                            </svg>
-                            <div class="eb-stats">
-                                <span>{format!("acc={}", acc)}</span>
-                                <span>{format!("{}exp {}e", exp, edges)}</span>
+                // ── THINK card (brain + cortex + genesis → synthesis) ──
+                <div class="eb-card">
+                    <div class="eb-card-label">"THINK"</div>
+                    <div class="eb-row">
+                        // BRAIN
+                        {move || {
+                            let s = soul.get().unwrap_or_default();
+                            let b = s.get("brain");
+                            let loss = b.and_then(|b| b.get("running_loss")).and_then(|v| v.as_f64()).unwrap_or(1.0);
+                            let steps = b.and_then(|b| b.get("train_steps")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let p = pulses.get();
+                            let pulse = pulse_intensity(&p, "brain", js_sys::Date::now());
+                            let glow = if pulse > 0.2 { " eb-glow" } else { "" };
+                            let layers = [(32, 6), (1024, 48), (1024, 48), (23, 5)];
+                            let health = (1.0 - loss.min(1.0)) * 0.7 + 0.3;
+                            view! {
+                                <div class={format!("eb-module{}", glow)}>
+                                    <div class="eb-label">"BRAIN"</div>
+                                    <svg viewBox="0 0 120 60" class="eb-svg">
+                                        {layers.iter().enumerate().map(|(i, (neurons, h))| {
+                                            let x = 10 + i * 28;
+                                            let y = 30 - h / 2;
+                                            view! {
+                                                <rect x=x.to_string() y=y.to_string() width="18" height=h.to_string()
+                                                    fill="#00ff41" opacity=health.to_string() rx="2"/>
+                                                <text x=(x+9).to_string() y="58" text-anchor="middle" class="eb-tiny" fill="#3a4a3a">{neurons.to_string()}</text>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                        {[0,1,2].iter().map(|i| {
+                                            let x1 = 28 + i * 28; let x2 = x1 + 10;
+                                            view! { <line x1=x1.to_string() y1="30" x2=x2.to_string() y2="30" stroke="#00ff41" stroke-width="0.5" opacity="0.3"/> }
+                                        }).collect::<Vec<_>>()}
+                                    </svg>
+                                    <div class="eb-stats"><span>{format!("L={:.3} {}K", loss, steps/1000)}</span></div>
+                                </div>
+                            }
+                        }}
+                        // CORTEX
+                        {move || {
+                            let s = soul.get().unwrap_or_default();
+                            let c = s.get("cortex");
+                            let exp = c.and_then(|c| c.get("total_experiences")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let edges = c.and_then(|c| c.get("causal_edges")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let acc = c.and_then(|c| c.get("prediction_accuracy")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                            let n_nodes = ((exp as f64).sqrt().min(12.0)) as usize;
+                            let n_nodes = n_nodes.max(4);
+                            let nodes: Vec<(f64, f64)> = (0..n_nodes).map(|i| {
+                                let angle = (i as f64) * 2.399 + 0.5;
+                                let r = 15.0 + ((i as f64) * 7.3) % 20.0;
+                                (60.0 + r * angle.cos(), 30.0 + r * angle.sin())
+                            }).collect();
+                            let n_edges = (edges as usize).min(n_nodes * 2);
+                            view! {
+                                <div class="eb-module">
+                                    <div class="eb-label">"CORTEX"</div>
+                                    <svg viewBox="0 0 120 60" class="eb-svg">
+                                        {(0..n_edges.min(nodes.len().saturating_sub(1))).map(|i| {
+                                            let a = i % nodes.len(); let b = (i+1+(i*3)%2) % nodes.len();
+                                            view! { <line x1=nodes[a].0.to_string() y1=nodes[a].1.to_string() x2=nodes[b].0.to_string() y2=nodes[b].1.to_string() stroke="#00e5ff" stroke-width="0.5" opacity="0.3"/> }
+                                        }).collect::<Vec<_>>()}
+                                        {nodes.iter().enumerate().map(|(i, (x, y))| {
+                                            let br = 0.3 + (1.0 - (i as f64 / n_nodes as f64)) * 0.5;
+                                            view! { <circle cx=x.to_string() cy=y.to_string() r="2.5" fill="#00e5ff" opacity=br.to_string()/> }
+                                        }).collect::<Vec<_>>()}
+                                    </svg>
+                                    <div class="eb-stats"><span>{format!("{} {}exp {}e", acc, exp, edges)}</span></div>
+                                </div>
+                            }
+                        }}
+                        // GENESIS
+                        {move || {
+                            let s = soul.get().unwrap_or_default();
+                            let g = s.get("genesis");
+                            let gen = g.and_then(|g| g.get("generation")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let templates = g.and_then(|g| g.get("templates")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let n = (templates as usize).min(10).max(2);
+                            view! {
+                                <div class="eb-module">
+                                    <div class="eb-label">"GENESIS"</div>
+                                    <svg viewBox="0 0 120 60" class="eb-svg">
+                                        {(0..n).map(|i| {
+                                            let y = 5 + i * 5;
+                                            let width = 30 + ((i * 17 + 23) % 60);
+                                            let br = 0.3 + (1.0 - i as f64 / n as f64) * 0.5;
+                                            view! { <rect x="10" y=y.to_string() width=width.to_string() height="3" fill="#b388ff" opacity=br.to_string() rx="1"/> }
+                                        }).collect::<Vec<_>>()}
+                                    </svg>
+                                    <div class="eb-stats"><span>{format!("gen{} {}tmpl", gen, templates)}</span></div>
+                                </div>
+                            }
+                        }}
+                    </div>
+                    // SYNTHESIS (inline within THINK card)
+                    {move || {
+                        let s = soul.get().unwrap_or_default();
+                        let sy = s.get("synthesis");
+                        let state = sy.and_then(|s| s.get("state")).and_then(|v| v.as_str()).unwrap_or("--");
+                        let weights = sy.and_then(|s| s.get("weights"));
+                        let wb = weights.and_then(|w| w.get("brain")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                        let wc = weights.and_then(|w| w.get("cortex")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                        let wg = weights.and_then(|w| w.get("genesis")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                        let wh = weights.and_then(|w| w.get("hivemind")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                        let role = s.get("role");
+                        let psi = role.and_then(|r| r.get("psi")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let state_cls = match state { "coherent"|"exploiting" => "eb-state-ok", "exploring" => "eb-state-learn", "conflicted" => "eb-state-warn", _ => "eb-state-err" };
+                        view! {
+                            <div class="eb-synth-bar">
+                                <span class="eb-label" style="margin:0">"SYNTH"</span>
+                                <span class="eb-weight">{format!("B:{} C:{} G:{} H:{}", wb, wc, wg, wh)}</span>
+                                <span class={format!("eb-state {}", state_cls)}>{state.to_string()}</span>
+                                <span class="eb-psi">{format!("\u{03A8}={:.3}", psi)}</span>
                             </div>
-                        </div>
-                    }
-                }}
+                        }
+                    }}
+                </div>
 
-                // GENESIS — population of templates
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let g = s.get("genesis");
-                    let gen = g.and_then(|g| g.get("generation")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let templates = g.and_then(|g| g.get("templates")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let mutations = g.and_then(|g| g.get("total_mutations")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let n = (templates as usize).min(10).max(2);
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"GENESIS"</div>
-                            <svg viewBox="0 0 120 60" class="eb-svg">
-                                // Template bars (horizontal, stacked vertically)
-                                {(0..n).map(|i| {
-                                    let y = 5 + i * 5;
-                                    let width = 30 + ((i * 17 + 23) % 60); // pseudo-random width = fitness
-                                    let brightness = 0.3 + (1.0 - i as f64 / n as f64) * 0.5;
-                                    view! {
-                                        <rect x="10" y=y.to_string() width=width.to_string() height="3"
-                                            fill="#b388ff" opacity=brightness.to_string() rx="1"/>
-                                    }
-                                }).collect::<Vec<_>>()}
-                            </svg>
-                            <div class="eb-stats">
-                                <span>{format!("gen {}", gen)}</span>
-                                <span>{format!("{} tmpl", templates)}</span>
+                // ── SENSE card (hivemind + eval + colony) ──
+                <div class="eb-card">
+                    <div class="eb-card-label">"SENSE"</div>
+                    // HIVEMIND
+                    {move || {
+                        let s = soul.get().unwrap_or_default();
+                        let h = s.get("hivemind");
+                        let trails = h.and_then(|h| h.get("total_trails")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let deposits = h.and_then(|h| h.get("total_deposits")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let top = h.and_then(|h| h.get("top_attractants")).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        view! {
+                            <div class="eb-module">
+                                <div class="eb-label">"HIVEMIND"</div>
+                                <svg viewBox="0 0 120 60" class="eb-svg">
+                                    {top.iter().take(6).enumerate().map(|(i, t)| {
+                                        let resource = t.get("resource").and_then(|v| v.as_str()).unwrap_or("?");
+                                        let intensity = t.get("intensity").and_then(|v| v.as_f64()).unwrap_or(0.3);
+                                        let angle = (i as f64) * 0.9 - 1.2;
+                                        let len = 20.0 + intensity * 25.0;
+                                        let x2 = 30.0 + len * angle.cos();
+                                        let y2 = 30.0 + len * angle.sin();
+                                        let w = 0.5 + intensity * 2.5;
+                                        let short: String = resource.chars().take(8).collect();
+                                        view! {
+                                            <line x1="30" y1="30" x2=x2.to_string() y2=y2.to_string() stroke="#ffa000" stroke-width=w.to_string() opacity=intensity.to_string()/>
+                                            <text x=x2.to_string() y=(y2+3.0).to_string() class="eb-micro" fill="#ffa000" opacity="0.5">{short}</text>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                    {top.is_empty().then(|| view! { <text x="60" y="30" text-anchor="middle" class="eb-tiny" fill="#3a4a3a">"no trails"</text> })}
+                                </svg>
+                                <div class="eb-stats"><span>{format!("{}t {}d", trails, deposits)}</span></div>
                             </div>
-                        </div>
-                    }
-                }}
+                        }
+                    }}
+                    // EVAL
+                    {move || {
+                        let s = soul.get().unwrap_or_default();
+                        let e = s.get("evaluation");
+                        let records = e.and_then(|e| e.get("total_records")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let benefit = e.and_then(|e| e.get("colony_benefit")).and_then(|c| c.get("avg_sync_benefit")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        view! {
+                            <div class="eb-module">
+                                <div class="eb-label">"EVAL"</div>
+                                <div class="eb-stats"><span>{format!("{}rec {:+.3}\u{0394}", records, benefit)}</span></div>
+                            </div>
+                        }
+                    }}
+                </div>
             </div>
 
-            // ═══ SYNTHESIS (compact inline — votes + state + Ψ) ═══
-            {move || {
-                let s = soul.get().unwrap_or_default();
-                let sy = s.get("synthesis");
-                let state = sy.and_then(|s| s.get("state")).and_then(|v| v.as_str()).unwrap_or("--");
-                let weights = sy.and_then(|s| s.get("weights"));
-                let wb = weights.and_then(|w| w.get("brain")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                let wc = weights.and_then(|w| w.get("cortex")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                let wg = weights.and_then(|w| w.get("genesis")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                let wh = weights.and_then(|w| w.get("hivemind")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                let role = s.get("role");
-                let psi = role.and_then(|r| r.get("psi")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let state_cls = match state { "coherent" | "exploiting" => "eb-state-ok", "exploring" => "eb-state-learn", "conflicted" => "eb-state-warn", _ => "eb-state-err" };
-                view! {
-                    <div class="eb-synth-bar">
-                        <span class="eb-label" style="margin:0">"SYNTH"</span>
-                        <span class="eb-weight">{format!("B:{} C:{} G:{} H:{}", wb, wc, wg, wh)}</span>
-                        <span class={format!("eb-state {}", state_cls)}>{state.to_string()}</span>
-                        <span class="eb-psi">{format!("\u{03A8}={:.3}", psi)}</span>
-                    </div>
-                }
-            }}
-
-            // ═══ ROW 3: FREE ENERGY / HIVEMIND ═══
-            <div class="eb-row">
-                // FREE ENERGY — stacked surprise bar
+            // ═══ ACT card (free energy → codegen + feedback) ═══
+            <div class="eb-card">
+                <div class="eb-card-label">"ACT"</div>
+                // FREE ENERGY (inline)
                 {move || {
                     let s = soul.get().unwrap_or_default();
                     let fe = s.get("free_energy");
                     let f_val = fe.and_then(|f| f.get("F")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
                     let regime = fe.and_then(|f| f.get("regime")).and_then(|v| v.as_str()).unwrap_or("--");
-                    let trend = fe.and_then(|f| f.get("trend")).and_then(|v| v.as_str()).unwrap_or("0").to_string();
                     let regime_cls = match regime { "EXPLORE" => "eb-regime-explore", "EXPLOIT" => "eb-regime-exploit", "LEARN" => "eb-regime-learn", _ => "eb-regime-anomaly" };
-                    // Parse F for bar width
                     let f_num: f64 = f_val.parse().unwrap_or(0.5);
                     let bar_pct = ((1.0 - f_num.min(1.0)) * 100.0) as u32;
                     view! {
-                        <div class="eb-module eb-wider">
-                            <div class="eb-label">"FREE ENERGY"</div>
-                            <div class="eb-fe-bar">
+                        <div class="eb-synth-bar">
+                            <span class="eb-label" style="margin:0">"F"</span>
+                            <div class="eb-fe-bar" style="flex:1">
                                 <div class={format!("eb-fe-fill {}", regime_cls)} style=format!("width:{}%", bar_pct)></div>
                             </div>
-                            <div class="eb-stats">
-                                <span>{format!("F={}", f_val)}</span>
-                                <span class={format!("eb-regime {}", regime_cls)}>{regime.to_string()}</span>
-                                <span>{format!("trend={}", trend)}</span>
-                            </div>
+                            <span class="eb-stat">{format!("={}", f_val)}</span>
+                            <span class={format!("eb-regime {}", regime_cls)}>{regime.to_string()}</span>
                         </div>
                     }
                 }}
-
-                // HIVEMIND — trail map
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let h = s.get("hivemind");
-                    let trails = h.and_then(|h| h.get("total_trails")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let deposits = h.and_then(|h| h.get("total_deposits")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let top = h.and_then(|h| h.get("top_attractants")).and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"HIVEMIND"</div>
-                            <svg viewBox="0 0 120 60" class="eb-svg">
-                                // Trail lines radiating from center
-                                {top.iter().take(6).enumerate().map(|(i, t)| {
-                                    let resource = t.get("resource").and_then(|v| v.as_str()).unwrap_or("?");
-                                    let intensity = t.get("intensity").and_then(|v| v.as_f64()).unwrap_or(0.3);
-                                    let angle = (i as f64) * 0.9 - 1.2;
-                                    let len = 20.0 + intensity * 25.0;
-                                    let x2 = 30.0 + len * angle.cos();
-                                    let y2 = 30.0 + len * angle.sin();
-                                    let w = 0.5 + intensity * 2.5;
-                                    let short: String = resource.chars().take(8).collect();
-                                    view! {
-                                        <line x1="30" y1="30" x2=x2.to_string() y2=y2.to_string()
-                                            stroke="#ffa000" stroke-width=w.to_string() opacity=intensity.to_string()/>
-                                        <text x=x2.to_string() y=(y2 + 3.0).to_string()
-                                            class="eb-micro" fill="#ffa000" opacity="0.5">{short}</text>
-                                    }
-                                }).collect::<Vec<_>>()}
-                                {top.is_empty().then(|| view! {
-                                    <text x="60" y="30" text-anchor="middle" class="eb-tiny" fill="#3a4a3a">"no trails"</text>
-                                })}
-                            </svg>
-                            <div class="eb-stats">
-                                <span>{format!("{}t {}d", trails, deposits)}</span>
+                <div class="eb-row-2">
+                    // CODEGEN
+                    {move || {
+                        let s = soul.get().unwrap_or_default();
+                        let cg = s.get("codegen");
+                        let sols = cg.and_then(|c| c.get("solutions_stored")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let steps = cg.and_then(|c| c.get("model_steps")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let loss = cg.and_then(|c| c.get("model_loss")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
+                        let can = cg.and_then(|c| c.get("can_generate")).and_then(|v| v.as_bool()).unwrap_or(false);
+                        let params = cg.and_then(|c| c.get("model_params")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let badge_cls = if can { "eb-badge-ok" } else { "eb-badge-off" };
+                        let loss_num: f64 = loss.parse().unwrap_or(10.0);
+                        let bar_pct = ((1.0 - (loss_num / 10.0).min(1.0)) * 100.0) as u32;
+                        view! {
+                            <div class="eb-module">
+                                <div class="eb-label">"CODEGEN"</div>
+                                <div class="eb-fe-bar" style="margin:4px 0">
+                                    <div class="eb-fe-fill eb-regime-exploit" style=format!("width:{}%", bar_pct)></div>
+                                </div>
+                                <div class="eb-stats">
+                                    <span>{format!("{}M L={} {}d {}s", params/1_000_000, loss, sols, steps)}</span>
+                                </div>
+                                <span class={format!("eb-badge {}", badge_cls)}>{if can { "CAN GEN" } else { "NO GEN" }}</span>
                             </div>
-                        </div>
-                    }
-                }}
+                        }
+                    }}
+                    // FEEDBACK
+                    {move || {
+                        let s = soul.get().unwrap_or_default();
+                        let ch = s.get("cycle_health");
+                        let completed = ch.and_then(|h| h.get("completed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let failed = ch.and_then(|h| h.get("failed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let total = (completed + failed).max(1);
+                        let rate = completed * 100 / total;
+                        let rate_cls = if rate >= 70 { "eb-rate-ok" } else if rate >= 40 { "eb-rate-warn" } else { "eb-rate-bad" };
+                        view! {
+                            <div class="eb-module">
+                                <div class="eb-label">"FEEDBACK"</div>
+                                <div class="eb-feedback">
+                                    <span class="eb-fb-ok">{format!("{}\u{2713}", completed)}</span>
+                                    <span class="eb-fb-fail">{format!("{}\u{2717}", failed)}</span>
+                                    <span class=rate_cls>{format!("{}%", rate)}</span>
+                                </div>
+                                <div class="eb-stats"><span>{"\u{25B2}brain \u{25B2}genesis"}</span></div>
+                            </div>
+                        }
+                    }}
+                </div>
             </div>
 
-            // ═══ ROW 4: CODEGEN / EVAL / FEEDBACK ═══
-            <div class="eb-row">
-                // CODEGEN — model card
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let cg = s.get("codegen");
-                    let sols = cg.and_then(|c| c.get("solutions_stored")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let steps = cg.and_then(|c| c.get("model_steps")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let loss = cg.and_then(|c| c.get("model_loss")).and_then(|v| v.as_str()).unwrap_or("--").to_string();
-                    let can = cg.and_then(|c| c.get("can_generate")).and_then(|v| v.as_bool()).unwrap_or(false);
-                    let params = cg.and_then(|c| c.get("model_params")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let badge_cls = if can { "eb-badge-ok" } else { "eb-badge-off" };
-                    // Loss bar (lower = better, scale 0-10)
-                    let loss_num: f64 = loss.parse().unwrap_or(10.0);
-                    let bar_pct = ((1.0 - (loss_num / 10.0).min(1.0)) * 100.0) as u32;
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"CODEGEN"</div>
-                            <div class="eb-fe-bar" style="margin:4px 0">
-                                <div class="eb-fe-fill eb-regime-exploit" style=format!("width:{}%", bar_pct)></div>
-                            </div>
-                            <div class="eb-stats">
-                                <span>{format!("{}M", params / 1_000_000)}</span>
-                                <span>{format!("L={}", loss)}</span>
-                                <span>{format!("{}d {}s", sols, steps)}</span>
-                            </div>
-                            <span class={format!("eb-badge {}", badge_cls)}>{if can { "CAN GEN" } else { "NO GEN" }}</span>
-                        </div>
-                    }
-                }}
-
-                // EVAL — calibration
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let e = s.get("evaluation");
-                    let records = e.and_then(|e| e.get("total_records")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let benefit = e.and_then(|e| e.get("colony_benefit")).and_then(|c| c.get("avg_sync_benefit")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"EVAL"</div>
-                            <svg viewBox="0 0 60 60" class="eb-svg-sm">
-                                // Diagonal = perfect calibration
-                                <line x1="5" y1="55" x2="55" y2="5" stroke="#1a1a2e" stroke-width="0.5"/>
-                                // Dots suggesting calibration curve
-                                {[0.1, 0.3, 0.5, 0.7, 0.9].iter().enumerate().map(|(i, &predicted)| {
-                                    let actual = predicted + (benefit * 0.2); // slight offset from diagonal
-                                    let px = 5.0 + predicted * 50.0;
-                                    let py = 55.0 - actual.min(1.0) * 50.0;
-                                    view! { <circle cx=px.to_string() cy=py.to_string() r="2" fill="#ff1744" opacity="0.6"/> }
-                                }).collect::<Vec<_>>()}
-                            </svg>
-                            <div class="eb-stats">
-                                <span>{format!("{}rec", records)}</span>
-                                <span>{format!("{:+.3}\u{0394}", benefit)}</span>
-                            </div>
-                        </div>
-                    }
-                }}
-
-                // FEEDBACK — flow diagram
-                {move || {
-                    let s = soul.get().unwrap_or_default();
-                    let ch = s.get("cycle_health");
-                    let completed = ch.and_then(|h| h.get("completed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let failed = ch.and_then(|h| h.get("failed_plans_count")).and_then(|v| v.as_u64()).unwrap_or(0);
-                    let total = (completed + failed).max(1);
-                    let rate = completed * 100 / total;
-                    let rate_cls = if rate >= 70 { "eb-rate-ok" } else if rate >= 40 { "eb-rate-warn" } else { "eb-rate-bad" };
-                    view! {
-                        <div class="eb-module">
-                            <div class="eb-label">"FEEDBACK"</div>
-                            <div class="eb-feedback">
-                                <span class="eb-fb-ok">{format!("{}\u{2713}", completed)}</span>
-                                <span class="eb-fb-fail">{format!("{}\u{2717}", failed)}</span>
-                                <span class=rate_cls>{format!("{}%", rate)}</span>
-                            </div>
-                            <div class="eb-stats">
-                                <span>{"\u{25B2}brain"}</span>
-                                <span>{"\u{25B2}genesis"}</span>
-                            </div>
-                        </div>
-                    }
-                }}
-            </div>
-
-            // ═══ EVENT LOG ═══
+            // ═══ EVENTS + STATUS ═══
             <div class="eb-events">
                 {move || {
                     let evts = events.get();
@@ -412,8 +347,6 @@ pub fn Mandala() -> impl IntoView {
                     }).collect::<Vec<_>>()
                 }}
             </div>
-
-            // ═══ BOTTOM BAR ═══
             {move || {
                 let s = soul.get().unwrap_or_default();
                 let cycles = s.get("total_cycles").and_then(|v| v.as_u64()).unwrap_or(0);

@@ -1202,30 +1202,51 @@ h3 { font-size: 11px; color: var(--text); font-weight: 600; }
 .acc-flat { color: var(--cyan); }
 .acc-stall { color: var(--text-muted); }
 
-.eb-row {
+/* Outer cards — golden ratio proportioned containers */
+.eb-card {
+    border: 1px solid var(--border-light);
+    background: var(--bg-panel);
+    padding: 8px;
     display: flex;
+    flex-direction: column;
     gap: 6px;
 }
 
-.eb-flow {
-    text-align: center;
-    color: var(--text-muted);
+.eb-card-label {
     font-size: 9px;
-    letter-spacing: 8px;
-    padding: 2px 0;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Two-column layout: THINK (φ wide) | SENSE (1 wide) */
+.eb-main {
+    display: grid;
+    grid-template-columns: 1.618fr 1fr;
+    gap: 6px;
+}
+
+/* Inner modules — equal width within their parent card */
+.eb-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.eb-row-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
 }
 
 .eb-module {
-    flex: 1;
     border: 1px solid var(--border);
-    background: var(--bg-panel);
+    background: var(--bg);
     padding: 6px;
     min-width: 0;
     transition: border-color 0.3s;
 }
-
-.eb-module.eb-wide { flex: 3; }
-.eb-module.eb-wider { flex: 2; }
 
 .eb-glow { border-color: var(--green-dim) !important; box-shadow: 0 0 8px rgba(0,255,65,0.15); }
 
@@ -1329,7 +1350,9 @@ h3 { font-size: 11px; color: var(--text); font-weight: 600; }
 .eb-ver { color: var(--text-muted); }
 
 @media (max-width: 600px) {
-    .eb-row { flex-direction: column; }
+    .eb-main { grid-template-columns: 1fr; }
+    .eb-row { grid-template-columns: 1fr; }
+    .eb-row-2 { grid-template-columns: 1fr; }
     .engine-bay { font-size: 9px; }
 }
 
