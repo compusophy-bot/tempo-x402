@@ -111,8 +111,43 @@ pub fn evaluate(
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    // Load peer fitness records (stored during discover_peers)
-    let peers = load_peer_fitness(db);
+    // Load peer fitness from BOTH sources:
+    // 1. Old discover_peers path (colony_peer_fitness)
+    // 2. New collective protocol (colony_workers from worker registration)
+    let mut peers = load_peer_fitness(db);
+
+    // Merge in workers from the collective protocol (queen sees registered workers)
+    let collective_workers = crate::collective::get_live_workers(db);
+    for worker in &collective_workers {
+        if !peers.iter().any(|p| p.instance_id == worker.instance_id) {
+            peers.push(PeerFitnessRecord {
+                instance_id: worker.instance_id.clone(),
+                fitness: worker.fitness.max(0.3), // default 0.3 if not yet measured
+                benchmark_pass_at_1: 0.0,
+                role: "worker".to_string(),
+                strongest_capability: String::new(),
+                measured_at: worker.last_heartbeat,
+            });
+        }
+    }
+
+    // Workers: also count the queen as a peer
+    if crate::collective::ColonyRole::from_env() == crate::collective::ColonyRole::Worker {
+        if let Some(queen_url) = crate::collective::queen_url() {
+            let queen_id = format!("queen-{}", queen_url.chars().take(20).collect::<String>());
+            if !peers.iter().any(|p| p.instance_id == queen_id) {
+                peers.push(PeerFitnessRecord {
+                    instance_id: queen_id,
+                    fitness: 0.8, // queen is likely the fittest
+                    benchmark_pass_at_1: 0.0,
+                    role: "queen".to_string(),
+                    strongest_capability: String::new(),
+                    measured_at: now,
+                });
+            }
+        }
+    }
+
     let colony_size = peers.len() + 1; // +1 for self
 
     // Build sorted fitness list (including self)
