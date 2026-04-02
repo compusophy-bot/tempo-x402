@@ -41,6 +41,9 @@ pub(super) async fn colony_register(
 }
 
 /// GET /soul/colony/peers — Get live colony members.
+///
+/// If this node is a queen, returns its registered workers.
+/// If this node is a worker, proxies to the queen and includes self.
 pub(super) async fn colony_peers(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,
@@ -50,9 +53,33 @@ pub(super) async fn colony_peers(state: web::Data<NodeState>) -> HttpResponse {
         }
     };
 
+    // Check if we're a worker (have a queen URL)
+    if let Some(queen_url) = x402_soul::collective::queen_url() {
+        // Worker: proxy to queen's /soul/colony/peers
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default();
+        if let Ok(resp) = client
+            .get(format!("{}/soul/colony/peers", queen_url))
+            .send()
+            .await
+        {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                return HttpResponse::Ok().json(data);
+            }
+        }
+        // Fallback if queen unreachable: show self + queen
+        return HttpResponse::Ok().json(serde_json::json!({
+            "colony_size": 2,
+            "colony_iq": "--",
+            "workers": [{"instance_id": "self", "url": "this node"}],
+        }));
+    }
+
+    // Queen: return registered workers
     let workers = x402_soul::collective::get_live_workers(soul_db);
 
-    // Include colony IQ if available
     let colony_iq = soul_db
         .get_state("colony_iq")
         .ok()
