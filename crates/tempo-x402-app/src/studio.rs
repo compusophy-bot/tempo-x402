@@ -419,24 +419,24 @@ pub fn StudioPage() -> impl IntoView {
                             },
                             CenterView::CartridgePreview(ref slug) => {
                                 let slug_run = slug.clone();
-                                let slug_for_switch = slug.clone();
                                 let (cartridge_html, set_cartridge_html) = create_signal(String::from("<div class='studio-loading'>Loading...</div>"));
-                                let (cartridge_logs, set_cartridge_logs) = create_signal(Vec::<String>::new());
+                                let (cartridge_logs, _set_cartridge_logs) = create_signal(Vec::<String>::new());
+                                // Fetch the cartridge output from the SERVER (not client-side instantiation).
+                                // Backend cartridges are wasip1 binaries that run in wasmtime on the server.
                                 spawn_local(async move {
-                                    match crate::cartridge_runner::detect_type(&slug_run).await {
-                                        Ok((crate::cartridge_runner::CartridgeType::Interactive, _)) => {
-                                            set_center.set(CenterView::InteractivePreview(slug_for_switch));
-                                        }
-                                        Ok((crate::cartridge_runner::CartridgeType::Backend, _)) => {
-                                            match crate::cartridge_runner::run_cartridge(&slug_run).await {
-                                                Ok(output) => {
-                                                    set_cartridge_html.set(output.body);
-                                                    set_cartridge_logs.set(output.logs);
-                                                }
-                                                Err(e) => set_cartridge_html.set(format!("<pre class='error'>{e}</pre>")),
+                                    match gloo_net::http::Request::get(&format!("/c/{}", slug_run))
+                                        .send()
+                                        .await
+                                    {
+                                        Ok(resp) => {
+                                            let ct = resp.headers().get("content-type").unwrap_or_default();
+                                            match resp.text().await {
+                                                Ok(body) if ct.contains("html") => set_cartridge_html.set(body),
+                                                Ok(body) => set_cartridge_html.set(format!("<pre>{body}</pre>")),
+                                                Err(e) => set_cartridge_html.set(format!("<pre class='error'>Read error: {e}</pre>")),
                                             }
                                         }
-                                        Err(e) => set_cartridge_html.set(format!("<pre class='error'>{e}</pre>")),
+                                        Err(e) => set_cartridge_html.set(format!("<pre class='error'>Fetch error: {e}</pre>")),
                                     }
                                 });
                                 view! {

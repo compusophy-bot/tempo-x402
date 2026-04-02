@@ -405,7 +405,7 @@ pub async fn serve_wasm_binary(
     }
 }
 
-/// `DELETE /c/{slug}` — deactivate a cartridge and unload from engine.
+/// `DELETE /c/{slug}` — deactivate a cartridge, unload from engine, and remove files.
 pub async fn delete_cartridge_handler(
     state: web::Data<NodeState>,
     path: web::Path<String>,
@@ -414,10 +414,12 @@ pub async fn delete_cartridge_handler(
 
     match db::delete_cartridge(&state.gateway.db, &slug) {
         Ok(true) => {
-            // Unload from engine if loaded
+            // Unload from engine
             if let Some(ref engine) = state.cartridge_engine {
                 engine.unload_module(&slug);
             }
+            // Remove files from disk so it doesn't resurrect on restart
+            let _ = std::fs::remove_dir_all(format!("/data/cartridges/{slug}"));
             HttpResponse::Ok().json(serde_json::json!({
                 "deleted": slug
             }))
@@ -431,7 +433,7 @@ pub async fn delete_cartridge_handler(
     }
 }
 
-/// `DELETE /admin/cartridges` — deactivate all cartridges.
+/// `DELETE /admin/cartridges` — deactivate all cartridges and remove files.
 pub async fn delete_all_cartridges_handler(
     state: web::Data<NodeState>,
 ) -> HttpResponse {
@@ -440,6 +442,14 @@ pub async fn delete_all_cartridges_handler(
             // Unload all from engine
             if let Some(ref engine) = state.cartridge_engine {
                 engine.unload_all();
+            }
+            // Remove all cartridge directories from disk
+            if let Ok(entries) = std::fs::read_dir("/data/cartridges") {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        let _ = std::fs::remove_dir_all(entry.path());
+                    }
+                }
             }
             HttpResponse::Ok().json(serde_json::json!({
                 "deleted": count
