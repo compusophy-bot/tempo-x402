@@ -36,5 +36,6 @@ pub mod manifest;
 pub use engine::CartridgeEngine;
 pub use error::CartridgeError;
 pub use manifest::{
-    CartridgeManifest, CartridgeRequest, CartridgeResult, PaymentContext, ABI_VERSION,
+    CartridgeKind, CartridgeManifest, CartridgeRequest, CartridgeResult, PaymentContext,
+    ABI_VERSION,
 };

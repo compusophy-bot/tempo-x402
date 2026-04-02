@@ -844,6 +844,11 @@ async fn main() -> std::io::Result<()> {
                             if let Ok(None) = db::get_cartridge(&cartridge_db, slug) {
                                 let now = chrono::Utc::now().timestamp();
                                 let wasm_path = format!("/data/cartridges/{slug}/bin/{}.wasm", slug.replace('-', "_"));
+                                let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {
+                                    "frontend".to_string()
+                                } else {
+                                    "backend".to_string()
+                                };
                                 let record = db::CartridgeRecord {
                                     slug: slug.clone(),
                                     name: slug.clone(),
@@ -858,6 +863,7 @@ async fn main() -> std::io::Result<()> {
                                     active: true,
                                     created_at: now,
                                     updated_at: now,
+                                    cartridge_type: cart_type,
                                 };
                                 if let Err(e) = db::upsert_cartridge(&cartridge_db, &record) {
                                     tracing::warn!(slug = %slug, error = %e, "Failed to auto-register cartridge in DB");

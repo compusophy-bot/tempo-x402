@@ -5,6 +5,39 @@ use serde::{Deserialize, Serialize};
 /// ABI version. Increment when host function signatures change.
 pub const ABI_VERSION: u32 = 1;
 
+/// The kind of cartridge — determines compilation target and runtime.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum CartridgeKind {
+    /// Server-side wasmtime execution, returns HTTP responses.
+    #[default]
+    Backend,
+    /// Client-side framebuffer rendering at 60fps.
+    Interactive,
+    /// Client-side Leptos app mounted to DOM via wasm-bindgen.
+    Frontend,
+}
+
+impl std::fmt::Display for CartridgeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CartridgeKind::Backend => write!(f, "backend"),
+            CartridgeKind::Interactive => write!(f, "interactive"),
+            CartridgeKind::Frontend => write!(f, "frontend"),
+        }
+    }
+}
+
+impl CartridgeKind {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "frontend" => Self::Frontend,
+            "interactive" => Self::Interactive,
+            _ => Self::Backend,
+        }
+    }
+}
+
 /// Metadata for a deployed WASM cartridge.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CartridgeManifest {

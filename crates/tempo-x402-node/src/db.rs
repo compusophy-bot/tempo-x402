@@ -556,7 +556,21 @@ const CARTRIDGES_SCHEMA: &str = r#"
 
 /// Initialize the cartridges tables on an existing gateway database.
 pub fn init_cartridges_schema(db: &Database) -> Result<(), GatewayError> {
-    db.execute_schema(CARTRIDGES_SCHEMA)
+    db.execute_schema(CARTRIDGES_SCHEMA)?;
+    // Migration: add cartridge_type column if missing
+    db.with_connection(|conn| {
+        let has_col = conn
+            .prepare("SELECT cartridge_type FROM cartridges LIMIT 0")
+            .is_ok();
+        if !has_col {
+            conn.execute(
+                "ALTER TABLE cartridges ADD COLUMN cartridge_type TEXT NOT NULL DEFAULT 'backend'",
+                [],
+            )
+            .map_err(|e| GatewayError::Internal(format!("migration: {e}")))?;
+        }
+        Ok(())
+    })
 }
 
 /// A registered WASM cartridge.
@@ -575,6 +589,13 @@ pub struct CartridgeRecord {
     pub active: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// "backend", "interactive", or "frontend"
+    #[serde(default = "default_cartridge_type")]
+    pub cartridge_type: String,
+}
+
+fn default_cartridge_type() -> String {
+    "backend".to_string()
 }
 
 /// Register or update a cartridge in the database.
@@ -582,11 +603,11 @@ pub fn upsert_cartridge(db: &Database, record: &CartridgeRecord) -> Result<(), G
     db.with_connection(|conn| {
         conn.execute(
             "INSERT INTO cartridges (slug, name, description, version, price_usd, price_amount, \
-             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at, cartridge_type) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
              ON CONFLICT(slug) DO UPDATE SET \
              name=?2, description=?3, version=?4, price_usd=?5, price_amount=?6, \
-             wasm_path=?9, wasm_hash=?10, active=?11, updated_at=?13",
+             wasm_path=?9, wasm_hash=?10, active=?11, updated_at=?13, cartridge_type=?14",
             params![
                 record.slug,
                 record.name,
@@ -601,6 +622,7 @@ pub fn upsert_cartridge(db: &Database, record: &CartridgeRecord) -> Result<(), G
                 record.active as i32,
                 record.created_at,
                 record.updated_at,
+                record.cartridge_type,
             ],
         )
         .map_err(|e| GatewayError::Internal(format!("upsert cartridge: {e}")))?;
@@ -613,7 +635,8 @@ pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord
     db.with_connection(|conn| {
         conn.query_row(
             "SELECT slug, name, description, version, price_usd, price_amount, \
-             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at \
+             owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at, \
+             COALESCE(cartridge_type, 'backend') \
              FROM cartridges WHERE slug = ?1 AND active = 1",
             params![slug],
             |row| {
@@ -631,6 +654,7 @@ pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord
                     active: row.get::<_, i32>(10)? != 0,
                     created_at: row.get(11)?,
                     updated_at: row.get(12)?,
+                    cartridge_type: row.get::<_, String>(13).unwrap_or_else(|_| "backend".to_string()),
                 })
             },
         )
@@ -645,7 +669,8 @@ pub fn list_cartridges(db: &Database) -> Result<Vec<CartridgeRecord>, GatewayErr
         let mut stmt = conn
             .prepare(
                 "SELECT slug, name, description, version, price_usd, price_amount, \
-                 owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at \
+                 owner_address, source_repo, wasm_path, wasm_hash, active, created_at, updated_at, \
+                 COALESCE(cartridge_type, 'backend') \
                  FROM cartridges WHERE active = 1 ORDER BY created_at DESC",
             )
             .map_err(|e| GatewayError::Internal(format!("list cartridges: {e}")))?;
@@ -666,6 +691,7 @@ pub fn list_cartridges(db: &Database) -> Result<Vec<CartridgeRecord>, GatewayErr
                     active: row.get::<_, i32>(10)? != 0,
                     created_at: row.get(11)?,
                     updated_at: row.get(12)?,
+                    cartridge_type: row.get::<_, String>(13).unwrap_or_else(|_| "backend".to_string()),
                 })
             })
             .map_err(|e| GatewayError::Internal(format!("list cartridges query: {e}")))?;

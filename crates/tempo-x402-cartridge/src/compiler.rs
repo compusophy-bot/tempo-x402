@@ -1,4 +1,5 @@
-//! Cartridge compiler — wraps `cargo build --target wasm32-wasip1`.
+//! Cartridge compiler — wraps `cargo build` for wasip1 (backend/interactive) and
+//! wasm32-unknown-unknown + wasm-bindgen (frontend Leptos apps).
 
 use std::path::{Path, PathBuf};
 
@@ -370,6 +371,224 @@ pub extern "C" fn x402_get_height() -> i32 {
 pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
     let layout = core::alloc::Layout::from_size_align(size as usize, 1).unwrap();
     unsafe { std::alloc::alloc(layout) }
+}
+"##;
+    template.replace("__SLUG__", slug)
+}
+
+// ════════════════════════════════════════════════════════════════════
+// FRONTEND CARTRIDGES — Leptos apps compiled to wasm32-unknown-unknown
+// ════════════════════════════════════════════════════════════════════
+
+/// Compile a frontend cartridge (Leptos app → wasm-bindgen).
+///
+/// 1. `cargo build --target wasm32-unknown-unknown --release`
+/// 2. `wasm-bindgen --target web --out-dir {output_dir}/pkg {wasm_file}`
+///
+/// Returns the path to the output `pkg/` directory containing the JS glue + WASM.
+pub async fn compile_frontend_cartridge(
+    source_dir: &Path,
+    output_dir: &Path,
+) -> Result<PathBuf, CartridgeError> {
+    let cargo_toml = source_dir.join("Cargo.toml");
+    if !cargo_toml.exists() {
+        return Err(CartridgeError::CompilationFailed(format!(
+            "no Cargo.toml at {}",
+            source_dir.display()
+        )));
+    }
+
+    tokio::fs::create_dir_all(output_dir).await?;
+
+    // Ensure wasm32-unknown-unknown target
+    let target_check = tokio::process::Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+        .await;
+    let has_target = target_check
+        .as_ref()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("wasm32-unknown-unknown"))
+        .unwrap_or(false);
+    if !has_target {
+        tracing::info!("Installing wasm32-unknown-unknown target for frontend cartridge");
+        let _ = tokio::process::Command::new("rustup")
+            .args(["target", "add", "wasm32-unknown-unknown"])
+            .output()
+            .await;
+    }
+
+    let target_dir = format!(
+        "/tmp/cartridge-frontend-build-{}",
+        source_dir.file_name().unwrap_or_default().to_string_lossy()
+    );
+
+    // Step 1: cargo build
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(COMPILE_TIMEOUT_SECS),
+        tokio::process::Command::new("cargo")
+            .args([
+                "build",
+                "--target",
+                "wasm32-unknown-unknown",
+                "--release",
+                "--manifest-path",
+            ])
+            .arg(cargo_toml.to_string_lossy().as_ref())
+            .env("CARGO_TARGET_DIR", &target_dir)
+            .env("RUSTUP_HOME", "/usr/local/rustup")
+            .env("CARGO_HOME", "/usr/local/cargo")
+            .output(),
+    )
+    .await
+    .map_err(|_| {
+        CartridgeError::CompilationFailed(format!(
+            "frontend compilation timed out after {COMPILE_TIMEOUT_SECS}s"
+        ))
+    })?
+    .map_err(|e| CartridgeError::CompilationFailed(format!("cargo failed to start: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let truncated = if stderr.len() > 4096 {
+            format!("{}...(truncated)", &stderr[..4096])
+        } else {
+            stderr.to_string()
+        };
+        return Err(CartridgeError::CompilationFailed(truncated));
+    }
+
+    // Find the .wasm binary
+    let release_dir = format!("{}/wasm32-unknown-unknown/release", target_dir);
+    let mut wasm_file = None;
+    if let Ok(mut entries) = tokio::fs::read_dir(&release_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().map(|e| e == "wasm").unwrap_or(false)
+                && !path.to_string_lossy().contains(".d")
+            {
+                wasm_file = Some(path);
+                break;
+            }
+        }
+    }
+
+    let wasm_path = wasm_file.ok_or_else(|| {
+        CartridgeError::CompilationFailed(format!(
+            "no .wasm binary found in {}/wasm32-unknown-unknown/release",
+            target_dir
+        ))
+    })?;
+
+    // Step 2: wasm-bindgen to generate JS glue + optimized WASM
+    let pkg_dir = output_dir.join("pkg");
+    tokio::fs::create_dir_all(&pkg_dir).await?;
+
+    let bindgen_output = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        tokio::process::Command::new("wasm-bindgen")
+            .args([
+                "--target",
+                "web",
+                "--out-dir",
+            ])
+            .arg(pkg_dir.to_string_lossy().as_ref())
+            .arg(wasm_path.to_string_lossy().as_ref())
+            .output(),
+    )
+    .await
+    .map_err(|_| CartridgeError::CompilationFailed("wasm-bindgen timed out".to_string()))?
+    .map_err(|e| {
+        CartridgeError::CompilationFailed(format!("wasm-bindgen failed to start: {e}"))
+    })?;
+
+    if !bindgen_output.status.success() {
+        let stderr = String::from_utf8_lossy(&bindgen_output.stderr);
+        return Err(CartridgeError::CompilationFailed(format!(
+            "wasm-bindgen failed: {stderr}"
+        )));
+    }
+
+    // Clean up cargo build directory
+    let _ = tokio::fs::remove_dir_all(&target_dir).await;
+
+    Ok(pkg_dir)
+}
+
+/// Detect if a cartridge source is a frontend cartridge by checking Cargo.toml.
+pub fn is_frontend_cartridge(source_dir: &Path) -> bool {
+    let cargo_toml = source_dir.join("Cargo.toml");
+    if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+        // If it depends on wasm-bindgen, it's a frontend cartridge
+        content.contains("wasm-bindgen")
+    } else {
+        false
+    }
+}
+
+/// Generate Cargo.toml for a frontend cartridge (Leptos app).
+pub fn frontend_cargo_toml(slug: &str) -> String {
+    format!(
+        r#"[package]
+name = "{slug}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+leptos = {{ version = "0.6", features = ["csr"] }}
+wasm-bindgen = "0.2"
+web-sys = {{ version = "0.3", features = ["Document", "Element", "HtmlElement", "Window"] }}
+console_error_panic_hook = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+"#
+    )
+}
+
+/// Generate lib.rs template for a frontend cartridge.
+///
+/// The cartridge exports `init(selector)` which mounts a Leptos component
+/// into the given DOM element. The Studio calls this to load the app.
+pub fn frontend_lib_rs(slug: &str) -> String {
+    let template = r##"//! __SLUG__ — x402 frontend cartridge (Leptos app)
+//!
+//! This cartridge is a full Leptos app that mounts into the Studio.
+//! The host calls `init("#mount-id")` to render it into a DOM element.
+
+use leptos::*;
+use wasm_bindgen::prelude::*;
+
+#[component]
+fn App() -> impl IntoView {
+    let (count, set_count) = create_signal(0);
+
+    view! {
+        <div style="font-family: monospace; color: #e0e0e0; padding: 16px;">
+            <h1 style="color: #00ff41;">"__SLUG__"</h1>
+            <p>"A frontend cartridge running as a Leptos app."</p>
+            <button
+                style="background: #1a1a2e; color: #00ff41; border: 1px solid #00ff41; padding: 8px 16px; font-family: monospace; cursor: pointer;"
+                on:click=move |_| set_count.update(|c| *c += 1)
+            >
+                "Clicked: " {count}
+            </button>
+        </div>
+    }
+}
+
+/// Entry point — called by the Studio to mount this app into a DOM element.
+#[wasm_bindgen]
+pub fn init(selector: &str) {
+    console_error_panic_hook::set_once();
+    let document = web_sys::window().unwrap().document().unwrap();
+    let el = document.query_selector(selector).unwrap().unwrap();
+    mount_to(el.unchecked_into(), App);
 }
 "##;
     template.replace("__SLUG__", slug)

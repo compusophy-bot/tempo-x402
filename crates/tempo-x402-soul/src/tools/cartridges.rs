@@ -10,6 +10,7 @@ impl ToolExecutor {
         source_code: Option<&str>,
         description: Option<&str>,
         interactive: bool,
+        frontend: bool,
     ) -> Result<ToolResult, String> {
         // Validate slug
         if !slug
@@ -28,29 +29,36 @@ impl ToolExecutor {
             .map_err(|e| format!("failed to create source dir: {e}"))?;
         std::fs::create_dir_all(&bin_dir).map_err(|e| format!("failed to create bin dir: {e}"))?;
 
-        // Write Cargo.toml
-        let cargo_toml = x402_cartridge::compiler::default_cargo_toml(slug);
+        // Write Cargo.toml + lib.rs based on cartridge type
+        let (cargo_toml, lib_rs, cartridge_type) = if frontend {
+            (
+                x402_cartridge::compiler::frontend_cargo_toml(slug),
+                source_code
+                    .map(String::from)
+                    .unwrap_or_else(|| x402_cartridge::compiler::frontend_lib_rs(slug)),
+                "frontend (Leptos DOM app)",
+            )
+        } else if interactive {
+            (
+                x402_cartridge::compiler::default_cargo_toml(slug),
+                x402_cartridge::compiler::default_interactive_lib_rs(slug),
+                "interactive (60fps framebuffer)",
+            )
+        } else {
+            (
+                x402_cartridge::compiler::default_cargo_toml(slug),
+                source_code
+                    .map(String::from)
+                    .unwrap_or_else(|| x402_cartridge::compiler::default_lib_rs(slug)),
+                "backend (HTTP)",
+            )
+        };
         std::fs::write(format!("{src_dir}/Cargo.toml"), &cargo_toml)
             .map_err(|e| format!("failed to write Cargo.toml: {e}"))?;
-
-        // Write lib.rs
-        // For interactive cartridges: ALWAYS use the full template. The template
-        // has the complete ABI (x402_init, x402_tick, x402_get_framebuffer, etc.)
-        // that the host requires. Agent source_code is ignored for interactive
-        // cartridges because partial implementations always fail to link.
-        // The agent can edit_file afterward to customize game logic.
-        let lib_rs = if interactive {
-            x402_cartridge::compiler::default_interactive_lib_rs(slug)
-        } else {
-            source_code
-                .map(String::from)
-                .unwrap_or_else(|| x402_cartridge::compiler::default_lib_rs(slug))
-        };
         std::fs::write(format!("{src_dir}/src/lib.rs"), &lib_rs)
             .map_err(|e| format!("failed to write lib.rs: {e}"))?;
 
         let desc = description.unwrap_or("WASM cartridge");
-        let cartridge_type = if interactive { "interactive (60fps framebuffer)" } else { "backend (HTTP)" };
 
         Ok(ToolResult {
             stdout: format!(
@@ -59,7 +67,12 @@ impl ToolExecutor {
                  Source: {src_dir}/src/lib.rs\n\
                  {interactive_note}\
                  Next: call compile_cartridge('{slug}') to build the WASM binary.",
-                interactive_note = if interactive {
+                interactive_note = if frontend {
+                    "This is a FRONTEND cartridge — a full Leptos app that mounts into the Studio.\n\
+                     It compiles to wasm32-unknown-unknown via wasm-bindgen (not wasip1).\n\
+                     The init(selector) function mounts the app into a DOM element.\n\
+                     You can use leptos view! macros, web-sys, and full DOM APIs.\n"
+                } else if interactive {
                     "Template includes: x402_init, x402_tick, x402_key_down/up, x402_get_framebuffer,\n\
                      set_pixel, fill_rect, clear helpers. Edit the x402_tick() function to customize.\n\
                      Arrow keys: 37=Left, 38=Up, 39=Right, 40=Down, 32=Space.\n"
@@ -85,7 +98,45 @@ impl ToolExecutor {
             ));
         }
 
+        let is_frontend =
+            x402_cartridge::compiler::is_frontend_cartridge(std::path::Path::new(&src_dir));
+
         let start = std::time::Instant::now();
+        if is_frontend {
+            // Frontend cartridge: wasm32-unknown-unknown + wasm-bindgen
+            match x402_cartridge::compiler::compile_frontend_cartridge(
+                std::path::Path::new(&src_dir),
+                std::path::Path::new(&bin_dir),
+            )
+            .await
+            {
+                Ok(pkg_dir) => {
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    return Ok(ToolResult {
+                        stdout: format!(
+                            "Frontend cartridge '{slug}' compiled successfully!\n\
+                             Package: {}\n\
+                             Build time: {duration_ms}ms\n\
+                             The cartridge is ready at /c/{slug} (frontend type — mounts into Studio DOM).",
+                            pkg_dir.display()
+                        ),
+                        stderr: String::new(),
+                        exit_code: 0,
+                        duration_ms,
+                    });
+                }
+                Err(e) => {
+                    return Ok(ToolResult {
+                        stdout: String::new(),
+                        stderr: format!("Frontend compilation failed:\n{e}"),
+                        exit_code: 1,
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
+        }
+
+        // Backend/interactive cartridge: wasm32-wasip1
         match x402_cartridge::compiler::compile_cartridge(
             std::path::Path::new(&src_dir),
             std::path::Path::new(&bin_dir),

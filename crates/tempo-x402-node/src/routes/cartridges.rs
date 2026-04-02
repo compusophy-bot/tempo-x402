@@ -20,6 +20,12 @@ pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
         for slug in &loaded {
             if let Ok(None) = db::get_cartridge(&state.gateway.db, slug) {
                 let now = chrono::Utc::now().timestamp();
+                // Detect if it's a frontend cartridge (has pkg/ dir)
+                let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {
+                    "frontend".to_string()
+                } else {
+                    "backend".to_string()
+                };
                 let record = db::CartridgeRecord {
                     slug: slug.clone(),
                     name: slug.clone(),
@@ -34,6 +40,7 @@ pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
                     active: true,
                     created_at: now,
                     updated_at: now,
+                    cartridge_type: cart_type,
                 };
                 let _ = db::upsert_cartridge(&state.gateway.db, &record);
             }
@@ -52,6 +59,7 @@ pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
                         "version": c.version,
                         "price": c.price_usd,
                         "source_repo": c.source_repo,
+                        "cartridge_type": c.cartridge_type,
                     })
                 })
                 .collect();
@@ -283,6 +291,7 @@ pub async fn upload_cartridge(
         active: true,
         created_at: now,
         updated_at: now,
+        cartridge_type: "backend".to_string(),
     };
     if let Err(e) = db::upsert_cartridge(&state.gateway.db, &record) {
         return HttpResponse::InternalServerError().json(serde_json::json!({
@@ -441,10 +450,71 @@ pub async fn delete_all_cartridges_handler(
     }
 }
 
+/// `GET /c/{slug}/pkg/{file}` — serve frontend cartridge assets (JS glue + WASM).
+pub async fn serve_frontend_pkg(
+    path: web::Path<(String, String)>,
+) -> HttpResponse {
+    let (slug, file) = path.into_inner();
+
+    // Sanitize filename — no path traversal
+    if file.contains("..") || file.contains('/') || file.contains('\\') {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "invalid filename"}));
+    }
+
+    let pkg_path = format!("/data/cartridges/{slug}/bin/pkg/{file}");
+
+    let content_type = if file.ends_with(".wasm") {
+        "application/wasm"
+    } else if file.ends_with(".js") {
+        "application/javascript"
+    } else if file.ends_with(".d.ts") {
+        "application/typescript"
+    } else {
+        "application/octet-stream"
+    };
+
+    match std::fs::read(&pkg_path) {
+        Ok(bytes) => HttpResponse::Ok()
+            .content_type(content_type)
+            .append_header(("Cache-Control", "public, max-age=3600"))
+            .append_header(("Access-Control-Allow-Origin", "*"))
+            .body(bytes),
+        Err(_) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": format!("file not found: /c/{slug}/pkg/{file}")
+        })),
+    }
+}
+
+/// `GET /c/{slug}/manifest` — get cartridge metadata including type.
+pub async fn get_cartridge_manifest(
+    state: web::Data<NodeState>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let slug = path.into_inner();
+    match db::get_cartridge(&state.gateway.db, &slug) {
+        Ok(Some(c)) => HttpResponse::Ok().json(serde_json::json!({
+            "slug": c.slug,
+            "name": c.name,
+            "description": c.description,
+            "version": c.version,
+            "cartridge_type": c.cartridge_type,
+            "price": c.price_usd,
+        })),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": format!("cartridge '{slug}' not found")
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": format!("{e}")
+        })),
+    }
+}
+
 /// Configure cartridge routes.
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/c", web::get().to(list_cartridges))
         .route("/c/{slug}/wasm", web::get().to(serve_wasm_binary))
+        .route("/c/{slug}/manifest", web::get().to(get_cartridge_manifest))
+        .route("/c/{slug}/pkg/{file}", web::get().to(serve_frontend_pkg))
         .route("/c/{slug}", web::get().to(handle_cartridge))
         .route("/c/{slug}", web::post().to(handle_cartridge))
         .route("/c/{slug}", web::delete().to(delete_cartridge_handler))

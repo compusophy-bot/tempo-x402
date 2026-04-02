@@ -382,6 +382,41 @@ pub async fn instantiate_interactive(
 }
 
 /// Read the RGBA framebuffer from the cartridge's WASM memory.
+// ── Frontend Cartridge Loader ────────────────────────────────────
+
+/// Load a frontend cartridge (Leptos app) by dynamically importing its JS glue
+/// and calling init(selector) to mount it into a DOM element.
+///
+/// The cartridge's wasm-bindgen JS glue is at `/c/{slug}/pkg/{slug}.js`.
+/// It exports `default(wasm_url)` to initialize WASM and `init(selector)` to mount.
+pub async fn load_frontend_cartridge(slug: &str, mount_id: &str) -> Result<(), String> {
+    // The slug may contain hyphens, but wasm-bindgen converts them to underscores in filenames
+    let file_slug = slug.replace('-', "_");
+    let js_url = format!("/c/{slug}/pkg/{file_slug}.js");
+    let wasm_url = format!("/c/{slug}/pkg/{file_slug}_bg.wasm");
+
+    // Use dynamic import() to load the JS glue module, then init WASM and mount
+    let script = format!(
+        r#"(async () => {{
+            const mod = await import('{js_url}');
+            await mod.default('{wasm_url}');
+            mod.init('#{mount_id}');
+        }})()"#
+    );
+
+    let result = js_sys::eval(&script);
+    match result {
+        Ok(promise) => {
+            // The eval returns a Promise — await it
+            let _ = JsFuture::from(js_sys::Promise::from(promise))
+                .await
+                .map_err(|e| format!("frontend cartridge load failed: {e:?}"))?;
+            Ok(())
+        }
+        Err(e) => Err(format!("eval failed: {e:?}")),
+    }
+}
+
 pub fn read_framebuffer(cart: &InteractiveCartridge) -> Vec<u8> {
     let ptr_val = cart
         .fb_ptr_fn

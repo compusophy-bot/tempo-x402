@@ -478,15 +478,14 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         tools.push(FunctionDeclaration {
             name: "create_cartridge".to_string(),
             description: "Create a WASM cartridge — a Rust program that compiles to WASM. \
-                         TWO TYPES: \
-                         (1) BACKEND: exports x402_handle, returns HTTP responses (JSON, HTML). \
+                         THREE TYPES: \
+                         (1) BACKEND: exports x402_handle, returns HTTP responses (JSON, HTML). No deps. \
                          (2) INTERACTIVE: exports x402_tick/x402_key_down/x402_get_framebuffer — \
-                         renders pixels to a 320x240 RGBA framebuffer at 60fps with keyboard input. \
-                         For games, visualizations, interactive tools: set interactive=true. \
-                         The host reads your pixels and blits to canvas. No web-sys, no HTML needed. \
-                         Write game state + pixel rendering in pure Rust. set_pixel(x,y,r,g,b) helper included. \
-                         Arrow keys: 37=Left, 38=Up, 39=Right, 40=Down, 32=Space. \
-                         NO external crates. NO dependencies. Pure Rust only.".to_string(),
+                         renders pixels to a 320x240 RGBA framebuffer at 60fps. Set interactive=true. \
+                         (3) FRONTEND: a full Leptos app with DOM access, mounted into the Studio. \
+                         Set frontend=true. Uses leptos, web-sys, wasm-bindgen. Can render real HTML, \
+                         buttons, forms, interactive UI. Compiles to wasm32-unknown-unknown. \
+                         PREFER FRONTEND for anything with UI. Use backend only for APIs.".to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -504,7 +503,11 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     },
                     "interactive": {
                         "type": "boolean",
-                        "description": "If true, creates an interactive framebuffer cartridge (60fps canvas with keyboard input) instead of a backend HTTP cartridge. Use for games, animations, visual apps."
+                        "description": "If true, creates an interactive framebuffer cartridge (60fps canvas with keyboard input). Use for pixel-based games."
+                    },
+                    "frontend": {
+                        "type": "boolean",
+                        "description": "If true, creates a FRONTEND cartridge — a full Leptos app with DOM access. Uses leptos + web-sys + wasm-bindgen. Mounts into Studio preview. PREFER THIS for any app with UI (dashboards, tools, forms, games with HTML)."
                     }
                 },
                 "required": ["slug"]
@@ -514,7 +517,8 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         tools.push(FunctionDeclaration {
             name: "compile_cartridge".to_string(),
             description: "Compile a cartridge from Rust source to WASM binary. \
-                         Runs cargo build --target wasm32-wasip1. \
+                         Auto-detects type: backend/interactive → wasm32-wasip1, \
+                         frontend (Leptos) → wasm32-unknown-unknown + wasm-bindgen. \
                          Study compile errors carefully — they teach Rust patterns."
                 .to_string(),
             parameters: serde_json::json!({

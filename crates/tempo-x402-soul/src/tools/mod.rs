@@ -495,7 +495,8 @@ impl ToolExecutor {
                 let source_code = args.get("source_code").and_then(|v| v.as_str());
                 let description = args.get("description").and_then(|v| v.as_str());
                 let interactive = args.get("interactive").and_then(|v| v.as_bool()).unwrap_or(false);
-                self.create_cartridge(slug, source_code, description, interactive).await
+                let frontend = args.get("frontend").and_then(|v| v.as_bool()).unwrap_or(false);
+                self.create_cartridge(slug, source_code, description, interactive, frontend).await
             }
             "compile_cartridge" => {
                 let slug = args

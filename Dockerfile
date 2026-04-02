@@ -71,6 +71,9 @@ COPY --from=builder /app/crates/tempo-x402-app/dist /app/spa
 # Copy Rust toolchain from builder for benchmark (cargo test on Exercism problems)
 COPY --from=builder /usr/local/rustup /usr/local/rustup
 COPY --from=builder /usr/local/cargo /usr/local/cargo
+
+# Copy wasm-bindgen CLI for runtime frontend cartridge compilation
+COPY --from=builder /root/.trunk/tools/wasm-bindgen-0.2.108/wasm-bindgen /usr/local/bin/wasm-bindgen
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH="/usr/local/cargo/bin:${PATH}"

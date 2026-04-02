@@ -1123,6 +1123,9 @@ body {
 .studio-suggestions code { font-size: 10px; color: var(--text); }
 
 .studio-error { padding: var(--gap-sm); }
+.studio-loading { padding: var(--gap-md); color: var(--text-dim); font-style: italic; }
+.studio-frontend-preview { background: var(--bg); }
+.studio-cartridge-mount { flex: 1; overflow: auto; }
 
 /* Studio chat panel */
 .studio-chat {

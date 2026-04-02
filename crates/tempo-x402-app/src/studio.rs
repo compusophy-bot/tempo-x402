@@ -21,6 +21,9 @@ struct AppEntry {
     description: Option<String>,
     #[serde(default)]
     kind: String,
+    /// "backend", "interactive", or "frontend"
+    #[serde(default)]
+    cartridge_type: String,
 }
 
 /// File entry from the workspace.
@@ -47,6 +50,7 @@ enum CenterView {
     AppPreview(String),
     CartridgePreview(String),
     InteractivePreview(String),
+    FrontendPreview(String),
     FileView(String, String),
 }
 
@@ -89,7 +93,7 @@ pub fn StudioPage() -> impl IntoView {
                         let slug = ep.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let desc = ep.get("description").and_then(|v| v.as_str()).map(String::from);
                         if !slug.is_empty() {
-                            all_apps.push(AppEntry { slug, description: desc, kind: "script".into() });
+                            all_apps.push(AppEntry { slug, description: desc, kind: "script".into(), cartridge_type: String::new() });
                         }
                     }
                 }
@@ -100,8 +104,9 @@ pub fn StudioPage() -> impl IntoView {
                     for c in carts {
                         let slug = c.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let desc = c.get("description").and_then(|v| v.as_str()).map(String::from);
+                        let ct = c.get("cartridge_type").and_then(|v| v.as_str()).unwrap_or("backend").to_string();
                         if !slug.is_empty() {
-                            all_apps.push(AppEntry { slug, description: desc, kind: "cartridge".into() });
+                            all_apps.push(AppEntry { slug, description: desc, kind: "cartridge".into(), cartridge_type: ct });
                         }
                     }
                 }
@@ -287,12 +292,15 @@ pub fn StudioPage() -> impl IntoView {
                                             let slug_del = slug.clone();
                                             let kind_del = kind.clone();
                                             let kind_for_click = kind.clone();
+                                            let ct_for_click = app.cartridge_type.clone();
                                             view! {
                                                 <div
                                                     class="studio-app-item"
                                                     on:click=move |_| {
                                                         set_sidebar_open.set(false);
-                                                        if kind_for_click == "cartridge" {
+                                                        if ct_for_click == "frontend" {
+                                                            set_center.set(CenterView::FrontendPreview(slug_click.clone()));
+                                                        } else if kind_for_click == "cartridge" {
                                                             set_center.set(CenterView::CartridgePreview(slug_click.clone()));
                                                         } else {
                                                             set_center.set(CenterView::AppPreview(slug_click.clone()));
@@ -560,6 +568,40 @@ pub fn StudioPage() -> impl IntoView {
                                                 height="240"
                                             />
                                         </div>
+                                    </div>
+                                }.into_view()
+                            },
+                            CenterView::FrontendPreview(ref slug) => {
+                                let slug_display = slug.clone();
+                                let mount_id = format!("cartridge-mount-{slug}");
+                                let mount_id_for_load = mount_id.clone();
+                                let slug_for_load = slug.clone();
+                                let (load_error, set_load_error) = create_signal(Option::<String>::None);
+                                let (loading, set_loading) = create_signal(true);
+
+                                // Load the frontend cartridge on mount
+                                spawn_local(async move {
+                                    match crate::cartridge_runner::load_frontend_cartridge(&slug_for_load, &mount_id_for_load).await {
+                                        Ok(()) => set_loading.set(false),
+                                        Err(e) => {
+                                            set_loading.set(false);
+                                            set_load_error.set(Some(e));
+                                        }
+                                    }
+                                });
+
+                                view! {
+                                    <div class="studio-preview studio-frontend-preview">
+                                        <div class="studio-preview-bar">
+                                            <span class="studio-preview-url">"/c/"{slug_display}" (Frontend Leptos App)"</span>
+                                        </div>
+                                        {move || loading.get().then(|| view! {
+                                            <div class="studio-loading">"Loading cartridge..."</div>
+                                        })}
+                                        {move || load_error.get().map(|e| view! {
+                                            <div class="studio-error"><pre>{e}</pre></div>
+                                        })}
+                                        <div id={mount_id} class="studio-cartridge-mount"></div>
                                     </div>
                                 }.into_view()
                             },
