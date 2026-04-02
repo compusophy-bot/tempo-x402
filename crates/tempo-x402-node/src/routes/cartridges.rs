@@ -14,11 +14,12 @@ use crate::state::NodeState;
 /// `GET /c` — list all registered cartridges.
 /// Also auto-registers any engine-loaded modules missing from DB (e.g. compiled at runtime by soul).
 pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
-    // Auto-register engine-loaded modules not yet in DB
+    // Auto-register engine-loaded modules not yet in DB (skip if soft-deleted)
     if let Some(ref engine) = state.cartridge_engine {
         let loaded = engine.loaded_slugs();
         for slug in &loaded {
-            if let Ok(None) = db::get_cartridge(&state.gateway.db, slug) {
+            // Check if slug exists at all (including inactive) to avoid re-registering deleted cartridges
+            if let Ok(None) = db::get_cartridge_any(&state.gateway.db, slug) {
                 let now = chrono::Utc::now().timestamp();
                 // Detect if it's a frontend cartridge (has pkg/ dir)
                 let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {

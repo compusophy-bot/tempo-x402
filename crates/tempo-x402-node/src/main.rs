@@ -841,7 +841,7 @@ async fn main() -> std::io::Result<()> {
                         // The engine scans disk for .wasm files, but the /c API queries the DB.
                         // Without this, cartridges exist on disk but don't appear in the sidebar.
                         for slug in &loaded {
-                            if let Ok(None) = db::get_cartridge(&cartridge_db, slug) {
+                            if let Ok(None) = db::get_cartridge_any(&cartridge_db, slug) {
                                 let now = chrono::Utc::now().timestamp();
                                 let wasm_path = format!("/data/cartridges/{slug}/bin/{}.wasm", slug.replace('-', "_"));
                                 let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {

@@ -630,6 +630,20 @@ pub fn upsert_cartridge(db: &Database, record: &CartridgeRecord) -> Result<(), G
     })
 }
 
+/// Check if a cartridge slug exists in DB (active or not). Used by auto-register
+/// to avoid resurrecting soft-deleted cartridges.
+pub fn get_cartridge_any(db: &Database, slug: &str) -> Result<Option<String>, GatewayError> {
+    db.with_connection(|conn| {
+        conn.query_row(
+            "SELECT slug FROM cartridges WHERE slug = ?1",
+            params![slug],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| GatewayError::Internal(format!("get cartridge any: {e}")))
+    })
+}
+
 /// Get a cartridge by slug.
 pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord>, GatewayError> {
     db.with_connection(|conn| {
