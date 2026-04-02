@@ -161,7 +161,7 @@ pub async fn handle_cartridge(
     }
 
     // ── Execute cartridge ──
-    let engine = match &state.cartridge_engine {
+    let engine = match state.cartridge_engine.clone() {
         Some(e) => e,
         None => {
             return HttpResponse::ServiceUnavailable().json(serde_json::json!({
@@ -192,10 +192,11 @@ pub async fn handle_cartridge(
     // Load KV store for this cartridge
     let kv = db::cartridge_kv_load(&state.gateway.db, &slug).unwrap_or_default();
 
-    // Execute in blocking context (wasmtime is synchronous)
+    // Execute in blocking thread pool (wasmtime is synchronous)
     let slug_clone = slug.clone();
-    let result =
-        tokio::task::block_in_place(|| engine.execute(&slug_clone, &cartridge_request, kv, 30));
+    let result = web::block(move || engine.execute(&slug_clone, &cartridge_request, kv, 30))
+        .await
+        .unwrap_or_else(|e| Err(x402_cartridge::CartridgeError::ExecutionFailed(format!("block: {e}"))));
 
     match result {
         Ok(r) => {
