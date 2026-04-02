@@ -276,7 +276,6 @@ pub async fn upload_cartridge(
 
     // Register in DB (wasm_path empty until compiled)
     let now = chrono::Utc::now().timestamp();
-    let owner = std::env::var("EVM_ADDRESS").unwrap_or_default();
     let record = db::CartridgeRecord {
         slug: slug.to_string(),
         name: name.to_string(),
@@ -284,7 +283,7 @@ pub async fn upload_cartridge(
         version: "0.1.0".to_string(),
         price_usd: "$0.001".to_string(),
         price_amount: "1000".to_string(),
-        owner_address: owner,
+        owner_address: String::new(), // no payment gate by default
         source_repo: None,
         wasm_path: String::new(),
         wasm_hash: String::new(),

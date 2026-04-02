@@ -856,7 +856,7 @@ async fn main() -> std::io::Result<()> {
                                     version: "0.1.0".to_string(),
                                     price_usd: "$0.001".to_string(),
                                     price_amount: "1000".to_string(),
-                                    owner_address: std::env::var("EVM_ADDRESS").unwrap_or_default(),
+                                    owner_address: String::new(), // no payment gate by default — set explicitly to enable
                                     source_repo: None,
                                     wasm_path,
                                     wasm_hash: String::new(),
