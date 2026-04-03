@@ -612,21 +612,29 @@ pub async fn generate_solution(
         .collect();
     if !relevant_failures.is_empty() {
         prompt.push_str(
-            "## FAILED PREVIOUS ATTEMPTS (from peer agents — learn from these mistakes)\n\n",
+            "## FAILED PREVIOUS ATTEMPTS — study these carefully\n\n",
         );
         for (i, failure) in relevant_failures.iter().enumerate().take(2) {
             let sol_preview: String = failure.failed_solution.chars().take(1500).collect();
-            let err_preview: String = failure.error_output.chars().take(500).collect();
+            // Parse test output to extract specific failing tests and assertions
+            let focused_errors = parse_test_failures(&failure.error_output);
+            let err_section = if focused_errors.is_empty() {
+                let raw: String = failure.error_output.chars().take(500).collect();
+                format!("Raw error:\n```\n{raw}\n```")
+            } else {
+                format!("Failing tests:\n{focused_errors}")
+            };
             prompt.push_str(&format!(
-                "### Attempt {} (by peer {})\n```rust\n{}\n```\n**Error:**\n```\n{}\n```\n\n",
+                "### Attempt {} (by {})\n```rust\n{}\n```\n{}\n\n",
                 i + 1,
                 failure.attempted_by,
                 sol_preview,
-                err_preview,
+                err_section,
             ));
         }
         prompt.push_str(
-            "Your solution MUST avoid the same errors. Take a fundamentally different approach.\n\n",
+            "Your solution MUST fix these specific test failures. \
+             Focus on the EXACT assertion mismatches above.\n\n",
         );
     }
 
@@ -2300,6 +2308,48 @@ pub fn collective_score(db: &SoulDatabase) -> (f64, u32, u32) {
 /// Extract accumulated lessons from past benchmark failures.
 /// Analyzes error patterns across all runs and generates hints for the LLM.
 /// Stored in soul_state as "benchmark_hints" and updated after each session.
+/// Parse cargo test output to extract specific failing test names and assertion messages.
+/// Returns a focused summary like "- test foo FAILED: left=3, right=5"
+fn parse_test_failures(output: &str) -> String {
+    let mut failures = Vec::new();
+    let mut current_test = String::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        // "test foo ... FAILED"
+        if trimmed.starts_with("test ") && trimmed.ends_with("FAILED") {
+            current_test = trimmed
+                .strip_prefix("test ")
+                .unwrap_or(trimmed)
+                .strip_suffix(" ... FAILED")
+                .unwrap_or(trimmed)
+                .to_string();
+        }
+        // "left: `X`" or "right: `Y`" from assert_eq
+        if trimmed.starts_with("left:") || trimmed.starts_with("right:") {
+            let detail: String = trimmed.chars().take(100).collect();
+            if !current_test.is_empty() {
+                failures.push(format!("- test `{}` FAILED: {}", current_test, detail));
+                current_test.clear();
+            } else {
+                failures.push(format!("- {}", detail));
+            }
+        }
+        // "thread 'test_name' panicked at 'assertion failed"
+        if trimmed.contains("panicked at") {
+            let msg: String = trimmed.chars().take(150).collect();
+            failures.push(format!("- {}", msg));
+        }
+    }
+
+    // Also capture any remaining named test that didn't have assertion details
+    if !current_test.is_empty() {
+        failures.push(format!("- test `{}` FAILED", current_test));
+    }
+
+    failures.join("\n")
+}
+
 fn load_benchmark_hints(db: &SoulDatabase) -> String {
     // Check if we have cached hints
     if let Ok(Some(hints)) = db.get_state("benchmark_hints") {
