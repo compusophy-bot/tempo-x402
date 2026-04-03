@@ -132,9 +132,12 @@ pub fn train_model(db: &SoulDatabase) {
         })
         .collect();
 
-    // Train on 10 solutions per cycle — keep cycles fast (<5s).
-    // With every-cycle training, we see all data over multiple cycles.
-    for sol in good_solutions.iter().rev().take(10) {
+    // Train on 5 solutions per cycle — balance learning speed vs cycle time.
+    // Full attention backprop on 29M params is expensive. 5 solutions × ~15 windows
+    // = ~75 gradient steps per cycle. With every-cycle training, we rotate through
+    // all data over multiple cycles.
+    let offset = (model.train_steps as usize) % good_solutions.len().max(1);
+    for sol in good_solutions.iter().cycle().skip(offset).take(5) {
         let Some(code) = sol.get("code").and_then(|v| v.as_str()) else {
             continue;
         };
