@@ -17,10 +17,13 @@
 
 mod tier1;
 mod tier1_ext;
+mod tier1_ext2;
 mod tier2;
 mod tier2_ext;
+mod tier2_ext2;
 mod tier3;
 mod tier3_ext;
+mod tier3_ext2;
 mod tier4;
 mod tier4_ext;
 mod tier5;
@@ -33,10 +36,13 @@ pub fn load_embedded_problems() -> Vec<ExercismProblem> {
     let mut problems = Vec::new();
     problems.extend(tier1::tier1_generation());
     problems.extend(tier1_ext::tier1_ext());
+    problems.extend(tier1_ext2::tier1_ext2());
     problems.extend(tier2::tier2_debugging());
     problems.extend(tier2_ext::tier2_ext());
+    problems.extend(tier2_ext2::tier2_ext2());
     problems.extend(tier3::tier3_induction());
     problems.extend(tier3_ext::tier3_ext());
+    problems.extend(tier3_ext2::tier3_ext2());
     problems.extend(tier4::tier4_reasoning());
     problems.extend(tier4_ext::tier4_ext());
     problems.extend(tier5::tier5_adversarial());
