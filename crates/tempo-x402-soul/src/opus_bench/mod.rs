@@ -29,6 +29,7 @@ mod tier3_ext;
 mod tier3_ext2;
 mod tier4;
 mod tier4_ext;
+mod tier4_ext2;
 mod tier5;
 mod tier6;
 
@@ -51,6 +52,7 @@ pub fn load_embedded_problems() -> Vec<ExercismProblem> {
     problems.extend(tier3_ext2::tier3_ext2());
     problems.extend(tier4::tier4_reasoning());
     problems.extend(tier4_ext::tier4_ext());
+    problems.extend(tier4_ext2::tier4_ext2());
     problems.extend(tier5::tier5_adversarial());
     problems.extend(tier6::tier6_brutal());
     problems

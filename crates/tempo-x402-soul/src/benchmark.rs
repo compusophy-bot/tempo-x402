@@ -535,6 +535,15 @@ pub async fn generate_solution(
     // Extract accumulated lessons from past benchmark runs
     let benchmark_hints = load_benchmark_hints(db);
 
+    // Per-problem context: what specifically failed last time for THIS problem
+    let problem_context = {
+        let key = format!("problem_context_{}", problem.slug);
+        db.get_state(&key).ok().flatten().map(|ctx| {
+            format!("\n## Previous Failure Analysis for '{}'\n{}\n\
+                     Use this knowledge to avoid the same mistakes.\n", problem.slug, ctx)
+        }).unwrap_or_default()
+    };
+
     let base_system = format!(
         "You are a Rust coding expert solving Exercism exercises. \
          Output ONLY valid Rust code for src/lib.rs — no markdown, no explanation, no ```rust blocks. \
@@ -557,7 +566,7 @@ pub async fn generate_solution(
          - Off-by-one errors in ranges and slicing\n\
          - For exercises with `Display` trait: check if tests call `.to_string()` or use `format!`\n\
          - For exercises with custom errors: check if tests pattern-match on error variants\n\
-         {}", benchmark_hints);
+         {}{}", benchmark_hints, problem_context);
 
     let system = if peer_failures.is_empty() {
         base_system
@@ -1239,6 +1248,24 @@ pub async fn run_benchmark_session(
                     "Benchmark: FAIL"
                 );
             }
+        }
+
+        // Save per-problem failure context for next attempt (persistent across sessions)
+        if !success && !error_output.is_empty() {
+            let key = format!("problem_context_{}", problem.slug);
+            let failures = parse_test_failures(&error_output);
+            let ctx = if failures.is_empty() {
+                format!("Last error ({}): {}", chrono::Utc::now().format("%Y-%m-%d"),
+                    error_output.chars().take(300).collect::<String>())
+            } else {
+                format!("Last attempt ({}) failed these tests:\n{}\nTry a different algorithm or approach.",
+                    chrono::Utc::now().format("%Y-%m-%d"), failures)
+            };
+            let _ = db.set_state(&key, &ctx);
+        } else if success {
+            // Clear failure context on success
+            let key = format!("problem_context_{}", problem.slug);
+            let _ = db.set_state(&key, "");
         }
 
         // Record brain self-play training data for each attempt
