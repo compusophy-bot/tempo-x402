@@ -619,12 +619,13 @@ impl ThinkingLoop {
                 }
             }
 
-            // Train ALL local models EVERY cycle in a blocking thread.
-            // Codegen (29M params, full attention backprop) can take minutes of CPU.
-            // MUST run in spawn_blocking to avoid hanging the async runtime.
+            // Train ALL local models in a background task (fire and forget).
+            // DO NOT .await — that deadlocks on the SQLite mutex when the training
+            // thread holds the DB lock while writing the 29M param codegen model
+            // and the async thinking loop tries to read the DB for benchmarks.
             {
                 let db_train = self.db.clone();
-                let _ = tokio::task::spawn_blocking(move || {
+                tokio::task::spawn_blocking(move || {
                     let (examples, loss) = crate::brain::train_cycle(&db_train);
                     if examples > 0 {
                         tracing::info!(examples, loss = format!("{:.4}", loss), "Brain trained");
@@ -635,7 +636,8 @@ impl ThinkingLoop {
                     }
                     crate::codegen::train_tokenizer(&db_train);
                     crate::codegen::train_model(&db_train);
-                }).await;
+                });
+                // Don't await — training runs in background, thinking loop continues
             }
 
             // Cortex dream consolidation (driven by temporal binding — independent from brain training)
