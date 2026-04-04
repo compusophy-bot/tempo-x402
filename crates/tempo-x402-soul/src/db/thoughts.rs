@@ -4,65 +4,29 @@ use super::*;
 impl SoulDatabase {
     /// Store a thought.
     pub fn insert_thought(&self, thought: &Thought) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        conn.execute(
-            "INSERT INTO thoughts (id, thought_type, content, context, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                thought.id,
-                thought.thought_type.as_str(),
-                thought.content,
-                thought.context,
-                thought.created_at,
-            ],
-        )?;
+        let value = serde_json::to_vec(thought)?;
+        self.thoughts.insert(thought.id.as_bytes(), value)?;
         Ok(())
     }
 
     /// Delete a single thought by ID. Returns 1 if deleted, 0 if not found.
     pub fn delete_thought(&self, id: &str) -> Result<usize, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let deleted = conn.execute("DELETE FROM thoughts WHERE id = ?1", params![id])?;
-        Ok(deleted)
+        let removed = self.thoughts.remove(id.as_bytes())?;
+        Ok(if removed.is_some() { 1 } else { 0 })
     }
 
     /// Get the most recent N thoughts, newest first.
     pub fn recent_thoughts(&self, limit: u32) -> Result<Vec<Thought>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        let mut stmt = conn.prepare(
-            "SELECT id, thought_type, content, context, created_at, salience, memory_tier, strength \
-             FROM thoughts ORDER BY created_at DESC LIMIT ?1",
-        )?;
-
-        let thoughts = stmt
-            .query_map(params![limit], |row| {
-                let type_str: String = row.get(1)?;
-                Ok(Thought {
-                    id: row.get(0)?,
-                    thought_type: ThoughtType::parse(&type_str).unwrap_or(ThoughtType::Observation),
-                    content: row.get(2)?,
-                    context: row.get(3)?,
-                    created_at: row.get(4)?,
-                    salience: row.get(5)?,
-                    memory_tier: row.get(6)?,
-                    strength: row.get(7)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
+        let mut thoughts: Vec<Thought> = self
+            .thoughts
+            .iter()
+            .filter_map(|res| {
+                let (_k, v) = res.ok()?;
+                serde_json::from_slice(&v).ok()
+            })
+            .collect();
+        thoughts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        thoughts.truncate(limit as usize);
         Ok(thoughts)
     }
 
@@ -72,55 +36,25 @@ impl SoulDatabase {
         types: &[ThoughtType],
         limit: u32,
     ) -> Result<Vec<Thought>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
         if types.is_empty() {
             return Ok(vec![]);
         }
-
-        let placeholders: Vec<String> = types
+        let type_strs: Vec<&str> = types.iter().map(|t| t.as_str()).collect();
+        let mut thoughts: Vec<Thought> = self
+            .thoughts
             .iter()
-            .enumerate()
-            .map(|(i, _)| format!("?{}", i + 1))
+            .filter_map(|res| {
+                let (_k, v) = res.ok()?;
+                let t: Thought = serde_json::from_slice(&v).ok()?;
+                if type_strs.contains(&t.thought_type.as_str()) {
+                    Some(t)
+                } else {
+                    None
+                }
+            })
             .collect();
-        let query = format!(
-            "SELECT id, thought_type, content, context, created_at, salience, memory_tier, strength FROM thoughts \
-             WHERE thought_type IN ({}) ORDER BY created_at DESC LIMIT ?{}",
-            placeholders.join(", "),
-            types.len() + 1
-        );
-
-        let mut stmt = conn.prepare(&query)?;
-
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = types
-            .iter()
-            .map(|t| Box::new(t.as_str().to_string()) as Box<dyn rusqlite::types::ToSql>)
-            .collect();
-        params_vec.push(Box::new(limit));
-
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
-        let thoughts = stmt
-            .query_map(params_refs.as_slice(), |row| {
-                let type_str: String = row.get(1)?;
-                Ok(Thought {
-                    id: row.get(0)?,
-                    thought_type: ThoughtType::parse(&type_str).unwrap_or(ThoughtType::Observation),
-                    content: row.get(2)?,
-                    context: row.get(3)?,
-                    created_at: row.get(4)?,
-                    salience: row.get(5)?,
-                    memory_tier: row.get(6)?,
-                    strength: row.get(7)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
+        thoughts.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        thoughts.truncate(limit as usize);
         Ok(thoughts)
     }
 
@@ -129,104 +63,112 @@ impl SoulDatabase {
         &self,
         thought: &Thought,
         salience: f64,
-        salience_factors_json: &str,
+        _salience_factors_json: &str,
         tier: &str,
         strength: f64,
     ) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        conn.execute(
-            "INSERT INTO thoughts (id, thought_type, content, context, created_at, salience, salience_factors, memory_tier, strength, prediction_error) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)",
-            params![
-                thought.id,
-                thought.thought_type.as_str(),
-                thought.content,
-                thought.context,
-                thought.created_at,
-                salience,
-                salience_factors_json,
-                tier,
-                strength,
-            ],
-        )?;
+        let mut t = thought.clone();
+        t.salience = Some(salience);
+        t.memory_tier = Some(tier.to_string());
+        t.strength = Some(strength);
+        let value = serde_json::to_vec(&t)?;
+        self.thoughts.insert(t.id.as_bytes(), value)?;
         Ok(())
     }
 
     /// Run a decay cycle: reduce strength per tier, prune thoughts below threshold.
     /// Long-term thoughts are never pruned.
     pub fn run_decay_cycle(&self, prune_threshold: f64) -> Result<(u32, u32), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        let mut sensory_decayed: u32 = 0;
+        let mut pruned: u32 = 0;
 
-        // Decay each tier
-        let sensory_decayed = conn.execute(
-            "UPDATE thoughts SET strength = strength * 0.3 WHERE memory_tier = 'sensory' AND strength IS NOT NULL",
-            [],
-        )? as u32;
-        conn.execute(
-            "UPDATE thoughts SET strength = strength * 0.95 WHERE memory_tier = 'working' AND strength IS NOT NULL",
-            [],
-        )?;
-        conn.execute(
-            "UPDATE thoughts SET strength = strength * 0.995 WHERE memory_tier = 'long_term' AND strength IS NOT NULL",
-            [],
-        )?;
+        // Collect all thoughts with their keys
+        let entries: Vec<(sled::IVec, Thought)> = self
+            .thoughts
+            .iter()
+            .filter_map(|res| {
+                let (k, v) = res.ok()?;
+                let t: Thought = serde_json::from_slice(&v).ok()?;
+                Some((k, t))
+            })
+            .collect();
 
-        // Prune below threshold (except long_term)
-        let pruned = conn.execute(
-            "DELETE FROM thoughts WHERE strength IS NOT NULL AND strength < ?1 AND (memory_tier != 'long_term' OR memory_tier IS NULL)",
-            params![prune_threshold],
-        )? as u32;
+        for (key, mut thought) in entries {
+            if let Some(strength) = thought.strength {
+                let tier = thought.memory_tier.as_deref().unwrap_or("");
+                let multiplier = match tier {
+                    "sensory" => {
+                        sensory_decayed += 1;
+                        0.3
+                    }
+                    "working" => 0.95,
+                    "long_term" => 0.995,
+                    _ => 1.0,
+                };
+                let new_strength = strength * multiplier;
+                thought.strength = Some(new_strength);
+
+                // Prune below threshold (except long_term)
+                if new_strength < prune_threshold && tier != "long_term" {
+                    self.thoughts.remove(&key)?;
+                    pruned += 1;
+                } else {
+                    let value = serde_json::to_vec(&thought)?;
+                    self.thoughts.insert(&key, value)?;
+                }
+            }
+        }
 
         Ok((sensory_decayed, pruned))
     }
 
     /// Auto-promote high-salience sensory thoughts to working tier.
     pub fn promote_salient_sensory(&self, salience_threshold: f64) -> Result<u32, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        let mut promoted: u32 = 0;
 
-        let promoted = conn.execute(
-            "UPDATE thoughts SET memory_tier = 'working' WHERE memory_tier = 'sensory' AND salience IS NOT NULL AND salience > ?1",
-            params![salience_threshold],
-        )? as u32;
+        let entries: Vec<(sled::IVec, Thought)> = self
+            .thoughts
+            .iter()
+            .filter_map(|res| {
+                let (k, v) = res.ok()?;
+                let t: Thought = serde_json::from_slice(&v).ok()?;
+                Some((k, t))
+            })
+            .collect();
+
+        for (key, mut thought) in entries {
+            if thought.memory_tier.as_deref() == Some("sensory") {
+                if let Some(salience) = thought.salience {
+                    if salience > salience_threshold {
+                        thought.memory_tier = Some("working".to_string());
+                        let value = serde_json::to_vec(&thought)?;
+                        self.thoughts.insert(&key, value)?;
+                        promoted += 1;
+                    }
+                }
+            }
+        }
 
         Ok(promoted)
     }
 
     /// Increment a pattern's count. Returns the new count.
     pub fn increment_pattern(&self, fingerprint: &str) -> Result<u64, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
+        let key = fingerprint.as_bytes();
         let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "INSERT INTO pattern_counts (fingerprint, count, last_seen_at) VALUES (?1, 1, ?2) \
-             ON CONFLICT(fingerprint) DO UPDATE SET count = count + 1, last_seen_at = ?2",
-            params![fingerprint, now],
-        )?;
 
-        let count: i64 = conn.query_row(
-            "SELECT count FROM pattern_counts WHERE fingerprint = ?1",
-            params![fingerprint],
-            |row| row.get(0),
-        )?;
+        let current: u64 = self
+            .pattern_counts
+            .get(key)?
+            .and_then(|v| serde_json::from_slice::<(u64, i64)>(&v).ok())
+            .map(|(c, _)| c)
+            .unwrap_or(0);
 
-        Ok(count as u64)
+        let new_count = current + 1;
+        let value = serde_json::to_vec(&(new_count, now))?;
+        self.pattern_counts.insert(key, value)?;
+
+        Ok(new_count)
     }
 
     /// Get pattern counts for multiple fingerprints.
@@ -237,41 +179,14 @@ impl SoulDatabase {
         if fingerprints.is_empty() {
             return Ok(HashMap::new());
         }
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        let placeholders: Vec<String> = fingerprints
-            .iter()
-            .enumerate()
-            .map(|(i, _)| format!("?{}", i + 1))
-            .collect();
-        let query = format!(
-            "SELECT fingerprint, count FROM pattern_counts WHERE fingerprint IN ({})",
-            placeholders.join(", ")
-        );
-
-        let mut stmt = conn.prepare(&query)?;
-        let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = fingerprints
-            .iter()
-            .map(|f| Box::new(f.clone()) as Box<dyn rusqlite::types::ToSql>)
-            .collect();
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
         let mut result = HashMap::new();
-        let rows = stmt.query_map(params_refs.as_slice(), |row| {
-            let fp: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            Ok((fp, count as u64))
-        })?;
-        for row in rows {
-            let (fp, count) = row?;
-            result.insert(fp, count);
+        for fp in fingerprints {
+            if let Some(v) = self.pattern_counts.get(fp.as_bytes())? {
+                if let Ok((count, _ts)) = serde_json::from_slice::<(u64, i64)>(&v) {
+                    result.insert(fp.clone(), count);
+                }
+            }
         }
-
         Ok(result)
     }
 }

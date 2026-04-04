@@ -3,102 +3,69 @@ use super::*;
 
 impl SoulDatabase {
     pub fn create_session(&self, title: &str) -> Result<String, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "INSERT INTO chat_sessions (id, title, created_at, updated_at, active) VALUES (?1, ?2, ?3, ?4, 1)",
-            params![id, title, now, now],
-        )?;
+        let session = ChatSession {
+            id: id.clone(),
+            title: title.to_string(),
+            created_at: now,
+            updated_at: now,
+            active: true,
+        };
+        let value = serde_json::to_vec(&session)?;
+        self.chat_sessions.insert(id.as_bytes(), value)?;
         Ok(id)
     }
 
     /// Get or create the default (most recent active) session.
     pub fn get_or_create_default_session(&self) -> Result<String, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        // Find the most recently updated active session
+        let existing = self
+            .chat_sessions
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<ChatSession>(&v).ok())
+            .filter(|s| s.active)
+            .max_by_key(|s| s.updated_at);
 
-        // Try to find the most recently updated active session
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT id FROM chat_sessions WHERE active = 1 ORDER BY updated_at DESC LIMIT 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?;
-
-        if let Some(id) = existing {
-            return Ok(id);
+        if let Some(session) = existing {
+            return Ok(session.id);
         }
 
         // Create a new default session
-        let id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "INSERT INTO chat_sessions (id, title, created_at, updated_at, active) VALUES (?1, 'Chat', ?2, ?3, 1)",
-            params![id, now, now],
-        )?;
-        Ok(id)
+        self.create_session("Chat")
     }
 
     /// List recent chat sessions, newest first.
     pub fn list_sessions(&self, limit: u32) -> Result<Vec<ChatSession>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let mut stmt = conn.prepare(
-            "SELECT id, title, created_at, updated_at, active FROM chat_sessions \
-             WHERE active = 1 ORDER BY updated_at DESC LIMIT ?1",
-        )?;
-        let sessions = stmt
-            .query_map(params![limit], |row| {
-                let active: i32 = row.get(4)?;
-                Ok(ChatSession {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    created_at: row.get(2)?,
-                    updated_at: row.get(3)?,
-                    active: active != 0,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut sessions: Vec<ChatSession> = self
+            .chat_sessions
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<ChatSession>(&v).ok())
+            .filter(|s| s.active)
+            .collect();
+
+        sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        sessions.truncate(limit as usize);
         Ok(sessions)
     }
 
     /// Insert a chat message into a session.
     pub fn insert_chat_message(&self, msg: &ChatMessage) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        conn.execute(
-            "INSERT INTO chat_messages (id, session_id, role, content, tool_executions, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                msg.id,
-                msg.session_id,
-                msg.role,
-                msg.content,
-                msg.tool_executions,
-                msg.created_at,
-            ],
-        )?;
+        let key = format!("{}:{}", msg.session_id, msg.id);
+        let value = serde_json::to_vec(msg)?;
+        self.chat_messages.insert(key.as_bytes(), value)?;
+
         // Touch session updated_at
         let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "UPDATE chat_sessions SET updated_at = ?1 WHERE id = ?2",
-            params![now, msg.session_id],
-        )?;
+        if let Some(raw) = self.chat_sessions.get(msg.session_id.as_bytes())? {
+            let mut session: ChatSession = serde_json::from_slice(&raw)?;
+            session.updated_at = now;
+            self.chat_sessions
+                .insert(msg.session_id.as_bytes(), serde_json::to_vec(&session)?)?;
+        }
+
         Ok(())
     }
 
@@ -108,27 +75,16 @@ impl SoulDatabase {
         session_id: &str,
         limit: u32,
     ) -> Result<Vec<ChatMessage>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let mut stmt = conn.prepare(
-            "SELECT id, session_id, role, content, tool_executions, created_at \
-             FROM chat_messages WHERE session_id = ?1 ORDER BY created_at ASC LIMIT ?2",
-        )?;
-        let messages = stmt
-            .query_map(params![session_id, limit], |row| {
-                Ok(ChatMessage {
-                    id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    role: row.get(2)?,
-                    content: row.get(3)?,
-                    tool_executions: row.get(4)?,
-                    created_at: row.get(5)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        let prefix = format!("{}:", session_id);
+        let mut messages: Vec<ChatMessage> = self
+            .chat_messages
+            .scan_prefix(prefix.as_bytes())
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<ChatMessage>(&v).ok())
+            .collect();
+
+        messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        messages.truncate(limit as usize);
         Ok(messages)
     }
 }

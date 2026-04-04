@@ -13,11 +13,11 @@ members = [
 ]
 
 [workspace.dependencies]
-x402 = { path = "crates/tempo-x402", version = "7.0.0", package = "tempo-x402" }
-x402-gateway = { path = "crates/tempo-x402-gateway", version = "7.0.0", package = "tempo-x402-gateway" }
-x402-identity = { path = "crates/tempo-x402-identity", version = "7.0.0", package = "tempo-x402-identity" }
-x402-soul = { path = "crates/tempo-x402-soul", version = "7.0.0", package = "tempo-x402-soul" }
-x402-cartridge = { path = "crates/tempo-x402-cartridge", version = "7.0.0", package = "tempo-x402-cartridge" }
+x402 = { path = "crates/tempo-x402", version = "8.0.0", package = "tempo-x402" }
+x402-gateway = { path = "crates/tempo-x402-gateway", version = "8.0.0", package = "tempo-x402-gateway" }
+x402-identity = { path = "crates/tempo-x402-identity", version = "8.0.0", package = "tempo-x402-identity" }
+x402-soul = { path = "crates/tempo-x402-soul", version = "8.0.0", package = "tempo-x402-soul" }
+x402-cartridge = { path = "crates/tempo-x402-cartridge", version = "8.0.0", package = "tempo-x402-cartridge" }
 wasmtime = { version = "29", features = ["cranelift"] }
 
 serde = { version = "1", features = ["derive"] }
@@ -38,6 +38,7 @@ futures = "0.3"
 dashmap = "6"
 prometheus = "0.14"
 rusqlite = { version = "0.39", features = ["bundled"] }
+sled = "0.34"
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2"

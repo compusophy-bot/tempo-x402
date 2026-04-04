@@ -633,7 +633,7 @@ pub fn code_generation_prompt(
          - uuid: Uuid::new_v4()\n\
          - sha2 / hmac: for hashing\n\
          - hex: hex::encode, hex::decode\n\
-         - rusqlite: SQLite (used via SoulDatabase wrapper)\n\n\
+         - sled: embedded KV store (used via SoulDatabase wrapper)\n\n\
          # Rust Patterns for This Codebase\n\
          - Error handling: use `Result<T, String>` or `Result<T, actix_web::Error>` for handlers\n\
          - Actix handlers return `impl Responder` or `Result<HttpResponse, actix_web::Error>`\n\

@@ -4,7 +4,7 @@
 #[derive(Debug, thiserror::Error)]
 pub enum SoulError {
     #[error("database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    Database(#[from] sled::Error),
 
     #[error("LLM API error: {0}")]
     Llm(String),

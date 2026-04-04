@@ -1,15 +1,16 @@
-//! Soul database: separate SQLite for thoughts and state.
+//! Soul database: sled-backed lock-free embedded KV store.
+//!
+//! Replaces SQLite (Mutex<Connection>) to eliminate deadlocks between
+//! the codegen training thread and the async thinking loop.
 
-use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::SoulError;
 use crate::events::{ErrorCodeCount, EventFilter, SoulEvent};
 use crate::memory::{Thought, ThoughtType};
-use crate::plan::{Plan, PlanStatus, PlanStep};
+use crate::plan::{Plan, PlanStatus};
 use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, GoalStatus};
 
 mod beliefs;
@@ -124,298 +125,59 @@ pub struct Mutation {
     pub goal_id: Option<String>,
 }
 
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS thoughts (
-    id TEXT PRIMARY KEY,
-    thought_type TEXT NOT NULL,
-    content TEXT NOT NULL,
-    context TEXT,
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_thoughts_type ON thoughts(thought_type);
-CREATE INDEX IF NOT EXISTS idx_thoughts_created ON thoughts(created_at);
-
-CREATE TABLE IF NOT EXISTS soul_state (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS tools (
-    name TEXT PRIMARY KEY,
-    description TEXT NOT NULL,
-    parameters TEXT NOT NULL,
-    handler_type TEXT NOT NULL,
-    handler_config TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    mode_tags TEXT NOT NULL DEFAULT '["code","chat"]',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS mutations (
-    id TEXT PRIMARY KEY,
-    commit_sha TEXT,
-    branch TEXT NOT NULL,
-    description TEXT NOT NULL,
-    files_changed TEXT NOT NULL,
-    cargo_check_passed INTEGER NOT NULL DEFAULT 0,
-    cargo_test_passed INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_mutations_created ON mutations(created_at);
-"#;
-
-/// The soul's dedicated SQLite database.
+/// The soul's dedicated database — pure sled, lock-free.
+///
+/// Every former SQLite table is now a named sled Tree.
+/// All reads/writes are lock-free and safe from any thread.
 pub struct SoulDatabase {
-    pub(super) conn: Mutex<Connection>,
+    pub(super) db: sled::Db,
+    pub(super) state: sled::Tree,
+    pub(super) thoughts: sled::Tree,
+    pub(super) goals: sled::Tree,
+    pub(super) plans: sled::Tree,
+    pub(super) beliefs: sled::Tree,
+    pub(super) events: sled::Tree,
+    pub(super) benchmark_runs: sled::Tree,
+    pub(super) chat_sessions: sled::Tree,
+    pub(super) chat_messages: sled::Tree,
+    pub(super) nudges: sled::Tree,
+    pub(super) mutations: sled::Tree,
+    pub(super) tools: sled::Tree,
+    pub(super) plan_outcomes: sled::Tree,
+    pub(super) capability_events: sled::Tree,
+    pub(super) pattern_counts: sled::Tree,
 }
 
 impl SoulDatabase {
     /// Open (or create) the soul database at the given path.
+    ///
+    /// Path is treated as a directory for sled. If it ends in `.db` (legacy),
+    /// the `.db` suffix is replaced with `.sled`.
     pub fn new(path: &str) -> Result<Self, SoulError> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        // Limit WAL file growth — checkpoint after 1000 pages (~4MB)
-        conn.execute_batch("PRAGMA wal_autocheckpoint=1000;")?;
-        conn.execute_batch(SCHEMA)?;
-        Self::run_migrations(&conn)?;
+        let sled_path = if path.ends_with(".db") {
+            path.replace(".db", ".sled")
+        } else {
+            path.to_string()
+        };
+        let db = sled::open(&sled_path)?;
+
         Ok(Self {
-            conn: Mutex::new(conn),
+            state: db.open_tree("soul_state")?,
+            thoughts: db.open_tree("thoughts")?,
+            goals: db.open_tree("goals")?,
+            plans: db.open_tree("plans")?,
+            beliefs: db.open_tree("beliefs")?,
+            events: db.open_tree("events")?,
+            benchmark_runs: db.open_tree("benchmark_runs")?,
+            chat_sessions: db.open_tree("chat_sessions")?,
+            chat_messages: db.open_tree("chat_messages")?,
+            nudges: db.open_tree("nudges")?,
+            mutations: db.open_tree("mutations")?,
+            tools: db.open_tree("tools")?,
+            plan_outcomes: db.open_tree("plan_outcomes")?,
+            capability_events: db.open_tree("capability_events")?,
+            pattern_counts: db.open_tree("pattern_counts")?,
+            db,
         })
-    }
-
-    /// Run incremental schema migrations using PRAGMA user_version.
-    fn run_migrations(conn: &Connection) -> Result<(), SoulError> {
-        let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-
-        if version < 1 {
-            // v1: neuroplastic memory columns + pattern_counts table
-            // Each ALTER TABLE must be a separate statement (SQLite limitation).
-            // Use execute_batch with individual error handling — columns may already exist
-            // if a previous migration was partially applied.
-            let alters = [
-                "ALTER TABLE thoughts ADD COLUMN salience REAL",
-                "ALTER TABLE thoughts ADD COLUMN salience_factors TEXT",
-                "ALTER TABLE thoughts ADD COLUMN memory_tier TEXT",
-                "ALTER TABLE thoughts ADD COLUMN strength REAL",
-                "ALTER TABLE thoughts ADD COLUMN prediction_error REAL",
-            ];
-            for alter in &alters {
-                // Ignore "duplicate column" errors for idempotency
-                let _ = conn.execute_batch(alter);
-            }
-
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS pattern_counts (
-                    fingerprint TEXT PRIMARY KEY,
-                    count INTEGER NOT NULL DEFAULT 1,
-                    last_seen_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_thoughts_salience ON thoughts(salience);
-                CREATE INDEX IF NOT EXISTS idx_thoughts_tier_strength ON thoughts(memory_tier, strength);",
-            )?;
-
-            conn.execute_batch("PRAGMA user_version = 1;")?;
-        }
-
-        if version < 2 {
-            // v2: world model beliefs table
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS beliefs (
-                    id TEXT PRIMARY KEY,
-                    domain TEXT NOT NULL,
-                    subject TEXT NOT NULL,
-                    predicate TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    confidence TEXT NOT NULL DEFAULT 'medium',
-                    evidence TEXT NOT NULL DEFAULT '',
-                    confirmation_count INTEGER NOT NULL DEFAULT 1,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    active INTEGER NOT NULL DEFAULT 1
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_beliefs_unique
-                    ON beliefs(domain, subject, predicate) WHERE active = 1;
-                CREATE INDEX IF NOT EXISTS idx_beliefs_domain ON beliefs(domain);
-                PRAGMA user_version = 2;",
-            )?;
-        }
-
-        if version < 3 {
-            // v3: goals table + goal_id on mutations
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS goals (
-                    id TEXT PRIMARY KEY,
-                    description TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    priority INTEGER NOT NULL DEFAULT 3,
-                    success_criteria TEXT NOT NULL DEFAULT '',
-                    progress_notes TEXT NOT NULL DEFAULT '',
-                    parent_goal_id TEXT,
-                    retry_count INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    completed_at INTEGER
-                );
-                CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
-                CREATE INDEX IF NOT EXISTS idx_goals_priority ON goals(priority);",
-            )?;
-            // Add goal_id to mutations (ignore if already exists)
-            let _ = conn.execute_batch("ALTER TABLE mutations ADD COLUMN goal_id TEXT");
-            conn.execute_batch("PRAGMA user_version = 3;")?;
-        }
-
-        if version < 4 {
-            // v4: plans table for plan-driven execution
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS plans (
-                    id TEXT PRIMARY KEY,
-                    goal_id TEXT NOT NULL,
-                    steps TEXT NOT NULL,
-                    current_step INTEGER NOT NULL DEFAULT 0,
-                    status TEXT NOT NULL DEFAULT 'active',
-                    context TEXT NOT NULL DEFAULT '{}',
-                    replan_count INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status);
-                CREATE INDEX IF NOT EXISTS idx_plans_goal ON plans(goal_id);
-                PRAGMA user_version = 4;",
-            )?;
-        }
-
-        if version < 5 {
-            // v5: nudges table for external signal injection
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS nudges (
-                    id TEXT PRIMARY KEY,
-                    source TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    priority INTEGER NOT NULL DEFAULT 3,
-                    created_at INTEGER NOT NULL,
-                    processed_at INTEGER,
-                    active INTEGER NOT NULL DEFAULT 1
-                );
-                CREATE INDEX IF NOT EXISTS idx_nudges_active ON nudges(active, priority DESC, created_at ASC);
-                PRAGMA user_version = 5;",
-            )?;
-        }
-
-        if version < 6 {
-            // v6: chat sessions + messages for multi-turn conversation
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS chat_sessions (
-                    id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL DEFAULT '',
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    active INTEGER NOT NULL DEFAULT 1
-                );
-                CREATE INDEX IF NOT EXISTS idx_chat_sessions_active ON chat_sessions(active, updated_at DESC);
-
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    tool_executions TEXT NOT NULL DEFAULT '[]',
-                    created_at INTEGER NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, created_at ASC);
-                PRAGMA user_version = 6;",
-            )?;
-        }
-
-        if version < 7 {
-            // v7: feedback loop — plan outcomes + capability events
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS plan_outcomes (
-                    id TEXT PRIMARY KEY,
-                    plan_id TEXT NOT NULL,
-                    goal_id TEXT NOT NULL,
-                    goal_description TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    steps_succeeded TEXT NOT NULL DEFAULT '[]',
-                    steps_failed TEXT NOT NULL DEFAULT '[]',
-                    error_category TEXT,
-                    error_message TEXT,
-                    lesson TEXT NOT NULL DEFAULT '',
-                    total_steps INTEGER NOT NULL DEFAULT 0,
-                    steps_completed INTEGER NOT NULL DEFAULT 0,
-                    replan_count INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_plan_outcomes_created ON plan_outcomes(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_plan_outcomes_status ON plan_outcomes(status);
-
-                CREATE TABLE IF NOT EXISTS capability_events (
-                    id TEXT PRIMARY KEY,
-                    capability TEXT NOT NULL,
-                    succeeded INTEGER NOT NULL,
-                    context TEXT NOT NULL DEFAULT '',
-                    created_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_capability_events_cap ON capability_events(capability, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_capability_events_created ON capability_events(created_at DESC);
-
-                PRAGMA user_version = 7;",
-            )?;
-        }
-
-        if version < 8 {
-            // v8: benchmark runs (originally HumanEval, now Exercism Rust)
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS benchmark_runs (
-                    id TEXT PRIMARY KEY,
-                    task_id TEXT NOT NULL,
-                    entry_point TEXT NOT NULL,
-                    passed INTEGER NOT NULL,
-                    generated_solution TEXT NOT NULL DEFAULT '',
-                    error_output TEXT NOT NULL DEFAULT '',
-                    total_ms INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_benchmark_runs_task ON benchmark_runs(task_id);
-                CREATE INDEX IF NOT EXISTS idx_benchmark_runs_created ON benchmark_runs(created_at DESC);
-
-                PRAGMA user_version = 8;",
-            )?;
-        }
-
-        if version < 9 {
-            // v9: structured events table for observability
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS events (
-                    id TEXT PRIMARY KEY,
-                    level TEXT NOT NULL,
-                    code TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    context TEXT NOT NULL DEFAULT '{}',
-                    plan_id TEXT,
-                    goal_id TEXT,
-                    step_index INTEGER,
-                    tool_name TEXT,
-                    peer_url TEXT,
-                    resolved INTEGER NOT NULL DEFAULT 0,
-                    resolved_at INTEGER,
-                    resolution TEXT,
-                    created_at INTEGER NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_events_level ON events(level, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_events_code ON events(code, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_events_category ON events(category, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_events_unresolved ON events(resolved, level, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_events_plan ON events(plan_id);
-
-                PRAGMA user_version = 9;",
-            )?;
-        }
-
-        Ok(())
     }
 }

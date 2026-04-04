@@ -8,61 +8,54 @@ impl SoulDatabase {
         content: &str,
         priority: u32,
     ) -> Result<String, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "INSERT INTO nudges (id, source, content, priority, created_at, active) VALUES (?1, ?2, ?3, ?4, ?5, 1)",
-            params![id, source, content, priority, now],
-        )?;
+        let nudge = Nudge {
+            id: id.clone(),
+            source: source.to_string(),
+            content: content.to_string(),
+            priority,
+            created_at: now,
+            processed_at: None,
+            active: true,
+        };
+        let value = serde_json::to_vec(&nudge)?;
+        self.nudges.insert(id.as_bytes(), value)?;
         Ok(id)
     }
 
     /// Get unprocessed nudges, ordered by priority DESC then created_at ASC.
     pub fn get_unprocessed_nudges(&self, limit: u32) -> Result<Vec<Nudge>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let mut stmt = conn.prepare(
-            "SELECT id, source, content, priority, created_at, processed_at, active \
-             FROM nudges WHERE active = 1 AND processed_at IS NULL \
-             ORDER BY priority DESC, created_at ASC LIMIT ?1",
-        )?;
-        let nudges = stmt
-            .query_map(params![limit], |row| {
-                let active: i32 = row.get(6)?;
-                Ok(Nudge {
-                    id: row.get(0)?,
-                    source: row.get(1)?,
-                    content: row.get(2)?,
-                    priority: row.get(3)?,
-                    created_at: row.get(4)?,
-                    processed_at: row.get(5)?,
-                    active: active != 0,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut nudges: Vec<Nudge> = self
+            .nudges
+            .iter()
+            .filter_map(|res| {
+                let (_k, v) = res.ok()?;
+                let n: Nudge = serde_json::from_slice(&v).ok()?;
+                if n.active && n.processed_at.is_none() {
+                    Some(n)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        nudges.sort_by(|a, b| {
+            b.priority
+                .cmp(&a.priority)
+                .then(a.created_at.cmp(&b.created_at))
+        });
+        nudges.truncate(limit as usize);
         Ok(nudges)
     }
 
     /// Mark a nudge as processed.
     pub fn mark_nudge_processed(&self, id: &str) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "UPDATE nudges SET processed_at = ?1 WHERE id = ?2",
-            params![now, id],
-        )?;
+        if let Some(v) = self.nudges.get(id.as_bytes())? {
+            let mut nudge: Nudge = serde_json::from_slice(&v)?;
+            nudge.processed_at = Some(chrono::Utc::now().timestamp());
+            let value = serde_json::to_vec(&nudge)?;
+            self.nudges.insert(id.as_bytes(), value)?;
+        }
         Ok(())
     }
 }

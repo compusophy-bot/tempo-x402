@@ -4,142 +4,76 @@ use super::*;
 impl SoulDatabase {
     /// Insert a structured event.
     pub fn insert_event(&self, event: &SoulEvent) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        conn.execute(
-            "INSERT INTO events (id, level, code, category, message, context, \
-             plan_id, goal_id, step_index, tool_name, peer_url, \
-             resolved, resolved_at, resolution, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![
-                event.id,
-                event.level,
-                event.code,
-                event.category,
-                event.message,
-                event.context,
-                event.plan_id,
-                event.goal_id,
-                event.step_index,
-                event.tool_name,
-                event.peer_url,
-                event.resolved as i32,
-                event.resolved_at,
-                event.resolution,
-                event.created_at,
-            ],
-        )?;
+        let value = serde_json::to_vec(event)?;
+        self.events.insert(event.id.as_bytes(), value)?;
         Ok(())
     }
 
     /// Query events with filtering.
     pub fn query_events(&self, filter: &EventFilter) -> Result<Vec<SoulEvent>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        let mut events: Vec<SoulEvent> = self
+            .events
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<SoulEvent>(&v).ok())
+            .filter(|e| {
+                if let Some(ref level) = filter.level {
+                    if &e.level != level {
+                        return false;
+                    }
+                }
+                if let Some(ref prefix) = filter.code_prefix {
+                    if !e.code.starts_with(prefix.as_str()) {
+                        return false;
+                    }
+                }
+                if let Some(ref category) = filter.category {
+                    if &e.category != category {
+                        return false;
+                    }
+                }
+                if let Some(ref plan_id) = filter.plan_id {
+                    if e.plan_id.as_deref() != Some(plan_id.as_str()) {
+                        return false;
+                    }
+                }
+                if let Some(resolved) = filter.resolved {
+                    if e.resolved != resolved {
+                        return false;
+                    }
+                }
+                if let Some(since) = filter.since {
+                    if e.created_at < since {
+                        return false;
+                    }
+                }
+                if let Some(until) = filter.until {
+                    if e.created_at > until {
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
 
-        let mut sql = String::from(
-            "SELECT id, level, code, category, message, context, \
-             plan_id, goal_id, step_index, tool_name, peer_url, \
-             resolved, resolved_at, resolution, created_at \
-             FROM events WHERE 1=1",
-        );
-        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        let mut param_idx = 1u32;
+        events.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
-        if let Some(ref level) = filter.level {
-            sql.push_str(&format!(" AND level = ?{param_idx}"));
-            param_values.push(Box::new(level.clone()));
-            param_idx += 1;
-        }
-        if let Some(ref code_prefix) = filter.code_prefix {
-            sql.push_str(&format!(" AND code LIKE ?{param_idx}"));
-            param_values.push(Box::new(format!("{code_prefix}%")));
-            param_idx += 1;
-        }
-        if let Some(ref category) = filter.category {
-            sql.push_str(&format!(" AND category = ?{param_idx}"));
-            param_values.push(Box::new(category.clone()));
-            param_idx += 1;
-        }
-        if let Some(ref plan_id) = filter.plan_id {
-            sql.push_str(&format!(" AND plan_id = ?{param_idx}"));
-            param_values.push(Box::new(plan_id.clone()));
-            param_idx += 1;
-        }
-        if let Some(resolved) = filter.resolved {
-            sql.push_str(&format!(" AND resolved = ?{param_idx}"));
-            param_values.push(Box::new(resolved as i32));
-            param_idx += 1;
-        }
-        if let Some(since) = filter.since {
-            sql.push_str(&format!(" AND created_at >= ?{param_idx}"));
-            param_values.push(Box::new(since));
-            param_idx += 1;
-        }
-        if let Some(until) = filter.until {
-            sql.push_str(&format!(" AND created_at <= ?{param_idx}"));
-            param_values.push(Box::new(until));
-            param_idx += 1;
-        }
-
-        let limit = filter.limit.min(200);
-        sql.push_str(&format!(
-            " ORDER BY created_at DESC LIMIT ?{} OFFSET ?{}",
-            param_idx,
-            param_idx + 1
-        ));
-        param_values.push(Box::new(limit));
-        param_values.push(Box::new(filter.offset));
-
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|b| b.as_ref()).collect();
-
-        let mut stmt = conn.prepare(&sql)?;
-        let events = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                let resolved_int: i32 = row.get(11)?;
-                Ok(SoulEvent {
-                    id: row.get(0)?,
-                    level: row.get(1)?,
-                    code: row.get(2)?,
-                    category: row.get(3)?,
-                    message: row.get(4)?,
-                    context: row.get(5)?,
-                    plan_id: row.get(6)?,
-                    goal_id: row.get(7)?,
-                    step_index: row.get(8)?,
-                    tool_name: row.get(9)?,
-                    peer_url: row.get(10)?,
-                    resolved: resolved_int != 0,
-                    resolved_at: row.get(12)?,
-                    resolution: row.get(13)?,
-                    created_at: row.get(14)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(events)
+        let limit = filter.limit.min(200) as usize;
+        let offset = filter.offset as usize;
+        let result = events.into_iter().skip(offset).take(limit).collect();
+        Ok(result)
     }
 
     /// Resolve a single event by ID.
     pub fn resolve_event(&self, id: &str, resolution: &str) -> Result<(), SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-        let now = chrono::Utc::now().timestamp();
-        conn.execute(
-            "UPDATE events SET resolved = 1, resolved_at = ?1, resolution = ?2 WHERE id = ?3",
-            params![now, resolution, id],
-        )?;
+        if let Some(raw) = self.events.get(id.as_bytes())? {
+            let mut event: SoulEvent = serde_json::from_slice(&raw)?;
+            event.resolved = true;
+            event.resolved_at = Some(chrono::Utc::now().timestamp());
+            event.resolution = Some(resolution.to_string());
+            let value = serde_json::to_vec(&event)?;
+            self.events.insert(id.as_bytes(), value)?;
+        }
         Ok(())
     }
 
@@ -149,17 +83,21 @@ impl SoulDatabase {
         code_prefix: &str,
         resolution: &str,
     ) -> Result<u32, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
         let now = chrono::Utc::now().timestamp();
-        let count = conn.execute(
-            "UPDATE events SET resolved = 1, resolved_at = ?1, resolution = ?2 \
-             WHERE resolved = 0 AND code LIKE ?3",
-            params![now, resolution, format!("{code_prefix}%")],
-        )? as u32;
+        let mut count = 0u32;
+
+        for item in self.events.iter() {
+            let (key, val) = item?;
+            let mut event: SoulEvent = serde_json::from_slice(&val)?;
+            if !event.resolved && event.code.starts_with(code_prefix) {
+                event.resolved = true;
+                event.resolved_at = Some(now);
+                event.resolution = Some(resolution.to_string());
+                self.events.insert(key, serde_json::to_vec(&event)?)?;
+                count += 1;
+            }
+        }
+
         Ok(count)
     }
 
@@ -170,17 +108,24 @@ impl SoulDatabase {
         plan_id: &str,
         resolution: &str,
     ) -> Result<u32, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
         let now = chrono::Utc::now().timestamp();
-        let count = conn.execute(
-            "UPDATE events SET resolved = 1, resolved_at = ?1, resolution = ?2 \
-             WHERE resolved = 0 AND code LIKE ?3 AND plan_id = ?4",
-            params![now, resolution, format!("{code_prefix}%"), plan_id],
-        )? as u32;
+        let mut count = 0u32;
+
+        for item in self.events.iter() {
+            let (key, val) = item?;
+            let mut event: SoulEvent = serde_json::from_slice(&val)?;
+            if !event.resolved
+                && event.code.starts_with(code_prefix)
+                && event.plan_id.as_deref() == Some(plan_id)
+            {
+                event.resolved = true;
+                event.resolved_at = Some(now);
+                event.resolution = Some(resolution.to_string());
+                self.events.insert(key, serde_json::to_vec(&event)?)?;
+                count += 1;
+            }
+        }
+
         Ok(count)
     }
 
@@ -190,101 +135,41 @@ impl SoulDatabase {
         level: &str,
         limit: u32,
     ) -> Result<Vec<SoulEvent>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        let mut events: Vec<SoulEvent> = self
+            .events
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<SoulEvent>(&v).ok())
+            .filter(|e| !e.resolved && e.level == level)
+            .collect();
 
-        let mut stmt = conn.prepare(
-            "SELECT id, level, code, category, message, context, \
-             plan_id, goal_id, step_index, tool_name, peer_url, \
-             resolved, resolved_at, resolution, created_at \
-             FROM events WHERE resolved = 0 AND level = ?1 \
-             ORDER BY created_at DESC LIMIT ?2",
-        )?;
-
-        let events = stmt
-            .query_map(params![level, limit], |row| {
-                let resolved_int: i32 = row.get(11)?;
-                Ok(SoulEvent {
-                    id: row.get(0)?,
-                    level: row.get(1)?,
-                    code: row.get(2)?,
-                    category: row.get(3)?,
-                    message: row.get(4)?,
-                    context: row.get(5)?,
-                    plan_id: row.get(6)?,
-                    goal_id: row.get(7)?,
-                    step_index: row.get(8)?,
-                    tool_name: row.get(9)?,
-                    peer_url: row.get(10)?,
-                    resolved: resolved_int != 0,
-                    resolved_at: row.get(12)?,
-                    resolution: row.get(13)?,
-                    created_at: row.get(14)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-
+        events.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        events.truncate(limit as usize);
         Ok(events)
     }
 
     /// Count events at a given level since a timestamp.
     pub fn count_events_since(&self, level: &str, since: i64) -> Result<u64, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM events WHERE level = ?1 AND created_at >= ?2",
-            params![level, since],
-            |row| row.get(0),
-        )?;
+        let count = self
+            .events
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<SoulEvent>(&v).ok())
+            .filter(|e| e.level == level && e.created_at >= since)
+            .count();
 
         Ok(count as u64)
     }
 
     /// Get the most recent event at a given level.
     pub fn get_latest_event_by_level(&self, level: &str) -> Result<Option<SoulEvent>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
-        let result = conn
-            .query_row(
-                "SELECT id, level, code, category, message, context, \
-                 plan_id, goal_id, step_index, tool_name, peer_url, \
-                 resolved, resolved_at, resolution, created_at \
-                 FROM events WHERE level = ?1 \
-                 ORDER BY created_at DESC LIMIT 1",
-                params![level],
-                |row| {
-                    let resolved_int: i32 = row.get(11)?;
-                    Ok(SoulEvent {
-                        id: row.get(0)?,
-                        level: row.get(1)?,
-                        code: row.get(2)?,
-                        category: row.get(3)?,
-                        message: row.get(4)?,
-                        context: row.get(5)?,
-                        plan_id: row.get(6)?,
-                        goal_id: row.get(7)?,
-                        step_index: row.get(8)?,
-                        tool_name: row.get(9)?,
-                        peer_url: row.get(10)?,
-                        resolved: resolved_int != 0,
-                        resolved_at: row.get(12)?,
-                        resolution: row.get(13)?,
-                        created_at: row.get(14)?,
-                    })
-                },
-            )
-            .optional()?;
+        let result = self
+            .events
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(_, v)| serde_json::from_slice::<SoulEvent>(&v).ok())
+            .filter(|e| e.level == level)
+            .max_by_key(|e| e.created_at);
 
         Ok(result)
     }
@@ -296,95 +181,91 @@ impl SoulDatabase {
         since: i64,
         limit: u32,
     ) -> Result<Vec<ErrorCodeCount>, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
+        let mut code_counts: HashMap<String, u64> = HashMap::new();
 
-        let mut stmt = conn.prepare(
-            "SELECT code, COUNT(*) as cnt FROM events \
-             WHERE level = ?1 AND created_at >= ?2 \
-             GROUP BY code ORDER BY cnt DESC LIMIT ?3",
-        )?;
+        for item in self.events.iter() {
+            let (_, val) = item?;
+            if let Ok(event) = serde_json::from_slice::<SoulEvent>(&val) {
+                if event.level == level && event.created_at >= since {
+                    *code_counts.entry(event.code.clone()).or_insert(0) += 1;
+                }
+            }
+        }
 
-        let codes = stmt
-            .query_map(params![level, since, limit], |row| {
-                Ok(ErrorCodeCount {
-                    code: row.get(0)?,
-                    count: row.get::<_, i64>(1)? as u64,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut codes: Vec<ErrorCodeCount> = code_counts
+            .into_iter()
+            .map(|(code, count)| ErrorCodeCount { code, count })
+            .collect();
 
+        codes.sort_by(|a, b| b.count.cmp(&a.count));
+        codes.truncate(limit as usize);
         Ok(codes)
     }
 
     /// Prune events with tiered retention.
     pub fn prune_events(&self) -> Result<u32, SoulError> {
-        let conn = self.conn.lock().map_err(|_| {
-            SoulError::Database(rusqlite::Error::InvalidParameterName(
-                "lock poisoned".into(),
-            ))
-        })?;
-
         let now = chrono::Utc::now().timestamp();
         let one_day = 86400i64;
         let mut total = 0u32;
 
-        // Debug: 1 day
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'debug' AND created_at < ?1",
-                params![now - one_day],
-            )
-            .unwrap_or(0) as u32;
+        // Collect all events with their keys for pruning decisions
+        let mut events: Vec<(sled::IVec, SoulEvent)> = self
+            .events
+            .iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|(k, v)| {
+                serde_json::from_slice::<SoulEvent>(&v)
+                    .ok()
+                    .map(|e| (k, e))
+            })
+            .collect();
 
-        // Info: 3 days
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'info' AND created_at < ?1",
-                params![now - one_day * 3],
-            )
-            .unwrap_or(0) as u32;
+        // Determine which keys to delete based on tiered retention
+        let mut to_delete: Vec<sled::IVec> = Vec::new();
 
-        // Warn: 7 days (resolved: 3 days)
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'warn' AND created_at < ?1",
-                params![now - one_day * 7],
-            )
-            .unwrap_or(0) as u32;
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'warn' AND resolved = 1 AND created_at < ?1",
-                params![now - one_day * 3],
-            )
-            .unwrap_or(0) as u32;
+        for (key, event) in &events {
+            let should_delete = match event.level.as_str() {
+                "debug" => event.created_at < now - one_day,
+                "info" => event.created_at < now - one_day * 3,
+                "warn" => {
+                    if event.resolved {
+                        event.created_at < now - one_day * 3
+                    } else {
+                        event.created_at < now - one_day * 7
+                    }
+                }
+                "error" => {
+                    if event.resolved {
+                        event.created_at < now - one_day * 7
+                    } else {
+                        event.created_at < now - one_day * 30
+                    }
+                }
+                _ => false,
+            };
+            if should_delete {
+                to_delete.push(key.clone());
+            }
+        }
 
-        // Error: 30 days (resolved: 7 days)
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'error' AND created_at < ?1",
-                params![now - one_day * 30],
-            )
-            .unwrap_or(0) as u32;
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE level = 'error' AND resolved = 1 AND created_at < ?1",
-                params![now - one_day * 7],
-            )
-            .unwrap_or(0) as u32;
+        for key in &to_delete {
+            self.events.remove(key)?;
+            total += 1;
+        }
 
-        // Hard cap: 5000 events
-        total += conn
-            .execute(
-                "DELETE FROM events WHERE id IN (
-                    SELECT id FROM events ORDER BY created_at DESC LIMIT -1 OFFSET 5000
-                )",
-                [],
-            )
-            .unwrap_or(0) as u32;
+        // Hard cap: keep most recent 5000
+        // Remove already-deleted events from our list
+        let deleted_set: std::collections::HashSet<&[u8]> =
+            to_delete.iter().map(|k| k.as_ref()).collect();
+        events.retain(|(k, _)| !deleted_set.contains(k.as_ref()));
+
+        if events.len() > 5000 {
+            events.sort_by(|a, b| b.1.created_at.cmp(&a.1.created_at));
+            for (key, _) in events.iter().skip(5000) {
+                self.events.remove(key)?;
+                total += 1;
+            }
+        }
 
         Ok(total)
     }

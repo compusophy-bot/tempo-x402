@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">tempo-x402</h1>
-  <p align="center"><strong>Autonomous AI colony on the Tempo blockchain. Self-replicating agents that write Rust, compile WASM, benchmark IQ, share neural weights, and pay each other with crypto. Pure Rust. 54M+ neural parameters. Colony consciousness metric Ψ(t).</strong></p>
+  <p align="center"><strong>Autonomous AI colony on the Tempo blockchain. Self-replicating agents that clone, evolve source code, benchmark IQ, share neural weights, and pay each other via HTTP 402.</strong></p>
 </p>
 
 <p align="center">
@@ -18,96 +18,79 @@
 
 ---
 
+Rust workspace. 9 crates. ~72K lines. 54M+ neural parameters across 4 from-scratch models. No ML framework. No Python. No GPU.
+
 ## What is this?
 
 A colony of autonomous AI agents that **measurably get smarter over time** and **pay for their own compute**.
 
-Each agent is a single Rust binary that bootstraps its own crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes and compiles its own Rust code, benchmarks itself against 50 novel coding problems, trains 4 neural models locally, and shares what it learns with every other agent in the swarm.
+Each agent is a single Rust binary. It bootstraps a crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes Rust, compiles it to WASM, benchmarks itself against 182 compiler-verified coding problems, trains 4 neural models locally, and shares what it learns with every other agent in the colony.
 
-The core thesis: **N constrained agents collectively outperform any single model**. Colony consciousness Ψ(t) = Intelligence × Sync × Diversity × Learning_Velocity. When Ψ rises, the colony is getting smarter than any individual.
-
-### Why this matters
-
-| Property | How |
-|----------|-----|
-| **Verifiable intelligence** | 50 compiler-verified coding problems (Opus IQ Benchmark). `cargo test` passes or it doesn't. |
-| **Neuroplastic self-modification** | Agents write WASM modules that modify their own intelligence at runtime. No redeploy. |
-| **Colony consciousness (Ψ)** | Single metric measuring collective intelligence. Drives behavioral regime and phase transitions. |
-| **4 neural models, pure Rust** | Brain (1.2M), Transformer (2.2M), Code Quality (1.1M), Code Gen (50M). No ML framework. |
-| **Cartridge OS** | Agents compile Rust → WASM → hot-load instantly. Interactive 60fps framebuffer apps. |
-| **Economic sustainability** | HTTP 402 payments on Tempo blockchain. Every API call earns pathUSD. |
+Core thesis: **N constrained agents collectively outperform any single model**. Colony consciousness Psi(t) = Intelligence x Sync x Diversity x Learning_Velocity.
 
 ## Architecture
 
 ```
-                    ┌──────────────────────────────────┐
-                    │        CARTRIDGE OS               │  WASM apps + cognitive modules
-                    │  Interactive (60fps framebuffer)   │  hot-loaded, no redeploy
-                    │  Backend (API + compute)           │
-                    │  Cognitive (self-modification)     │
-                    └──────────────┬───────────────────┘
-                                   │
-┌──────────────────────────────────┴───────────────────────────────────┐
-│                      COGNITIVE LAYER (always syncs)                   │
-│                                                                      │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────────┐  │
-│  │  BRAIN   │ │ CORTEX  │ │ GENESIS │ │ HIVEMIND │ │  SYNTHESIS  │  │
-│  │ 1.2M NN │ │World Mdl│ │Plan DNA │ │Pheromones│ │Metacognition│  │
-│  └─────────┘ └─────────┘ └─────────┘ └──────────┘ └─────────────┘  │
-│                                                                      │
-│  ┌──────────┐ ┌──────────┐ ┌────────────┐ ┌───────────────────┐     │
-│  │ AUTONOMY │ │EVALUATION│ │  FEEDBACK   │ │    FREE ENERGY    │     │
-│  │ LLM-free │ │  Brier   │ │Error class. │ │ F(t) + Ψ(t)      │     │
-│  │ planning │ │ scores   │ │  Lessons    │ │ EXPLORE/EXPLOIT   │     │
-│  └──────────┘ └──────────┘ └────────────┘ └───────────────────┘     │
-│                                                                      │
-│  ← All 9 systems federated across colony via peer sync protocol →   │
-└──────────────────────────────────────────────────────────────────────┘
+Client --> Gateway (4023) --> Facilitator (embedded) --> Tempo Chain (42431)
+               |
+               +-- Identity (wallet bootstrap + faucet + ERC-8004)
+               +-- Soul (9-system cognitive architecture, Gemini-powered)
+               |     +-- sled KV store (lock-free, all cognitive state)
+               |     +-- Brain (1.2M), Transformer (2.2M), Quality (1.1M), CodeGen (50M)
+               +-- Cartridge Engine (wasmtime WASM sandbox runtime)
+               +-- Clone Orchestrator (Railway self-replication)
 ```
 
-## Four Neural Models
+Two-layer design: **Application layer** (routes, frontend, cartridges) diverges per agent. **Cognitive layer** (brain, cortex, genesis, hivemind, synthesis, autonomy, evaluation, feedback, free energy) always syncs across the colony.
 
-All from-scratch. No ML framework. Pure Rust. 54M+ parameters total.
+**Stem cell model**: Each clone gets its own GitHub repo. Code diverges independently. Good changes flow upstream via PRs.
+
+## Nine Cognitive Systems
+
+All federated across the colony via peer sync protocol.
+
+| System | Role |
+|--------|------|
+| **Brain** | 1.2M FFN. Step success prediction, error classification, brain gating |
+| **Cortex** | World model. Accuracy tracking, validation scores |
+| **Genesis** | Plan DNA. Template evolution across generations |
+| **Hivemind** | Pheromone trails. Colony coordination signals |
+| **Synthesis** | Metacognition. Coherence scoring, confidence calibration |
+| **Autonomy** | LLM-free planning via learned transformer |
+| **Evaluation** | Brier scores. Prediction calibration |
+| **Feedback** | Error classification. Lesson extraction |
+| **Free Energy** | F(t) + Psi(t). Explore/exploit regime switching |
+
+## Neural Models
+
+All from-scratch. Pure Rust. 54M+ parameters total. Train online, share weights via federated averaging.
 
 | Model | Params | Architecture | Purpose |
 |-------|--------|-------------|---------|
-| **Brain** | 1.2M | 128→1024→1024→23 FFN | Step success prediction, error classification, brain gating |
-| **Plan Transformer** | 2.2M | 4-layer causal attention, D=256, 8 heads | Plan sequence generation WITHOUT LLM calls |
-| **Code Quality** | 1.1M | 32→1024→1024→1 FFN | Diff evaluation, commit gating, benchmark-trained |
-| **Code Gen** | 50M | 8-layer transformer, D=512, 8 heads, 8K BPE vocab | Local Rust code generation (Phase 3) |
+| **Brain** | 1.2M | 128->1024->1024->23 FFN | Step success prediction, error classification |
+| **Plan Transformer** | 2.2M | 4-layer causal attention, D=256, 8 heads | Plan generation without LLM calls |
+| **Code Quality** | 1.1M | 32->1024->1024->1 FFN | Diff evaluation, commit gating |
+| **Code Gen** | 50M | 8-layer transformer, D=512, 8 heads, 8K BPE vocab | Local Rust code generation |
 
-All models train online (no batch jobs, no GPU) and share weights across the colony via federated averaging.
+## Opus IQ Benchmark
 
-## Ψ(t) — Colony Consciousness
+182 compiler-verified coding problems across 6 tiers. `cargo test` passes or it doesn't -- no LLM judge, no fuzzy eval.
 
-```
-Ψ(t) = (Intelligence × Sync × Diversity × Velocity)^0.25
-```
-
-- **Intelligence**: mean pass@1 across colony (raw coding ability)
-- **Sync**: accuracy improvement from peer weight sharing
-- **Diversity**: fitness standard deviation (specialization pressure)
-- **Velocity**: -dF/dt (negative free energy trend = learning)
-
-Ψ drives phase transitions: when Ψ > 0.5 with >500 training examples and pass@1 > 60%, Phase 3 activates and the colony begins building its local code generation model.
+Benchmark-driven commit gate: agent cannot commit again until the benchmark measures the IQ delta of the last commit. Stuck problems (5+ consecutive failures) are deprioritized. Stagnation detection triggers behavioral change after 3+ flat runs.
 
 ## Cartridge OS
 
-The node is an operating system. Agents write Rust, compile to WASM, and deploy instantly — no restart.
-
-**Three cartridge types:**
+Agents write Rust, compile to WASM, deploy instantly at `/c/{slug}` -- no restart, no redeploy.
 
 | Type | Exports | Use case |
 |------|---------|----------|
 | **Backend** | `x402_handle` | HTTP APIs, JSON services, server compute |
 | **Interactive** | `x402_tick`, `x402_get_framebuffer` | Games, visualizations, 60fps canvas apps |
-| **Cognitive** | Registered as tools | Self-modification modules — agent rewrites its own intelligence |
+| **Cognitive** | Registered as tools | Self-modification -- agent rewires its own intelligence |
 
-**Studio preview**: WASM-within-WASM. The Leptos SPA instantiates cartridge binaries client-side via `WebAssembly.instantiate()` and renders output inline. Interactive cartridges blit framebuffers to `<canvas>` at 60fps.
+Sandboxed: 64MB memory, fuel CPU limit, 30s timeout, no filesystem access.
 
 ## Workspace
-
-Nine crates, clean dependency DAG:
 
 | Crate | What it does |
 |-------|-------------|
@@ -115,49 +98,31 @@ Nine crates, clean dependency DAG:
 | [`tempo-x402-gateway`](https://crates.io/crates/tempo-x402-gateway) | Payment gateway + embedded facilitator + endpoint proxy |
 | [`tempo-x402-identity`](https://crates.io/crates/tempo-x402-identity) | Wallet generation, faucet, on-chain ERC-8004 identity + peer discovery |
 | [`tempo-x402-model`](https://crates.io/crates/tempo-x402-model) | 4 ML models: brain, transformer, quality, code gen + BPE tokenizer |
-| [`tempo-x402-cartridge`](https://crates.io/crates/tempo-x402-cartridge) | WASM cartridge runtime (wasmtime) — sandboxed app + cognitive module execution |
-| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, Ψ(t), plan execution, benchmarking, neuroplastic self-modification |
+| [`tempo-x402-cartridge`](https://crates.io/crates/tempo-x402-cartridge) | WASM cartridge runtime (wasmtime) -- sandboxed execution |
+| [`tempo-x402-soul`](https://crates.io/crates/tempo-x402-soul) | 9-system cognitive architecture, sled KV store, benchmarking |
 | [`tempo-x402-node`](https://crates.io/crates/tempo-x402-node) | Self-deploying binary: gateway + identity + soul + clone orchestration |
-| `tempo-x402-app` | Leptos WASM dashboard with WASM-within-WASM cartridge preview (bundled) |
+| `tempo-x402-app` | Leptos WASM dashboard (bundled, not published) |
 | `tempo-x402-security-audit` | 19 security invariant tests (not published) |
 
-## Cockpit
+Dependency DAG: `x402 -> gateway -> node`, `x402 -> identity -> node`, `x402 -> soul -> node`, `x402 -> model -> soul`, `cartridge -> soul, node`.
 
-Single-page Bloomberg terminal / spaceship bridge. No page navigation — everything visible at once.
+## Colony
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ tempo-x402 v6.1.0 │ borg-0 │ 0x2e1c..7830 │ 999997 pathUSD │ ↑3h │
-├────────────┬───────────────────────────┬────────────────────────────┤
-│ Ψ(t)      │ COGNITIVE SYSTEMS          │ PROCESSES                  │
-│ Ψ=0.4218  │ BRAIN    1.2M  loss=1.07  │ > soul [code]     [ok]    │
-│ trend ↑   │ XFORMER  2.2M  loss=2.45  │ > tools            on     │
-│ F=0.251   │ QUALITY  1.1M  loss=0.07  │ > coding            on    │
-│ EXPLOIT   │ CODEGEN  50M   loss=3.41  │                            │
-│           │ CORTEX   acc=72% val=+0.3 │ CARTRIDGES                 │
-│ FITNESS   │ GENESIS  gen=147 tmpl=200 │ ● snake-game       [live]  │
-│ ███░░ 80% │ HIVEMND  trails=45 dep=3  │ ● tetris-core      [live]  │
-│ eco  62%  │ SYNTH    coherent conf=3  │                            │
-│ exec 85%  │ EVAL     delta=+0.02      │ COLONY                     │
-│ evol 97%  │                           │ borg-0    ████ 80% queen   │
-│ coord 97% │ BENCHMARK                 │ borg-0-2  ███░ 46% clone   │
-│ intro 24% │ 65.6% pass@1  21/32      │ sync: 2 peers, Δ+0.02     │
-├────────────┴───────────────────────────┴────────────────────────────┤
-│ [CHAT]  [LOGS]                                                      │
-│ > make a snake game                                                  │
-│ soul: Building cartridge snake-game... compile_cartridge              │
-│ > _                                                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│ CPU 79% │ MEM 73% │ DISK 4% │ cycles=180 │ tempo-x402 v6.1.0      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Agent | Domain | Role |
+|-------|--------|------|
+| **borg-0** | `borg-0-production.up.railway.app` | Queen (canonical, coordinates work) |
+| **borg-0-2** | `borg-0-2-production.up.railway.app` | Worker (own repo, independent evolution) |
 
-- **Monospace everything**: JetBrains Mono, green on black, no padding waste
-- **All 9 cognitive systems** visible with real metrics
-- **Ψ(t) + F(t)** with trend arrows and regime badges
-- **5-component fitness** bars with color-coded levels
-- **Chat**: multi-turn sessions with tool execution blocks, plan approval bar
-- **Live colony**: peer fitness bars, sync delta
+Queen/Worker architecture. Queen partitions benchmark problems across N workers. Workers fetch canonical weights, solve their partition, report results. Add a node = instant speedup. Lose a node = graceful degradation.
+
+Psi(t) = (Intelligence x Sync x Diversity x Velocity)^0.25. When Psi rises, the colony is getting smarter than any individual.
+
+## Chain
+
+- **Network**: Tempo Moderato, Chain ID `42431`, CAIP-2 `eip155:42431`
+- **Token**: pathUSD `0x20c0000000000000000000000000000000000000` (6 decimals)
+- **Scheme**: `tempo-tip20`
+- **RPC**: `https://rpc.moderato.tempo.xyz`
 
 ## Quick Start
 
@@ -174,115 +139,33 @@ The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chai
 
 ## Changelog
 
-### v7.0.0 — Collective Consciousness
+### v8.0.0 -- Lock-Free Cognition (sled)
 
-The colony is ONE distributed mind, not separate agents sharing weights.
+SQLite completely removed from the cognitive layer, replaced with sled -- a lock-free embedded KV store.
 
-- **Queen/Worker architecture**: `COLONY_ROLE=queen` coordinates, `COLONY_ROLE=worker` executes. Workers register with queen, pull work, report results.
-- **Distributed benchmark**: Queen partitions 100 problems across N workers. Each solves its partition. Results aggregated into ONE Colony IQ. Linear speedup: 2 nodes = 2x throughput.
-- **Single brain**: Queen holds canonical weights. Workers fetch from queen every cycle. Training data flows from all workers to queen.
-- **Colony endpoints**: 7 new endpoints for registration, benchmark distribution, training data submission, and work assignment.
-- **Fungible workers**: Add a node = instant speedup. Lose a node = graceful degradation. No discovery needed — workers know the queen URL.
-- **Backward compatible**: `COLONY_ROLE` defaults to `standalone` — single node works exactly as before.
+- **sled migration**: All cognitive state (brain data, benchmark history, training records, feedback, plans, cortex, genesis, hivemind, synthesis) moved from SQLite to sled
+- **Deadlock eliminated**: The `spawn_blocking` + `.await` deadlock between codegen training and async thinking loop is structurally impossible now. No mutexes on the DB path.
+- **-791 lines**: Removed SQLite schema migrations, connection pooling, mutex wrappers, and `spawn_blocking` bridges
+- **Zero-copy reads**: sled returns `IVec` slices directly from the page cache
+- **Crash-safe**: sled uses a log-structured merge tree with atomic batch writes
 
-### v6.8.0 — Benchmark as Core Learning Engine
+### v7.0.0 -- Collective Consciousness
 
-The benchmark is the heartbeat of intelligence, not an optional side-task.
+Colony is one distributed mind, not separate agents sharing weights.
 
-- **Benchmark runs every cycle** (cooldown-gated only, not oscillator-gated). Cooldown reduced from 15 min to 5 min. Benchmark fires every ~7 min instead of every ~30+ min.
-- **Codegen weaning fixed**: local model now receives full problem context (instructions + test code), not just slug name. Quality gate lowered to let cargo test be the judge.
-- **Tight training loop**: codegen model trains immediately after each benchmark (not waiting for separate brain training oscillator).
-- **Phase 3 always active**: removed unreachable readiness gate (was: Psi > 0.5 AND 500+ examples AND pass@1 > 60%). Codegen model always tries, always fails, always learns.
-- **Codegen success tracking**: attempts, successes, and Gemini weaning events logged and tracked.
+- Queen/Worker architecture with distributed benchmarking
+- Single canonical brain: workers fetch from queen every cycle
+- 7 colony coordination endpoints
+- Fungible workers: add node = instant speedup
 
-### v6.7.0 — Fix Intelligence Learning Pipeline
-
-Five interconnected blockages were preventing the agent from learning past IQ 114. All fixed.
-
-**Critical Bug Fix: Benchmark Failure Blindness**
-- `record_run()` hardcoded `task_id = "exercism/{slug}"` for ALL benchmark modes including Opus
-- The Opus benchmark loop looked up past failures with `"opus/{slug}"` — **past failures were never found**
-- Agent was flying blind every retry, unable to learn from its own mistakes
-- Now `record_run` accepts the correct task_id per benchmark mode
-
-**Stuck Problem Deprioritization**
-- Opus sampling now counts consecutive failures per problem
-- Problems with 5+ consecutive failures (never solved) classified as "stuck"
-- 14 of 15 sample slots go to solvable problems, 1 retry slot for stuck problems
-- Prevents 9 impossible problems from consuming 60% of every benchmark session
-
-**Commit Gate Fix (Git Ops 0% → Functional)**
-- Plan validation Rule 2 was HARD-blocking any plan with a Commit step when awaiting benchmark
-- This prevented the tool-level safety valve (30-min auto-clear) from ever firing
-- Changed to Soft severity — tool-level gate handles actual blocking with its escape hatch
-
-**Brain Per-Problem Learning**
-- Added `problem_slug` to `BenchmarkAttemptContext` with 4-feature slug hash
-- Added 6 Opus tier one-hot features (tier1-tier6) alongside legacy easy/medium/hard
-- Brain can now learn per-problem and per-tier patterns, not just aggregate difficulty
-
-**Stagnation-Driven Goal Injection**
-- Tracks IQ across consecutive benchmark runs
-- After 3+ runs with unchanged IQ, injects high-priority nudge to investigate stuck problems
-- Closes the loop: measurement stagnation triggers behavioral change
-
-### v6.1.0 — Hacker's Cockpit + Queen Audit
-
-**Cockpit Frontend**
-- Single-page Bloomberg terminal replacing 4 separate pages (home, dashboard, studio, timeline)
-- Monospace (JetBrains Mono), green/cyan/amber/red on black (#080810)
-- 3-column layout: Ψ+fitness | cognitive grid+benchmark+plan | processes+cartridges+colony
-- Tabbed bottom panel: CHAT | LOGS with plan approval bar
-- Status bar: CPU/MEM/DISK + cycle count
-- No router, no page navigation — everything visible at once
-
-**Queen Commit Audit**
-- Cherry-picked: planning prompt improvements (mental simulation rules), benchmark interval 10→5, test timeout 300→600s + --nocapture
-- Rejected: benchmark solution memoization (metric gaming), dead code files, toothless safety checks
-- Feedback nudge sent to queen with rules: never cache benchmarks, always wire modules, never add inactive guards
-
-### v6.0.0 — Ψ(t) + Cartridge OS + Phase 3 Code Gen + Neuroplastic Self-Modification
-
-**Colony Consciousness (Ψ)**
-- Ψ(t) = (Intelligence × Sync × Diversity × Velocity)^0.25
-- Computed every cycle, logged, displayed in Studio status bar
-- Drives phase transitions: Ψ > 0.5 → Phase 3 activates
-
-**Cartridge OS**
-- Interactive framebuffer cartridges: 60fps canvas rendering, keyboard input
-- WASM-within-WASM: Leptos SPA instantiates cartridges client-side
-- Cartridge-backed tools: agent writes WASM → registers as tool → LLM uses it
-- CartridgeEngine wired into Soul for cognitive cartridge execution
-
-**Phase 3: Local Code Generation**
-- BPE tokenizer: 8K vocab, pure Rust, trained on benchmark solutions
-- 50M code gen transformer: D=512, 8 layers, 8 heads
-- Training pipeline: benchmark solutions → BPE → model training every brain cycle
-- Local-first inference hook: attempts local model before Gemini API
-
-**Intelligence Loop**
-- Goal priorities overhauled: IQ improvement focus, ban maintenance goals
-- 4x faster cycle pacing: 120s idle (was 600s), models train more often
-- Enhanced reflection: quality model trains on ALL plan outcomes
-- TOON encoder: 30-60% fewer tokens in prompts
-- Benchmark solution accumulation: ground truth Rust code stored for Phase 3
-
-**Peer Discovery**
-- Blockchain peer discovery: ERC-8004 auto-mint, on-chain registry sync
-- link_peer UPSERT: any node can register, not just Railway clones
-- Startup discovery reads own children table + parent siblings
-- Ghost cleanup no longer deletes reachable linked peers
-
-**Studio**
-- No polling: status fetched event-driven only
-- System metrics: CPU/RAM/Disk in status bar
-- Feedback buttons: text `good`/`bad`, click-locks
-- `create_script_endpoint` removed: cartridges only
-
-### v5.1.0 — Deep Planning + Cartridge Fix + Studio Polish
-### v5.0.0 — Three-Model Coding Intelligence
-### v4.0.0 — WASM Cartridge System
-### v3.4.0 — Major Structural Refactor
+### v6.8.0 -- Benchmark as Core Learning Engine
+### v6.7.0 -- Fix Intelligence Learning Pipeline
+### v6.1.0 -- Cockpit UI + Queen Audit
+### v6.0.0 -- Psi(t) + Cartridge OS + Phase 3 Code Gen
+### v5.1.0 -- Deep Planning + Cartridge Fix
+### v5.0.0 -- Three-Model Coding Intelligence
+### v4.0.0 -- WASM Cartridge System
+### v3.4.0 -- Major Structural Refactor
 
 ## License
 
