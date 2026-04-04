@@ -89,7 +89,27 @@ RUN chown -R app:app /app
 # Entrypoint: fix volume permissions then drop to non-root
 # NOTE: Do NOT chown cargo/registry here — too slow (60s+), blocks healthcheck.
 # Cargo registry is world-writable from the chmod in the build stage.
-RUN printf '#!/bin/sh\nchown -R app:app /data 2>/dev/null || true\nrm -rf /data/workspace/target /tmp/x402_cargo_target /data/workspace/.cargo 2>/dev/null || true\nBIN=${X402_BINARY:-x402-node}\nexec gosu app "$BIN" "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN printf '#!/bin/sh\n\
+# Fix volume permissions\n\
+chown -R app:app /data 2>/dev/null || true\n\
+\n\
+# Aggressive disk reclaim — prevent volume-full on startup\n\
+rm -rf /data/workspace/target /tmp/x402_cargo_target /data/workspace/.cargo 2>/dev/null || true\n\
+rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null || true\n\
+rm -rf /data/brain_checkpoints 2>/dev/null || true\n\
+rm -rf /data/cartridges/*/bin/target 2>/dev/null || true\n\
+\n\
+# If disk is >90%% full, nuke sled DB too (it will rebuild from scratch)\n\
+USAGE=$(df /data 2>/dev/null | tail -1 | awk "{print \\$5}" | tr -d "%%")\n\
+if [ "${USAGE:-0}" -gt 90 ] 2>/dev/null; then\n\
+  echo "EMERGENCY: disk ${USAGE}%% full — clearing sled DB"\n\
+  rm -rf /data/soul.sled 2>/dev/null || true\n\
+  rm -rf /data/workspace/.git/objects/pack 2>/dev/null || true\n\
+fi\n\
+\n\
+BIN=${X402_BINARY:-x402-node}\n\
+exec gosu app "$BIN" "$@"\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV SPA_DIR=/app/spa
 ENV PORT=4023
