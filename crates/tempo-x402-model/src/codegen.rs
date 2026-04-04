@@ -186,15 +186,20 @@ impl CodeGenModel {
         }
 
         // Output projection (last position): hidden[last] × embeddings^T + bias
+        // Parallel across 8192 vocab entries — biggest single win from rayon.
         let last_hidden = &hidden[(seq_len - 1) * d..seq_len * d];
-        let mut logits = vec![0.0f32; self.vocab_size];
-        for v_idx in 0..self.vocab_size {
-            let mut dot = self.output_bias[v_idx];
-            for j in 0..d {
-                dot += last_hidden[j] * self.embeddings[v_idx * d + j]; // weight tying
-            }
-            logits[v_idx] = dot;
-        }
+        use rayon::prelude::*;
+        let logits: Vec<f32> = (0..self.vocab_size)
+            .into_par_iter()
+            .map(|v_idx| {
+                let mut dot = self.output_bias[v_idx];
+                let emb_off = v_idx * d;
+                for j in 0..d {
+                    dot += last_hidden[j] * self.embeddings[emb_off + j];
+                }
+                dot
+            })
+            .collect();
 
         logits
     }
@@ -209,48 +214,56 @@ impl CodeGenModel {
         // Layer norm 1
         let normed = layer_norm(input, &layer.ln1_scale, seq_len, d);
 
-        // Multi-head causal attention
+        // Multi-head causal attention — parallel across heads
+        use rayon::prelude::*;
+        let head_outputs: Vec<Vec<f32>> = (0..n_heads)
+            .into_par_iter()
+            .map(|h| {
+                let mut head_out = vec![0.0f32; seq_len * d_head];
+                for pos in 0..seq_len {
+                    let inp = &normed[pos * d..(pos + 1) * d];
+
+                    let mut q = vec![0.0f32; d_head];
+                    for j in 0..d_head {
+                        let w_idx = (h * d_head + j) * d;
+                        q[j] = (0..d).map(|k| inp[k] * layer.wq[w_idx + k]).sum::<f32>();
+                    }
+
+                    let mut weights = vec![0.0f32; pos + 1];
+                    for prev in 0..=pos {
+                        let prev_inp = &normed[prev * d..(prev + 1) * d];
+                        let mut score = 0.0f32;
+                        for j in 0..d_head {
+                            let w_idx = (h * d_head + j) * d;
+                            let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
+                            score += q[j] * k_j;
+                        }
+                        weights[prev] = score / (d_head as f32).sqrt();
+                    }
+
+                    let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                    let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
+                    for w in &mut weights { *w = (*w - max_w).exp() / exp_sum; }
+
+                    for prev in 0..=pos {
+                        let prev_inp = &normed[prev * d..(prev + 1) * d];
+                        for j in 0..d_head {
+                            let w_idx = (h * d_head + j) * d;
+                            let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
+                            head_out[pos * d_head + j] += weights[prev] * v_j;
+                        }
+                    }
+                }
+                head_out
+            })
+            .collect();
+
+        // Merge head outputs into attn_out
         let mut attn_out = vec![0.0f32; seq_len * d];
-        for h in 0..n_heads {
-            // Project Q, K, V for this head
+        for (h, head_out) in head_outputs.iter().enumerate() {
             for pos in 0..seq_len {
-                let inp = &normed[pos * d..(pos + 1) * d];
-
-                // Compute attention scores for this position
-                let mut q = vec![0.0f32; d_head];
                 for j in 0..d_head {
-                    let w_idx = (h * d_head + j) * d;
-                    q[j] = (0..d).map(|k| inp[k] * layer.wq[w_idx + k]).sum::<f32>();
-                }
-
-                // Attend to all previous positions (causal)
-                let mut weights = vec![0.0f32; pos + 1];
-                for prev in 0..=pos {
-                    let prev_inp = &normed[prev * d..(prev + 1) * d];
-                    let mut k = 0.0f32;
-                    for j in 0..d_head {
-                        let w_idx = (h * d_head + j) * d;
-                        let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
-                        k += q[j] * k_j;
-                    }
-                    weights[prev] = k / (d_head as f32).sqrt();
-                }
-
-                // Softmax
-                let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-                let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                for w in &mut weights {
-                    *w = (*w - max_w).exp() / exp_sum;
-                }
-
-                // Weighted sum of values
-                for prev in 0..=pos {
-                    let prev_inp = &normed[prev * d..(prev + 1) * d];
-                    for j in 0..d_head {
-                        let w_idx = (h * d_head + j) * d;
-                        let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
-                        attn_out[pos * d + h * d_head + j] += weights[prev] * v_j;
-                    }
+                    attn_out[pos * d + h * d_head + j] = head_out[pos * d_head + j];
                 }
             }
         }
@@ -268,21 +281,30 @@ impl CodeGenModel {
         // Layer norm 2
         let normed2 = layer_norm(&residual, &layer.ln2_scale, seq_len, d);
 
-        // Feed-forward + residual
-        for pos in 0..seq_len {
-            let inp = &normed2[pos * d..(pos + 1) * d];
-            // Up projection: D → D_FF with ReLU
-            let mut ff_hidden = vec![0.0f32; ff];
-            for j in 0..ff {
-                let w_idx = j * d;
-                let val: f32 = (0..d).map(|k| inp[k] * layer.ff_w1[w_idx + k]).sum();
-                ff_hidden[j] = val.max(0.0); // ReLU
-            }
-            // Down projection: D_FF → D
+        // Feed-forward — parallel across positions, each returns a d-dim delta
+        let ff_deltas: Vec<Vec<f32>> = (0..seq_len)
+            .into_par_iter()
+            .map(|pos| {
+                let inp = &normed2[pos * d..(pos + 1) * d];
+                let mut ff_hidden = vec![0.0f32; ff];
+                for j in 0..ff {
+                    let w_idx = j * d;
+                    let val: f32 = (0..d).map(|k| inp[k] * layer.ff_w1[w_idx + k]).sum();
+                    ff_hidden[j] = val.max(0.0);
+                }
+                let mut delta = vec![0.0f32; d];
+                for j in 0..d {
+                    let w_idx = j * ff;
+                    delta[j] = (0..ff).map(|k| ff_hidden[k] * layer.ff_w2[w_idx + k]).sum();
+                }
+                delta
+            })
+            .collect();
+
+        // Add FFN deltas to residual
+        for (pos, delta) in ff_deltas.iter().enumerate() {
             for j in 0..d {
-                let w_idx = j * ff;
-                let val: f32 = (0..ff).map(|k| ff_hidden[k] * layer.ff_w2[w_idx + k]).sum();
-                residual[pos * d + j] += val;
+                residual[pos * d + j] += delta[j];
             }
         }
 
@@ -331,17 +353,19 @@ impl CodeGenModel {
             layer_inputs.push(hidden.clone());
         }
 
-        // 3. Output projection (last position only for efficiency)
+        // 3. Output projection — parallel across vocab
+        use rayon::prelude::*;
         let last_pos = seq_len - 1;
         let last_hidden = &hidden[last_pos * d..(last_pos + 1) * d];
-        let mut logits = vec![0.0f32; self.vocab_size];
-        for v_idx in 0..self.vocab_size {
-            let mut dot = self.output_bias[v_idx];
-            for j in 0..d {
-                dot += last_hidden[j] * self.embeddings[v_idx * d + j];
-            }
-            logits[v_idx] = dot;
-        }
+        let logits: Vec<f32> = (0..self.vocab_size)
+            .into_par_iter()
+            .map(|v_idx| {
+                let mut dot = self.output_bias[v_idx];
+                let off = v_idx * d;
+                for j in 0..d { dot += last_hidden[j] * self.embeddings[off + j]; }
+                dot
+            })
+            .collect();
 
         // Loss
         let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
