@@ -478,14 +478,23 @@ impl ThinkingLoop {
                     let bench_mode = crate::benchmark::BenchmarkMode::from_env();
                     match bench_mode {
                         crate::benchmark::BenchmarkMode::Opus => {
-                            match crate::benchmark::run_opus_benchmark_session(
+                            // 10 min timeout on entire benchmark session.
+                            // Prevents one hung cargo test from blocking the soul forever.
+                            let bench_future = crate::benchmark::run_opus_benchmark_session(
                                 llm,
                                 &self.db,
                                 &self.config.workspace_root,
                                 crate::benchmark::DEFAULT_SAMPLE_SIZE,
-                            )
-                            .await
-                            {
+                            );
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(600),
+                                bench_future,
+                            ).await {
+                                Err(_) => {
+                                    tracing::warn!("Opus benchmark session timed out after 10 min — will retry next cycle");
+                                    // Don't set last_benchmark_at — allow immediate retry
+                                }
+                                Ok(bench_result) => match bench_result {
                                 Ok(weighted_score) => {
                                     let iq =
                                         crate::opus_bench::weighted_score_to_iq(weighted_score);
@@ -580,9 +589,9 @@ impl ThinkingLoop {
                                 }
                                 Err(e) => {
                                     tracing::warn!(error = %e, "Opus IQ benchmark failed — will retry next eligible cycle");
-                                    // Don't set last_benchmark_at — allow immediate retry
                                 }
-                            }
+                            } // end match bench_result
+                            } // end Ok(bench_result) + Err(timeout)
                         }
                         crate::benchmark::BenchmarkMode::Exercism => {
                             match crate::benchmark::run_benchmark_session(
