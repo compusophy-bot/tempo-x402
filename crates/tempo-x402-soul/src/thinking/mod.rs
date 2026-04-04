@@ -473,13 +473,8 @@ impl ThinkingLoop {
                         .flatten()
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
-                    let _ = self.db.set_state(
-                        "last_benchmark_at",
-                        &chrono::Utc::now().timestamp().to_string(),
-                    );
-                    let _ = self
-                        .db
-                        .set_state("last_benchmark_cycle", &current_cycle.to_string());
+                    // NOTE: set last_benchmark_at AFTER the session succeeds, not before.
+                    // Previously set before, so failed sessions still consumed the cooldown.
                     let bench_mode = crate::benchmark::BenchmarkMode::from_env();
                     match bench_mode {
                         crate::benchmark::BenchmarkMode::Opus => {
@@ -569,15 +564,23 @@ impl ThinkingLoop {
                                             let _ = self.db.set_state("benchmark_stagnation_count", "0");
                                         }
                                     }
+                                    // Mark benchmark as completed (timestamps set AFTER success)
+                                    let _ = self.db.set_state(
+                                        "last_benchmark_at",
+                                        &chrono::Utc::now().timestamp().to_string(),
+                                    );
+                                    let _ = self.db.set_state(
+                                        "last_benchmark_cycle",
+                                        &current_cycle.to_string(),
+                                    );
                                     // Train codegen IMMEDIATELY after benchmark (tight feedback loop).
-                                    // Don't wait for the brain training oscillator — the benchmark
-                                    // just produced fresh training data, train on it NOW.
                                     crate::codegen::train_tokenizer(&self.db);
                                     crate::codegen::train_model(&self.db);
                                     tracing::info!("Codegen trained immediately after benchmark");
                                 }
                                 Err(e) => {
-                                    tracing::warn!(error = %e, "Opus IQ benchmark failed");
+                                    tracing::warn!(error = %e, "Opus IQ benchmark failed — will retry next eligible cycle");
+                                    // Don't set last_benchmark_at — allow immediate retry
                                 }
                             }
                         }
