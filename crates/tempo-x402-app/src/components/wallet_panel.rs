@@ -1,4 +1,4 @@
-use crate::{api, wallet, wallet_crypto, WalletMode, WalletState};
+use crate::{api, wallet, WalletMode, WalletState};
 use leptos::*;
 use wasm_bindgen::prelude::*;
 

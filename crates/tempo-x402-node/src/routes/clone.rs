@@ -840,7 +840,7 @@ async fn notify_siblings_of_new_peer(
         }
     };
 
-    let new_peer_info = serde_json::json!({
+    let _new_peer_info = serde_json::json!({
         "instance_id": new_instance_id,
         "url": new_url.trim_end_matches('/'),
         "event": "new_peer",

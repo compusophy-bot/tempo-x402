@@ -1,7 +1,5 @@
 use leptos::*;
 
-use crate::*;
-
 /// Minimal header — only used by Studio page.
 #[component]
 pub fn Header() -> impl IntoView {

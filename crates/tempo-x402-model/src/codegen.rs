@@ -427,7 +427,7 @@ impl CodeGenModel {
             // Actually, attention mixes positions, so we need all positions where d_out is nonzero.
             // For efficiency, only update positions that have nonzero gradient.
 
-            let mut d_residual = d_out.clone();
+            let d_residual = d_out.clone();
 
             // FFN: for each position with gradient
             for pos in 0..seq_len {

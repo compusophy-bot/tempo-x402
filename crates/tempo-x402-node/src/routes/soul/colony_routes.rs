@@ -162,7 +162,7 @@ pub(super) async fn colony_benchmark_result(
                 }
             }
             // Record the run in queen's DB
-            let problem = x402_soul::benchmark::BenchmarkProblem {
+            let _problem = x402_soul::benchmark::BenchmarkProblem {
                 slug: result.slug.clone(),
                 instructions: String::new(),
                 test_code: String::new(),
@@ -250,7 +250,7 @@ pub(super) async fn colony_work(
     state: web::Data<NodeState>,
     body: web::Json<serde_json::Value>,
 ) -> HttpResponse {
-    let soul_db = match &state.soul_db {
+    let _soul_db = match &state.soul_db {
         Some(db) => db,
         None => {
             return HttpResponse::ServiceUnavailable()

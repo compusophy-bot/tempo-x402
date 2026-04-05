@@ -227,12 +227,6 @@ pub fn evaluate(
         .flatten()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
-    let self_pass: f64 = db
-        .get_state("benchmark_pass_at_1")
-        .ok()
-        .flatten()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.0);
     // Phase 3 is always active — the codegen model learns continuously.
     // The old gate (psi > 0.5 && examples > 500 && pass > 60%) was unreachable
     // while the system was stuck. Phase 3 is a gradient, not a gate.
@@ -405,7 +399,7 @@ fn compute_psi(
     db: &Arc<SoulDatabase>,
     self_fitness: f64,
     peers: &[PeerFitnessRecord],
-    free_energy: f64,
+    _free_energy: f64,
     fe_trend: f64,
 ) -> (f64, f64) {
     // Intelligence: mean pass@1 across colony (0.0-1.0 scale)

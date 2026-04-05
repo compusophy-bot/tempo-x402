@@ -630,20 +630,6 @@ pub fn upsert_cartridge(db: &Database, record: &CartridgeRecord) -> Result<(), G
     })
 }
 
-/// Check if a cartridge slug exists in DB (active or not). Used by auto-register
-/// to avoid resurrecting soft-deleted cartridges.
-pub fn get_cartridge_any(db: &Database, slug: &str) -> Result<Option<String>, GatewayError> {
-    db.with_connection(|conn| {
-        conn.query_row(
-            "SELECT slug FROM cartridges WHERE slug = ?1",
-            params![slug],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| GatewayError::Internal(format!("get cartridge any: {e}")))
-    })
-}
-
 /// Get a cartridge by slug.
 pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord>, GatewayError> {
     db.with_connection(|conn| {
@@ -737,41 +723,6 @@ pub fn delete_all_cartridges(db: &Database) -> Result<u64, GatewayError> {
             )
             .map_err(|e| GatewayError::Internal(format!("delete all cartridges: {e}")))?;
         Ok(rows as u64)
-    })
-}
-
-/// Get a KV value for a cartridge.
-pub fn cartridge_kv_get(
-    db: &Database,
-    slug: &str,
-    key: &str,
-) -> Result<Option<String>, GatewayError> {
-    db.with_connection(|conn| {
-        conn.query_row(
-            "SELECT value FROM cartridge_kv WHERE slug = ?1 AND key = ?2",
-            params![slug, key],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| GatewayError::Internal(format!("kv get: {e}")))
-    })
-}
-
-/// Set a KV value for a cartridge.
-pub fn cartridge_kv_set(
-    db: &Database,
-    slug: &str,
-    key: &str,
-    value: &str,
-) -> Result<(), GatewayError> {
-    db.with_connection(|conn| {
-        conn.execute(
-            "INSERT INTO cartridge_kv (slug, key, value, updated_at) VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT(slug, key) DO UPDATE SET value = ?3, updated_at = ?4",
-            params![slug, key, value, chrono::Utc::now().timestamp()],
-        )
-        .map_err(|e| GatewayError::Internal(format!("kv set: {e}")))?;
-        Ok(())
     })
 }
 

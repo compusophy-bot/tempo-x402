@@ -7,23 +7,18 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use serde::Serialize;
-
 use crate::config::SoulConfig;
 use crate::db::SoulDatabase;
 use crate::error::SoulError;
 use crate::git::GitContext;
-use crate::llm::{
-    ConversationMessage, ConversationPart, FunctionDeclaration, FunctionResponse, LlmClient,
-    LlmResult,
-};
+use crate::llm::LlmClient;
 use crate::memory::{Thought, ThoughtType};
 use crate::neuroplastic;
 use crate::observer::{NodeObserver, NodeSnapshot};
 use crate::plan::{Plan, PlanExecutor, PlanStatus, PlanStep, StepResult};
 use crate::prompts;
 use crate::tool_registry::ToolRegistry;
-use crate::tools::{self, ToolExecutor};
+use crate::tools::ToolExecutor;
 use crate::world_model::{Belief, BeliefDomain, Confidence, Goal, ModelUpdate};
 use crate::{capability, feedback, validation};
 
@@ -35,7 +30,7 @@ mod plan_cycle;
 mod planning;
 pub(crate) mod tool_loop;
 
-pub(crate) use tool_loop::{run_tool_loop_with_model, ToolExecution, ToolLoopResult};
+pub(crate) use tool_loop::{run_tool_loop_with_model, ToolExecution};
 
 /// Simplified adaptive pacing for plan-driven execution.
 pub(super) struct AdaptivePacer {
@@ -765,7 +760,7 @@ impl ThinkingLoop {
                             if synced > 0 {
                                 // Update MoE router with peer expertise data
                                 for (peer_id, peer_url) in &peer_urls {
-                                    let cap_profile = crate::capability::compute_profile(&self.db);
+                                    let _cap_profile = crate::capability::compute_profile(&self.db);
                                     // Fetch peer's capability profile
                                     let profile_url =
                                         format!("{}/soul/lessons", peer_url.trim_end_matches('/'));

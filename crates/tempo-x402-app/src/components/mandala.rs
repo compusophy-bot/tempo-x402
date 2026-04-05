@@ -21,7 +21,7 @@ pub fn Mandala() -> impl IntoView {
     let (colony, set_colony) = create_signal(None::<serde_json::Value>);
     let (panel_open, set_panel_open) = create_signal(false);
     let (clone_loading, set_clone_loading) = create_signal(false);
-    let (clone_result, set_clone_result) = create_signal(None::<Result<String, String>>);
+    let (_clone_result, set_clone_result) = create_signal(None::<Result<String, String>>);
     let (events, set_events) = create_signal(Vec::<SoulEventMsg>::new());
     let (pulses, set_pulses) = create_signal(std::collections::HashMap::<String, f64>::new());
     let (selected_organ, set_selected_organ) = create_signal(None::<String>);

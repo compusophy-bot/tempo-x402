@@ -12,7 +12,3 @@ impl ThinkingLoop {
     }
 }
 
-/// Extract the first JSON array from text, returning (json_str, text_before, text_after).
-pub(super) fn extract_json_array(text: &str) -> Option<(String, String, String)> {
-    crate::normalize::extract_json_array(text)
-}

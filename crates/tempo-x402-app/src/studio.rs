@@ -49,6 +49,7 @@ enum CenterView {
     Welcome,
     AppPreview(String),
     CartridgePreview(String),
+    #[allow(dead_code)]
     InteractivePreview(String),
     FrontendPreview(String),
     FileView(String, String),

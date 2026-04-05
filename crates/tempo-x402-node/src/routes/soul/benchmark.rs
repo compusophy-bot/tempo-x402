@@ -119,8 +119,8 @@ pub(super) async fn review_code_change(
     let diff = &body.diff;
 
     // Check 1: Any file losing >50% of lines?
-    let mut destruction_detected = false;
-    let mut destruction_detail = String::new();
+    let mut _destruction_detected = false;
+    let mut _destruction_detail = String::new();
     for line in diff.lines() {
         // Diff headers like "--- a/file" and "+++ b/file" + stats
         if line.starts_with("diff --git") {
