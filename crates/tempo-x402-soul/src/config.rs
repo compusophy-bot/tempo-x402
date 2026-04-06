@@ -151,7 +151,12 @@ impl SoulConfig {
         let llm_model_think =
             std::env::var("GEMINI_MODEL_THINK").unwrap_or_else(|_| llm_model_fast.clone());
 
-        let db_path = std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "./soul.db".to_string());
+        // Default to /tmp — sled's log-structured storage grows unboundedly and
+        // fills persistent volumes. Ephemeral storage resets on redeploy but at
+        // least doesn't crash the node. Override with SOUL_DB_PATH if persistence
+        // is needed (but ensure the volume is large enough for sled growth).
+        let db_path =
+            std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "/tmp/soul.db".to_string());
 
         let think_interval_secs: u64 = std::env::var("SOUL_THINK_INTERVAL_SECS")
             .ok()
