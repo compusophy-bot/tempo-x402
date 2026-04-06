@@ -693,11 +693,16 @@ impl ThinkingLoop {
                     crate::evaluation::save_evaluation(&self.db, &eval);
                 }
 
-                match self
-                    .tool_executor
-                    .execute("discover_peers", &serde_json::json!({}))
-                    .await
-                {
+                // Timeout the entire peer sync to prevent hanging the thinking loop
+                let peer_sync_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(120),
+                    self.tool_executor.execute("discover_peers", &serde_json::json!({})),
+                ).await;
+                match peer_sync_result {
+                    Err(_) => {
+                        tracing::warn!("Peer sync timed out after 120s — skipping this cycle");
+                    }
+                    Ok(result) => { match result {
                     Ok(result) => {
                         // discover_peers returns HTTP status as exit_code (200, not 0)
                         if result.exit_code == 0 || (200..300).contains(&result.exit_code) {
@@ -819,6 +824,7 @@ impl ThinkingLoop {
                     Err(e) => {
                         tracing::debug!(error = %e, "Peer sync failed (non-fatal)");
                     }
+                } } // close inner match + Ok(result) arm
                 }
 
                 // Evaluation: measure accuracy AFTER sync for colony benefit

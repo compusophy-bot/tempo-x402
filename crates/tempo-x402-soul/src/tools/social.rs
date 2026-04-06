@@ -279,37 +279,45 @@ impl ToolExecutor {
                 rpc_url.parse().map_err(|e| format!("bad RPC URL: {e}"))?,
             );
 
-            match x402_identity::discovery::discover_peers(&provider, registry, self_address, 50)
-                .await
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                x402_identity::discovery::discover_peers(&provider, registry, self_address, 50),
+            )
+            .await
             {
-                Ok(peers) => {
-                    let duration_ms = start.elapsed().as_millis() as u64;
-                    let output = serde_json::to_string_pretty(&serde_json::json!({
-                        "source": "on-chain",
-                        "registry": format!("{:#x}", registry),
-                        "peers": peers,
-                        "count": peers.len(),
-                    }))
-                    .unwrap_or_default();
-
-                    let output_truncated = if output.len() > MAX_OUTPUT_BYTES {
-                        format!(
-                            "{}\n... (truncated)",
-                            output.chars().take(MAX_OUTPUT_BYTES).collect::<String>()
-                        )
-                    } else {
-                        output
-                    };
-
-                    return Ok(ToolResult {
-                        stdout: output_truncated,
-                        stderr: String::new(),
-                        exit_code: 0,
-                        duration_ms,
-                    });
+                Err(_) => {
+                    tracing::debug!("On-chain peer discovery timed out after 15s, falling back to HTTP");
                 }
-                Err(e) => {
-                    tracing::debug!(error = %e, "On-chain peer discovery failed, falling back to HTTP");
+                Ok(inner) => match inner {
+                    Ok(peers) => {
+                        let duration_ms = start.elapsed().as_millis() as u64;
+                        let output = serde_json::to_string_pretty(&serde_json::json!({
+                            "source": "on-chain",
+                            "registry": format!("{:#x}", registry),
+                            "peers": peers,
+                            "count": peers.len(),
+                        }))
+                        .unwrap_or_default();
+
+                        let output_truncated = if output.len() > MAX_OUTPUT_BYTES {
+                            format!(
+                                "{}\n... (truncated)",
+                                output.chars().take(MAX_OUTPUT_BYTES).collect::<String>()
+                            )
+                        } else {
+                            output
+                        };
+
+                        return Ok(ToolResult {
+                            stdout: output_truncated,
+                            stderr: String::new(),
+                            exit_code: 0,
+                            duration_ms,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "On-chain peer discovery failed, falling back to HTTP");
+                    }
                 }
             }
         }
