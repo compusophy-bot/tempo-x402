@@ -698,60 +698,89 @@ fn cleanup_disk(workspace_root: &str) {
         .current_dir(workspace_root)
         .output();
 
-    // 5. Emergency: if disk usage > threshold, nuke everything regenerable
-    if let Some(usage_pct) = get_disk_usage_pct("/data") {
-        if usage_pct > DISK_USAGE_THRESHOLD {
-            tracing::warn!(
-                usage_pct = format!("{:.1}%", usage_pct),
-                "EMERGENCY disk cleanup — volume usage above {DISK_USAGE_THRESHOLD}%"
-            );
-            // Nuclear: remove ALL target dirs
-            let _ = std::fs::remove_dir_all(&target_dir);
-            // Remove ALL cartridge build targets
-            if let Ok(entries) = std::fs::read_dir(cartridge_base) {
-                for entry in entries.flatten() {
-                    let target = entry.path().join("bin/target");
-                    let _ = std::fs::remove_dir_all(&target);
-                }
-            }
-            // Remove all but latest brain checkpoint
-            if let Ok(entries) = std::fs::read_dir(checkpoint_dir) {
-                let mut files: Vec<_> = entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .map(|ext| ext == "json")
-                            .unwrap_or(false)
-                    })
-                    .collect();
-                files.sort_by_key(|f| {
-                    f.metadata()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                });
-                // Keep only the latest
-                if files.len() > 1 {
-                    for f in &files[..files.len() - 1] {
-                        let _ = std::fs::remove_file(f.path());
-                    }
-                }
-            }
-            // Remove old SQLite files that may still exist from pre-v8 deploys
-            let _ = std::process::Command::new("sh")
-                .args(["-c", "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null"])
-                .output();
+    // 5. Clean benchmark build artifacts (can be huge — cargo deps)
+    let bench_target = "/tmp/bench_target";
+    if std::path::Path::new(bench_target).exists() {
+        let size = dir_size_mb(bench_target).unwrap_or(0);
+        if size > 100 {
+            tracing::info!(size_mb = size, "Disk cleanup: removing benchmark target/");
+            let _ = std::fs::remove_dir_all(bench_target);
+        }
+    }
 
-            // Log final state
-            if let Some(after) = get_disk_usage_pct("/data") {
-                tracing::info!(
-                    before = format!("{:.1}%", usage_pct),
-                    after = format!("{:.1}%", after),
-                    "Emergency disk cleanup complete"
-                );
+    // 6. Emergency: if ANY filesystem is above threshold, nuke everything regenerable
+    // Check both /data (persistent volume) and / (root filesystem)
+    let data_usage = get_disk_usage_pct("/data");
+    let root_usage = get_disk_usage_pct("/");
+    let emergency = data_usage
+        .map(|u| u > DISK_USAGE_THRESHOLD)
+        .unwrap_or(false)
+        || root_usage
+            .map(|u| u > DISK_USAGE_THRESHOLD)
+            .unwrap_or(false);
+
+    if emergency {
+        let data_pct = data_usage.unwrap_or(0.0);
+        let root_pct = root_usage.unwrap_or(0.0);
+        tracing::warn!(
+            data_pct = format!("{:.1}%", data_pct),
+            root_pct = format!("{:.1}%", root_pct),
+            "EMERGENCY disk cleanup — filesystem above {DISK_USAGE_THRESHOLD}%"
+        );
+        // Nuclear: remove ALL target dirs
+        let _ = std::fs::remove_dir_all(&target_dir);
+        // Remove benchmark target (can be 2GB+)
+        let _ = std::fs::remove_dir_all(bench_target);
+        // Remove ALL cartridge build targets
+        if let Ok(entries) = std::fs::read_dir(cartridge_base) {
+            for entry in entries.flatten() {
+                let target = entry.path().join("bin/target");
+                let _ = std::fs::remove_dir_all(&target);
             }
         }
+        // Remove all but latest brain checkpoint
+        if let Ok(entries) = std::fs::read_dir(checkpoint_dir) {
+            let mut files: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "json")
+                        .unwrap_or(false)
+                })
+                .collect();
+            files.sort_by_key(|f| {
+                f.metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            });
+            // Keep only the latest
+            if files.len() > 1 {
+                for f in &files[..files.len() - 1] {
+                    let _ = std::fs::remove_file(f.path());
+                }
+            }
+        }
+        // Remove old SQLite files that may still exist from pre-v8 deploys
+        let _ = std::process::Command::new("sh")
+            .args(["-c", "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null"])
+            .output();
+        // Clean /tmp except soul and bench dirs
+        let _ = std::process::Command::new("sh")
+            .args(["-c", "rm -rf /tmp/cargo-* /tmp/rustc* /tmp/cc* 2>/dev/null"])
+            .output();
+
+        // Log final state
+        let data_after = get_disk_usage_pct("/data").unwrap_or(0.0);
+        let root_after = get_disk_usage_pct("/").unwrap_or(0.0);
+        tracing::info!(
+            data_before = format!("{:.1}%", data_pct),
+            data_after = format!("{:.1}%", data_after),
+            root_before = format!("{:.1}%", root_pct),
+            root_after = format!("{:.1}%", root_after),
+            "Emergency disk cleanup complete"
+        );
     }
 }
 

@@ -743,6 +743,24 @@ pub async fn run_opus_benchmark_session(
         "Starting Opus IQ benchmark session"
     );
 
+    // Pre-flight: check disk space — cargo test needs ~500MB for compilation
+    // Clean any stale benchmark artifacts first
+    let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
+    let disk_ok = tokio::process::Command::new("df")
+        .args(["--output=pcent", "/tmp"])
+        .output()
+        .await
+        .map(|o| {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let pct: u64 = s.lines().last().unwrap_or("0")
+                .trim().trim_end_matches('%').parse().unwrap_or(0);
+            pct < 90
+        })
+        .unwrap_or(true); // if df fails, try anyway
+    if !disk_ok {
+        return Err("Disk usage above 90% — skipping benchmark to avoid hang".into());
+    }
+
     let problems = crate::opus_bench::load_embedded_problems();
     if problems.is_empty() {
         return Err("No Opus benchmark problems loaded".into());
