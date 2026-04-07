@@ -28,7 +28,58 @@ pub fn save_tokenizer(db: &SoulDatabase, tok: &x402_model::bpe::BpeTokenizer) {
     }
 }
 
-/// Train the BPE tokenizer on accumulated code (benchmark solutions + commit diffs).
+/// Scan workspace for .rs files and return their contents as training corpus.
+/// This gives the codegen model access to 72K+ lines of real Rust code —
+/// orders of magnitude more data than benchmark solutions alone.
+fn collect_workspace_corpus(workspace_root: &str) -> String {
+    let mut corpus = String::new();
+    let root = std::path::Path::new(workspace_root);
+    if !root.exists() {
+        return corpus;
+    }
+
+    // Walk the workspace for .rs files, skip target/ and .git/
+    fn walk_rs(dir: &std::path::Path, corpus: &mut String, depth: u32) {
+        if depth > 10 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+
+            // Skip build artifacts, git, and hidden dirs
+            if name_str.starts_with('.')
+                || name_str == "target"
+                || name_str == "node_modules"
+            {
+                continue;
+            }
+
+            if path.is_dir() {
+                walk_rs(&path, corpus, depth + 1);
+            } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    // Skip very large files (generated code, test fixtures)
+                    if content.len() < 50_000 {
+                        corpus.push_str(&content);
+                        corpus.push('\n');
+                    }
+                }
+            }
+        }
+    }
+
+    walk_rs(root, &mut corpus, 0);
+    corpus
+}
+
+/// Train the BPE tokenizer on ALL available Rust code:
+/// 1. Benchmark solutions (verified, high quality)
+/// 2. Workspace codebase (72K+ lines of real Rust)
 pub fn train_tokenizer(db: &SoulDatabase) {
     let solutions: Vec<serde_json::Value> = db
         .get_state("codegen_solutions")
@@ -37,18 +88,22 @@ pub fn train_tokenizer(db: &SoulDatabase) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    if solutions.is_empty() {
-        tracing::debug!("codegen: BPE skip — 0 training examples (need benchmark passes or commits)");
-        return;
-    }
-
     let mut corpus = String::new();
+
+    // Source 1: benchmark solutions (highest quality — verified by cargo test)
     for sol in &solutions {
         if let Some(code) = sol.get("code").and_then(|v| v.as_str()) {
             corpus.push_str(code);
             corpus.push('\n');
         }
     }
+
+    // Source 2: workspace codebase (massive, real-world Rust)
+    let workspace_root = std::env::var("SOUL_WORKSPACE_ROOT")
+        .unwrap_or_else(|_| "/tmp/workspace".to_string());
+    let ws_corpus = collect_workspace_corpus(&workspace_root);
+    let ws_bytes = ws_corpus.len();
+    corpus.push_str(&ws_corpus);
 
     if corpus.len() < 100 {
         tracing::debug!(
@@ -69,11 +124,12 @@ pub fn train_tokenizer(db: &SoulDatabase) {
 
     tracing::info!(
         solutions = solutions.len(),
+        workspace_bytes = ws_bytes,
         corpus_bytes = corpus.len(),
         vocab_before = before_vocab,
         vocab_after = after_vocab,
         compression_ratio = format!("{ratio:.2}"),
-        "codegen: BPE tokenizer trained"
+        "codegen: BPE tokenizer trained (solutions + workspace)"
     );
 }
 
@@ -96,8 +152,9 @@ pub fn save_model(db: &SoulDatabase, model: &x402_model::codegen::CodeGenModel) 
     }
 }
 
-/// Train the code generation model on accumulated solutions.
-/// Minimum 2 solutions (was 5). Every training step counts when bootstrapping.
+/// Train the code generation model on ALL available Rust code:
+/// 1. Benchmark solutions (verified, high quality — weighted 3x)
+/// 2. Workspace .rs files (massive corpus — real-world patterns)
 pub fn train_model(db: &SoulDatabase) {
     let tok = load_tokenizer(db);
     if tok.merges.is_empty() {
@@ -105,6 +162,10 @@ pub fn train_model(db: &SoulDatabase) {
         return;
     }
 
+    // Collect all training examples as (code, weight) pairs
+    let mut examples: Vec<(String, u32)> = Vec::new();
+
+    // Source 1: benchmark solutions (verified — train 3x more on these)
     let solutions: Vec<serde_json::Value> = db
         .get_state("codegen_solutions")
         .ok()
@@ -112,9 +173,45 @@ pub fn train_model(db: &SoulDatabase) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    if solutions.len() < 2 {
+    for sol in &solutions {
+        if sol.get("passed").and_then(|v| v.as_bool()).unwrap_or(true) {
+            if let Some(code) = sol.get("code").and_then(|v| v.as_str()) {
+                if code.len() >= 50 {
+                    examples.push((code.to_string(), 3)); // 3x weight for verified code
+                }
+            }
+        }
+    }
+
+    // Source 2: workspace .rs files (bulk training data)
+    let workspace_root = std::env::var("SOUL_WORKSPACE_ROOT")
+        .unwrap_or_else(|_| "/tmp/workspace".to_string());
+    let ws_corpus = collect_workspace_corpus(&workspace_root);
+    // Split workspace into function-sized chunks (~200 lines each)
+    // so the model sees complete logical units, not arbitrary slices
+    let mut chunk = String::new();
+    for line in ws_corpus.lines() {
+        chunk.push_str(line);
+        chunk.push('\n');
+        // Split on blank lines after `}` (heuristic for function boundaries)
+        if line.trim() == "}" && chunk.len() > 200 {
+            examples.push((std::mem::take(&mut chunk), 1));
+        }
+        // Cap chunk size
+        if chunk.len() > 5000 {
+            examples.push((std::mem::take(&mut chunk), 1));
+        }
+    }
+    if chunk.len() > 100 {
+        examples.push((chunk, 1));
+    }
+
+    let total_examples = examples.len();
+    let solution_count = solutions.len();
+
+    if total_examples < 2 {
         tracing::debug!(
-            solutions = solutions.len(),
+            examples = total_examples,
             "codegen: model skip — need >=2 training examples"
         );
         return;
@@ -124,25 +221,12 @@ pub fn train_model(db: &SoulDatabase) {
     let mut total_loss = 0.0f32;
     let mut trained = 0u32;
 
-    // Filter for passing solutions only — garbage in = garbage out
-    let good_solutions: Vec<&serde_json::Value> = solutions
-        .iter()
-        .filter(|sol| {
-            sol.get("passed").and_then(|v| v.as_bool()).unwrap_or(true)
-        })
-        .collect();
-
-    // Train on 5 solutions per cycle — balance learning speed vs cycle time.
-    // Full attention backprop on 29M params is expensive. 5 solutions × ~15 windows
-    // = ~75 gradient steps per cycle. With every-cycle training, we rotate through
-    // all data over multiple cycles.
-    let offset = (model.train_steps as usize) % good_solutions.len().max(1);
-    for sol in good_solutions.iter().cycle().skip(offset).take(5) {
-        let Some(code) = sol.get("code").and_then(|v| v.as_str()) else {
-            continue;
-        };
-
-        // Skip very short code (likely stubs or errors)
+    // Train on 10 examples per cycle (was 5) — more data justifies more steps.
+    // Rotate through all examples over multiple cycles.
+    let offset = (model.train_steps as usize) % total_examples.max(1);
+    let batch_size = 10.min(total_examples);
+    for (code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
+        // Skip very short code
         if code.len() < 50 {
             continue;
         }
@@ -161,24 +245,24 @@ pub fn train_model(db: &SoulDatabase) {
             continue;
         }
 
-        // Train on sliding windows (64 tokens, step 32 — keep cycles fast with full backprop)
-        let window_size = 64.min(tokens.len());
-        for start in (0..tokens.len().saturating_sub(window_size)).step_by(32) {
-            let end = (start + window_size).min(tokens.len());
-            let window = &tokens[start..end];
-            // Learning rate warmup + cosine decay:
-            // Steps 0-100: warmup from 0.0001 to 0.001
-            // Steps 100+: cosine decay back to 0.0001
-            let step = model.train_steps as f32;
-            let lr = if step < 100.0 {
-                0.0001 + (0.001 - 0.0001) * (step / 100.0)
-            } else {
-                let decay = ((step - 100.0) * std::f32::consts::PI / 5000.0).cos();
-                0.0001 + (0.001 - 0.0001) * 0.5 * (1.0 + decay)
-            };
-            let loss = model.train_step(window, lr);
-            total_loss += loss;
-            trained += 1;
+        // Repeat training on high-weight examples (verified solutions get 3x passes)
+        for _ in 0..*weight {
+            // Train on sliding windows (64 tokens, step 32)
+            let window_size = 64.min(tokens.len());
+            for start in (0..tokens.len().saturating_sub(window_size)).step_by(32) {
+                let end = (start + window_size).min(tokens.len());
+                let window = &tokens[start..end];
+                let step = model.train_steps as f32;
+                let lr = if step < 100.0 {
+                    0.0001 + (0.001 - 0.0001) * (step / 100.0)
+                } else {
+                    let decay = ((step - 100.0) * std::f32::consts::PI / 5000.0).cos();
+                    0.0001 + (0.001 - 0.0001) * 0.5 * (1.0 + decay)
+                };
+                let loss = model.train_step(window, lr);
+                total_loss += loss;
+                trained += 1;
+            }
         }
     }
 
@@ -190,7 +274,10 @@ pub fn train_model(db: &SoulDatabase) {
             running_loss = format!("{:.4}", model.running_loss),
             steps = model.train_steps,
             params = model.param_count(),
-            "codegen: model training cycle complete"
+            solutions = solution_count,
+            workspace_chunks = total_examples - solution_count,
+            total_examples = total_examples,
+            "codegen: model trained on solutions + workspace"
         );
 
         // Track loss history for learning acceleration metric (α)
