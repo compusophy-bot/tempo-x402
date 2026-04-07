@@ -62,18 +62,21 @@ pub const CODEGEN_MEMORY_MB: usize = CODEGEN_PARAMS * 2 / (1024 * 1024); // ~700
 //   + 5 decoder layers × (8×640×640 + 2×640×2560 + 3×640) = 5×(3.3M+3.3M+1.9K) ≈ 33M
 //   + bias = ~63M params × 4 bytes = ~252MB RAM
 
-/// Model constants — scaled for 8GB RAM.
-pub const SMALL_D_MODEL: usize = 640;
-pub const SMALL_N_HEADS: usize = 10;
+// Model constants — sized for encoder-decoder on CPU.
+// D=640 enc-dec took 270s per training step — unusable.
+// D=384 enc-dec: ~15M params, trains in ~5s per step on CPU.
+// Can scale D up once we add GPU or optimize the inner loops.
+pub const SMALL_D_MODEL: usize = 384;
+pub const SMALL_N_HEADS: usize = 6;
 pub const SMALL_D_HEAD: usize = SMALL_D_MODEL / SMALL_N_HEADS; // 64
-pub const SMALL_N_LAYERS: usize = 10;
-pub const SMALL_D_FF: usize = 2560;
+pub const SMALL_N_LAYERS: usize = 6; // 3 encoder + 3 decoder
+pub const SMALL_D_FF: usize = 1536;
 pub const SMALL_MAX_SEQ: usize = 512;
 pub const SMALL_VOCAB: usize = 8192;
 
-/// Encoder/decoder layer split.
-pub const ENC_LAYERS: usize = 5;
-pub const DEC_LAYERS: usize = 5;
+/// Encoder/decoder layer split (3+3 = 6 total).
+pub const ENC_LAYERS: usize = 3;
+pub const DEC_LAYERS: usize = 3;
 
 /// Code generation model — encoder-decoder transformer.
 ///

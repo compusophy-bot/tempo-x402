@@ -341,16 +341,13 @@ pub fn train_model(db: &SoulDatabase) {
     let mut total_loss = 0.0f32;
     let mut trained = 0u32;
     let train_start = std::time::Instant::now();
-    // Hard time limit: 60 seconds max per training cycle.
-    // 63M encoder-decoder is expensive. Without this limit, training
-    // runs for 30+ minutes and blocks everything.
-    let max_train_secs = 60;
+    // Hard time limit: 30 seconds max per training cycle.
+    let max_train_secs = 30;
 
-    // Encoder-decoder is ~3x more expensive per step than decoder-only.
-    // 5 examples per cycle — each enc-dec step takes ~100ms on 63M params.
-    // 5 examples × ~3 windows × weight = ~30 gradient steps ≈ 3 seconds.
+    // 15M encoder-decoder (D=384, 3+3 layers): ~2s per step on CPU.
+    // 20 examples × ~3 windows = ~60 steps. With 30s limit, get ~15 steps.
     let offset = (model.train_steps as usize) % total_examples.max(1);
-    let batch_size = 5.min(total_examples);
+    let batch_size = 20.min(total_examples);
     for (context, code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
         // Time limit check
         if train_start.elapsed().as_secs() >= max_train_secs {
