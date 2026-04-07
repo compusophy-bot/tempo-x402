@@ -340,15 +340,28 @@ pub fn train_model(db: &SoulDatabase) {
     let mut model = load_model(db);
     let mut total_loss = 0.0f32;
     let mut trained = 0u32;
+    let train_start = std::time::Instant::now();
+    // Hard time limit: 60 seconds max per training cycle.
+    // 63M encoder-decoder is expensive. Without this limit, training
+    // runs for 30+ minutes and blocks everything.
+    let max_train_secs = 60;
 
-    // Train on 50 examples per cycle — the model has 29M params and was only
-    // seeing 10 examples (150 gradient steps) per cycle. At that rate it would
-    // take thousands of cycles to see the full corpus once. 50 examples × ~15
-    // windows × weight = ~1000+ gradient steps per cycle. With cycles every
-    // few minutes, the model will see the full corpus in hours, not weeks.
+    // Encoder-decoder is ~3x more expensive per step than decoder-only.
+    // 5 examples per cycle — each enc-dec step takes ~100ms on 63M params.
+    // 5 examples × ~3 windows × weight = ~30 gradient steps ≈ 3 seconds.
     let offset = (model.train_steps as usize) % total_examples.max(1);
-    let batch_size = 50.min(total_examples);
+    let batch_size = 5.min(total_examples);
     for (context, code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
+        // Time limit check
+        if train_start.elapsed().as_secs() >= max_train_secs {
+            tracing::info!(
+                elapsed_secs = train_start.elapsed().as_secs(),
+                trained,
+                "codegen: training time limit reached — saving progress"
+            );
+            break;
+        }
+
         // Skip very short code
         if code.len() < 50 {
             continue;
@@ -377,8 +390,13 @@ pub fn train_model(db: &SoulDatabase) {
         });
 
         // Repeat training on high-weight examples (verified solutions get 3x passes)
-        for _ in 0..*weight {
-            let window_size = 128.min(target_tokens.len());
+        // But only 1 repeat for enc-dec (was 3x — too expensive)
+        let effective_weight = (*weight).min(1);
+        for _ in 0..effective_weight {
+            // 64 tokens for enc-dec (was 128 for decoder-only).
+            // Encoder-decoder does 2 forward passes + cross-attention backprop,
+            // so each step is ~3x more expensive. Keep windows small.
+            let window_size = 64.min(target_tokens.len());
             for start in (0..target_tokens.len().saturating_sub(window_size)).step_by(64) {
                 let end = (start + window_size).min(target_tokens.len());
                 let target_window = &target_tokens[start..end];
