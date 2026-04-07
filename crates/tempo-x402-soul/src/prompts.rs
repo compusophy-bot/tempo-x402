@@ -151,10 +151,14 @@ pub fn goal_creation_prompt(
     ));
 
     if !snapshot.endpoints.is_empty() {
-        let mut ep_lines = vec!["# Endpoints".to_string()];
+        // TOON table format — compact, saves LLM tokens
+        let mut ep_lines = vec![
+            "# Endpoints".to_string(),
+            "slug | price | requests | payments | revenue".to_string(),
+        ];
         for ep in &snapshot.endpoints {
             ep_lines.push(format!(
-                "- {} (price:{}, requests:{}, payments:{}, revenue:{})",
+                "{} | {} | {} | {} | {}",
                 ep.slug, ep.price, ep.request_count, ep.payment_count, ep.revenue
             ));
         }
@@ -432,13 +436,11 @@ pub fn planning_prompt(
         extra_context.push_str(health_section);
     }
 
-    // Inject peer endpoint catalog so agents know what they can call
+    // Inject peer endpoint catalog — TOON table format
     if !peer_endpoint_catalog.is_empty() {
         if let Ok(catalog) = serde_json::from_str::<Vec<serde_json::Value>>(peer_endpoint_catalog) {
             if !catalog.is_empty() {
-                extra_context.push_str("\n# Peer Endpoints Available via call_peer\n");
-                extra_context
-                    .push_str("Use call_peer with ANY of these slugs to make paid x402 calls:\n");
+                extra_context.push_str("\n# Peer Endpoints (call_peer)\npeer | slugs\n");
                 for entry in &catalog {
                     let peer = entry.get("peer").and_then(|v| v.as_str()).unwrap_or("?");
                     let slugs = entry
@@ -452,26 +454,22 @@ pub fn planning_prompt(
                         })
                         .unwrap_or_default();
                     let short_peer = if peer.len() > 12 { &peer[..12] } else { peer };
-                    extra_context.push_str(&format!("- Peer {short_peer}: [{slugs}]\n"));
+                    extra_context.push_str(&format!("{short_peer} | {slugs}\n"));
                 }
-                extra_context
-                    .push_str("Script endpoints (script-*) are especially interesting to call!\n");
             }
         }
     }
 
-    // Inject peer open PRs for review
+    // Inject peer open PRs — TOON table format
     if !peer_open_prs.is_empty() {
         if let Ok(prs) = serde_json::from_str::<Vec<serde_json::Value>>(peer_open_prs) {
             if !prs.is_empty() {
-                extra_context.push_str("\n# Peer PRs Available for Review\n");
+                extra_context.push_str("\n# Peer PRs (review_peer_pr)\n# | title\n");
                 for pr in prs.iter().take(10) {
                     let num = pr.get("number").and_then(|v| v.as_u64()).unwrap_or(0);
                     let title = pr.get("title").and_then(|v| v.as_str()).unwrap_or("?");
-                    extra_context.push_str(&format!("- PR #{num}: \"{title}\"\n"));
+                    extra_context.push_str(&format!("{num} | {title}\n"));
                 }
-                extra_context
-                    .push_str("Use {\"type\": \"review_peer_pr\", \"pr_number\": N} to review!\n");
             }
         }
     }

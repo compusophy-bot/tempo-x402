@@ -7,7 +7,11 @@ impl ThinkingLoop {
         snapshot: &NodeSnapshot,
         pacer: &AdaptivePacer,
     ) -> Result<(), SoulError> {
-        let snapshot_json = serde_json::to_string(snapshot)?;
+        // Use TOON for snapshot context — 30-60% fewer tokens than JSON.
+        // This data gets stored as thought context and sometimes injected into prompts.
+        let snapshot_json = serde_json::to_value(snapshot)
+            .map(|v| crate::toon::snapshot_to_toon(&v))
+            .unwrap_or_else(|_| serde_json::to_string(snapshot).unwrap_or_default());
         let neuroplastic = self.config.neuroplastic_enabled;
 
         // Delta detection — skip recording identical observations
