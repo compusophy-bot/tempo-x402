@@ -279,8 +279,10 @@ pub fn train_model(db: &SoulDatabase) {
         return;
     }
 
-    // Collect all training examples as (code, weight) pairs
-    let mut examples: Vec<(String, u32)> = Vec::new();
+    // Collect training examples as (context, code, weight) triples.
+    // Context = test code (for encoder-decoder), code = solution (decoder target).
+    // Examples WITHOUT context use the old train_step (backward compat).
+    let mut examples: Vec<(Option<String>, String, u32)> = Vec::new();
 
     // Source 1: benchmark solutions (verified — train 3x more on these)
     let solutions: Vec<serde_json::Value> = db
@@ -294,7 +296,8 @@ pub fn train_model(db: &SoulDatabase) {
         if sol.get("passed").and_then(|v| v.as_bool()).unwrap_or(true) {
             if let Some(code) = sol.get("code").and_then(|v| v.as_str()) {
                 if code.len() >= 50 {
-                    examples.push((code.to_string(), 3)); // 3x weight for verified code
+                    let context = sol.get("context").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    examples.push((context, code.to_string(), 3)); // 3x weight for verified code
                 }
             }
         }
@@ -312,15 +315,15 @@ pub fn train_model(db: &SoulDatabase) {
         chunk.push('\n');
         // Split on blank lines after `}` (heuristic for function boundaries)
         if line.trim() == "}" && chunk.len() > 200 {
-            examples.push((std::mem::take(&mut chunk), 1));
+            examples.push((None, std::mem::take(&mut chunk), 1));
         }
         // Cap chunk size
         if chunk.len() > 5000 {
-            examples.push((std::mem::take(&mut chunk), 1));
+            examples.push((None, std::mem::take(&mut chunk), 1));
         }
     }
     if chunk.len() > 100 {
-        examples.push((chunk, 1));
+        examples.push((None, chunk, 1));
     }
 
     let total_examples = examples.len();
@@ -345,46 +348,56 @@ pub fn train_model(db: &SoulDatabase) {
     // few minutes, the model will see the full corpus in hours, not weeks.
     let offset = (model.train_steps as usize) % total_examples.max(1);
     let batch_size = 50.min(total_examples);
-    for (code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
+    for (context, code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
         // Skip very short code
         if code.len() < 50 {
             continue;
         }
 
-        // Tokenize with BPE
-        let mut tokens = vec![x402_model::bpe::BOS_TOKEN];
-        tokens.extend(tok.encode(code));
-        tokens.push(x402_model::bpe::EOS_TOKEN);
-
-        // Truncate to max seq length
-        if tokens.len() > x402_model::codegen::SMALL_MAX_SEQ {
-            tokens.truncate(x402_model::codegen::SMALL_MAX_SEQ);
+        // Tokenize solution (decoder target)
+        let mut target_tokens = vec![x402_model::bpe::BOS_TOKEN];
+        target_tokens.extend(tok.encode(code));
+        target_tokens.push(x402_model::bpe::EOS_TOKEN);
+        if target_tokens.len() > x402_model::codegen::SMALL_MAX_SEQ {
+            target_tokens.truncate(x402_model::codegen::SMALL_MAX_SEQ);
         }
-
-        if tokens.len() < 3 {
+        if target_tokens.len() < 3 {
             continue;
         }
 
+        // Tokenize context (encoder input) if available
+        let context_tokens = context.as_ref().map(|ctx| {
+            let mut toks = vec![x402_model::bpe::BOS_TOKEN];
+            toks.extend(tok.encode(ctx));
+            toks.push(x402_model::bpe::EOS_TOKEN);
+            if toks.len() > x402_model::codegen::SMALL_MAX_SEQ {
+                toks.truncate(x402_model::codegen::SMALL_MAX_SEQ);
+            }
+            toks
+        });
+
         // Repeat training on high-weight examples (verified solutions get 3x passes)
         for _ in 0..*weight {
-            // Train on sliding windows (128 tokens, step 64)
-            // Was 64/32 — too small to learn function-level patterns.
-            // 128 tokens ≈ 5-10 lines of Rust, enough to see a complete function.
-            let window_size = 128.min(tokens.len());
-            for start in (0..tokens.len().saturating_sub(window_size)).step_by(64) {
-                let end = (start + window_size).min(tokens.len());
-                let window = &tokens[start..end];
+            let window_size = 128.min(target_tokens.len());
+            for start in (0..target_tokens.len().saturating_sub(window_size)).step_by(64) {
+                let end = (start + window_size).min(target_tokens.len());
+                let target_window = &target_tokens[start..end];
                 let step = model.train_steps as f32;
-                // Higher LR to converge faster. Was 0.0001-0.001, now 0.0005-0.003.
-                // The model is at loss 9.2 (random). It needs aggressive updates
-                // to break out of the noise floor, not gentle nudges.
                 let lr = if step < 200.0 {
                     0.0005 + (0.003 - 0.0005) * (step / 200.0)
                 } else {
                     let decay = ((step - 200.0) * std::f32::consts::PI / 10000.0).cos();
                     0.0005 + (0.003 - 0.0005) * 0.5 * (1.0 + decay)
                 };
-                let loss = model.train_step(window, lr);
+
+                let loss = if let Some(ctx) = &context_tokens {
+                    // ENCODER-DECODER: context (tests) → target (solution)
+                    // This is the right way to train for "given tests, write code"
+                    model.train_enc_dec(ctx, target_window, lr)
+                } else {
+                    // DECODER-ONLY fallback: workspace code without test context
+                    model.train_step(target_window, lr)
+                };
                 total_loss += loss;
                 trained += 1;
             }
@@ -423,8 +436,8 @@ pub fn train_model(db: &SoulDatabase) {
     }
 }
 
-/// Generate code given a prompt. Returns None if model not ready.
-/// Minimum 10 training steps (was 100) — let it try earlier.
+/// Generate code given a prompt (test code context). Returns None if model not ready.
+/// Uses the encoder-decoder: encodes prompt (tests) once, then decodes solution tokens.
 pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<String> {
     let tok = load_tokenizer(db);
     if tok.merges.is_empty() {
@@ -442,17 +455,28 @@ pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<St
         return None;
     }
 
-    // Tokenize prompt
-    let mut tokens = vec![x402_model::bpe::BOS_TOKEN];
-    tokens.extend(tok.encode(prompt));
+    // Tokenize context (test code) for the encoder
+    let mut context_tokens = vec![x402_model::bpe::BOS_TOKEN];
+    context_tokens.extend(tok.encode(prompt));
+    context_tokens.push(x402_model::bpe::EOS_TOKEN);
+    if context_tokens.len() > model.max_seq {
+        context_tokens.truncate(model.max_seq);
+    }
 
-    // Generate token by token (greedy)
+    // Encode the context ONCE (bidirectional attention over test code)
+    let encoder_output = model.encode(&context_tokens);
+    let enc_len = context_tokens.len().min(model.max_seq);
+
+    // Start decoder with BOS token
+    let mut tokens = vec![x402_model::bpe::BOS_TOKEN];
+
+    // Generate token by token, conditioned on encoded context
     for _ in 0..max_tokens {
         if tokens.len() >= model.max_seq {
             break;
         }
 
-        let logits = model.forward(&tokens);
+        let logits = model.decode(&tokens, &encoder_output, enc_len);
 
         // Temperature sampling — explore diverse outputs instead of repeating
         // the same greedy argmax every time. Temperature 0.8 balances quality
@@ -490,8 +514,8 @@ pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<St
         tokens.push(next_token);
     }
 
-    // Decode (skip BOS + prompt tokens)
-    let prompt_len = 1 + tok.encode(prompt).len();
+    // Decode (skip BOS — decoder tokens are pure solution, no prompt mixed in)
+    let prompt_len = 1; // just BOS
     if tokens.len() <= prompt_len {
         tracing::debug!("codegen: generate produced no tokens");
         return None;
@@ -513,7 +537,19 @@ pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<St
 
 /// Record a successful code diff as training data for the codegen model.
 /// Called after successful commits — supplements benchmark solutions.
+/// Record a training example. If `context` is provided (test code), the
+/// encoder-decoder can train on (context → code) pairs for proper conditioning.
 pub fn record_training_example(db: &SoulDatabase, code: &str, source: &str) {
+    record_training_example_with_context(db, code, source, None);
+}
+
+/// Record a training example with optional test code context.
+pub fn record_training_example_with_context(
+    db: &SoulDatabase,
+    code: &str,
+    source: &str,
+    context: Option<&str>,
+) {
     if code.len() < 50 {
         return; // Too small to be useful
     }
@@ -525,11 +561,15 @@ pub fn record_training_example(db: &SoulDatabase, code: &str, source: &str) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    solutions.push(serde_json::json!({
+    let mut entry = serde_json::json!({
         "code": code,
         "source": source,
         "ts": chrono::Utc::now().timestamp(),
-    }));
+    });
+    if let Some(ctx) = context {
+        entry["context"] = serde_json::json!(ctx);
+    }
+    solutions.push(entry);
 
     // Cap at 1000
     if solutions.len() > 1000 {

@@ -1007,11 +1007,13 @@ pub async fn run_opus_benchmark_session(
             passed += 1;
             earned_weight += weight;
 
-            // Phase 3: store passing solution for codegen training
-            crate::codegen::record_training_example(
+            // Phase 3: store passing solution WITH test code for encoder-decoder training.
+            // The test code is the CONTEXT (encoder input), the solution is the TARGET (decoder output).
+            crate::codegen::record_training_example_with_context(
                 db,
                 &last_solution,
                 &format!("opus/{}", problem.slug),
+                Some(&problem.test_code),
             );
 
             // DATA MULTIPLIER: generate 2 alternative solutions for already-solved
