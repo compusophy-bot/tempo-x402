@@ -726,7 +726,10 @@ pub fn should_run_benchmark(db: &SoulDatabase, interval: u64) -> bool {
 /// Each run samples 15 problems x 1 Gemini call each = 15 API calls per session.
 pub const DEFAULT_BENCHMARK_INTERVAL: u64 = 5;
 /// Sample 15 problems per session (was 10) — broader coverage per run.
-pub const DEFAULT_SAMPLE_SIZE: usize = 15;
+/// 10 problems per session. Was 15 but benchmark has a 10-min timeout.
+/// Each problem = Gemini call (~10s) + cargo test (~30s) + retry (~30s) = ~70s.
+/// 10 × 70s = ~700s = ~12 min. Tight but usually completes within timeout.
+pub const DEFAULT_SAMPLE_SIZE: usize = 10;
 
 /// Run a benchmark session using Opus IQ problems (embedded, no network).
 /// Solve via LLM, validate via cargo test, record, train brain.
@@ -1016,43 +1019,11 @@ pub async fn run_opus_benchmark_session(
                 Some(&problem.test_code),
             );
 
-            // DATA MULTIPLIER: generate 2 alternative solutions for already-solved
-            // problems. Each verified solution = more training data. The tests are
-            // the oracle — any code that passes cargo test is ground truth.
-            // Only do this for problems we already solved (don't waste API on unsolved).
-            for alt_i in 0..2u32 {
-                // Ask for a DIFFERENT approach by injecting the first solution as context
-                let alt_context = vec![SharedFailure {
-                    task_id: task_id.clone(),
-                    entry_point: problem.slug.clone(),
-                    failed_solution: last_solution.clone(),
-                    error_output: "This solution PASSED but generate a COMPLETELY DIFFERENT \
-                        implementation using a different algorithm or data structure. \
-                        Do NOT copy this approach.".to_string(),
-                    attempted_by: format!("self (alt {alt_i})"),
-                }];
-                match generate_solution(llm, db, problem, &alt_context).await {
-                    Ok(alt_solution) if alt_solution != last_solution => {
-                        let (alt_ok, _) =
-                            validate_solution(problem, &alt_solution, workspace_root).await;
-                        if alt_ok {
-                            crate::codegen::record_training_example(
-                                db,
-                                &alt_solution,
-                                &format!("opus/{}/alt{alt_i}", problem.slug),
-                            );
-                            tracing::info!(
-                                slug = %problem.slug,
-                                alt = alt_i,
-                                "Opus: alternative solution VERIFIED — more training data"
-                            );
-                        }
-                        // Clean up after each alt to prevent /tmp growth
-                        let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
-                    }
-                    _ => {}
-                }
-            }
+            // NOTE: Alternative solution generation REMOVED from benchmark session.
+            // It was adding ~33 minutes (2 alts × 11 solved × 90s each), making
+            // benchmark sessions take 60+ minutes and timing out. Training data
+            // comes from benchmark solutions + workspace + deps. If we need more
+            // diversity, run a separate data generation step outside the benchmark.
 
             // Track codegen success
             if codegen_used {
