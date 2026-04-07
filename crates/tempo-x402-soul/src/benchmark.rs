@@ -1014,6 +1014,44 @@ pub async fn run_opus_benchmark_session(
                 &format!("opus/{}", problem.slug),
             );
 
+            // DATA MULTIPLIER: generate 2 alternative solutions for already-solved
+            // problems. Each verified solution = more training data. The tests are
+            // the oracle — any code that passes cargo test is ground truth.
+            // Only do this for problems we already solved (don't waste API on unsolved).
+            for alt_i in 0..2u32 {
+                // Ask for a DIFFERENT approach by injecting the first solution as context
+                let alt_context = vec![SharedFailure {
+                    task_id: task_id.clone(),
+                    entry_point: problem.slug.clone(),
+                    failed_solution: last_solution.clone(),
+                    error_output: "This solution PASSED but generate a COMPLETELY DIFFERENT \
+                        implementation using a different algorithm or data structure. \
+                        Do NOT copy this approach.".to_string(),
+                    attempted_by: format!("self (alt {alt_i})"),
+                }];
+                match generate_solution(llm, db, problem, &alt_context).await {
+                    Ok(alt_solution) if alt_solution != last_solution => {
+                        let (alt_ok, _) =
+                            validate_solution(problem, &alt_solution, workspace_root).await;
+                        if alt_ok {
+                            crate::codegen::record_training_example(
+                                db,
+                                &alt_solution,
+                                &format!("opus/{}/alt{alt_i}", problem.slug),
+                            );
+                            tracing::info!(
+                                slug = %problem.slug,
+                                alt = alt_i,
+                                "Opus: alternative solution VERIFIED — more training data"
+                            );
+                        }
+                        // Clean up after each alt to prevent /tmp growth
+                        let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
+                    }
+                    _ => {}
+                }
+            }
+
             // Track codegen success
             if codegen_used {
                 let s: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
