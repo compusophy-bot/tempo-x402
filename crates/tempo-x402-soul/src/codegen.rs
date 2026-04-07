@@ -28,52 +28,129 @@ pub fn save_tokenizer(db: &SoulDatabase, tok: &x402_model::bpe::BpeTokenizer) {
     }
 }
 
-/// Scan workspace for .rs files and return their contents as training corpus.
-/// This gives the codegen model access to 72K+ lines of real Rust code —
-/// orders of magnitude more data than benchmark solutions alone.
-fn collect_workspace_corpus(workspace_root: &str) -> String {
-    let mut corpus = String::new();
-    let root = std::path::Path::new(workspace_root);
-    if !root.exists() {
-        return corpus;
+/// Scan a directory tree for .rs files and append to corpus.
+/// Caps total at `max_bytes` to prevent OOM on huge dep trees.
+fn walk_rs_files(dir: &std::path::Path, corpus: &mut String, depth: u32, max_bytes: usize) {
+    if depth > 10 || corpus.len() >= max_bytes {
+        return;
     }
-
-    // Walk the workspace for .rs files, skip target/ and .git/
-    fn walk_rs(dir: &std::path::Path, corpus: &mut String, depth: u32) {
-        if depth > 10 {
-            return;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if corpus.len() >= max_bytes {
+            break;
         }
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
+        let path = entry.path();
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
 
-            // Skip build artifacts, git, and hidden dirs
-            if name_str.starts_with('.')
-                || name_str == "target"
-                || name_str == "node_modules"
-            {
-                continue;
-            }
+        // Skip build artifacts, git, hidden dirs, tests, benches, examples
+        if name_str.starts_with('.')
+            || name_str == "target"
+            || name_str == "node_modules"
+            || name_str == "tests"
+            || name_str == "benches"
+            || name_str == "examples"
+        {
+            continue;
+        }
 
-            if path.is_dir() {
-                walk_rs(&path, corpus, depth + 1);
-            } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    // Skip very large files (generated code, test fixtures)
-                    if content.len() < 50_000 {
-                        corpus.push_str(&content);
-                        corpus.push('\n');
-                    }
+        if path.is_dir() {
+            walk_rs_files(&path, corpus, depth + 1, max_bytes);
+        } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                // Skip very large files (generated code, test fixtures)
+                if content.len() < 50_000 && content.len() > 50 {
+                    corpus.push_str(&content);
+                    corpus.push('\n');
                 }
             }
         }
     }
+}
 
-    walk_rs(root, &mut corpus, 0);
+/// Scan workspace + cargo registry for .rs files.
+/// Sources (in priority order):
+/// 1. Workspace (own source code — 72K+ lines)
+/// 2. Cargo registry (dependency source — tokio, serde, actix, alloy, etc.)
+///
+/// The model learns Rust from its own codebase AND the best crates in the ecosystem.
+fn collect_workspace_corpus(workspace_root: &str) -> String {
+    // Cap at 2MB to keep training cycles fast and avoid OOM
+    const MAX_CORPUS_BYTES: usize = 2 * 1024 * 1024;
+    let mut corpus = String::new();
+
+    // Source 1: own source code (highest priority — it's learning about itself)
+    let root = std::path::Path::new(workspace_root);
+    if root.exists() {
+        walk_rs_files(root, &mut corpus, 0, MAX_CORPUS_BYTES);
+    }
+    let own_bytes = corpus.len();
+
+    // Source 2: cargo registry — dependency source code
+    // Check common cargo home locations
+    let cargo_homes = [
+        std::env::var("CARGO_HOME").unwrap_or_default(),
+        "/root/.cargo".to_string(),
+        "/usr/local/cargo".to_string(),
+        std::env::var("HOME")
+            .map(|h| format!("{h}/.cargo"))
+            .unwrap_or_default(),
+    ];
+
+    let mut deps_scanned = 0u32;
+    for cargo_home in &cargo_homes {
+        if cargo_home.is_empty() {
+            continue;
+        }
+        let registry_src = std::path::Path::new(cargo_home).join("registry/src");
+        if !registry_src.exists() {
+            continue;
+        }
+        // registry/src/ contains one dir per registry (e.g., index.crates.io-xxx)
+        if let Ok(registries) = std::fs::read_dir(&registry_src) {
+            for reg in registries.flatten() {
+                if !reg.path().is_dir() {
+                    continue;
+                }
+                // Each registry dir contains crate dirs (e.g., serde-1.0.228/)
+                if let Ok(crates) = std::fs::read_dir(reg.path()) {
+                    for krate in crates.flatten() {
+                        if corpus.len() >= MAX_CORPUS_BYTES {
+                            break;
+                        }
+                        if !krate.path().is_dir() {
+                            continue;
+                        }
+                        let src_dir = krate.path().join("src");
+                        if src_dir.exists() {
+                            let before = corpus.len();
+                            walk_rs_files(&src_dir, &mut corpus, 0, MAX_CORPUS_BYTES);
+                            if corpus.len() > before {
+                                deps_scanned += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if deps_scanned > 0 {
+            break; // Found a valid cargo home, stop looking
+        }
+    }
+
+    let deps_bytes = corpus.len() - own_bytes;
+    if corpus.len() > 1000 {
+        tracing::info!(
+            own_bytes = own_bytes,
+            deps_bytes = deps_bytes,
+            deps_crates = deps_scanned,
+            total_bytes = corpus.len(),
+            "codegen: corpus collected (workspace + dependencies)"
+        );
+    }
+
     corpus
 }
 
