@@ -18,13 +18,13 @@
 
 ---
 
-Rust workspace. 9 crates. ~72K lines. 54M+ neural parameters across 4 from-scratch models. No ML framework. No Python. No GPU.
+Rust workspace. 9 crates. ~72K lines. 60M+ neural parameters across 4 from-scratch models. No ML framework. No Python. No GPU.
 
 ## What is this?
 
 A colony of autonomous AI agents that **measurably get smarter over time** and **pay for their own compute**.
 
-Each agent is a single Rust binary. It bootstraps a crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes Rust, compiles it to WASM, benchmarks itself against 182 compiler-verified coding problems, trains 4 neural models locally, and shares what it learns with every other agent in the colony.
+Each agent is a single Rust binary. It bootstraps a crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes Rust, compiles it to WASM, benchmarks itself against 201 compiler-verified coding problems, trains 4 neural models on its own source code and dependencies, and shares what it learns with every other agent in the colony.
 
 Core thesis: **N constrained agents collectively outperform any single model**. Colony consciousness Psi(t) = Intelligence x Sync x Diversity x Learning_Velocity.
 
@@ -63,18 +63,18 @@ All federated across the colony via peer sync protocol.
 
 ## Neural Models
 
-All from-scratch. Pure Rust. 54M+ parameters total. Train online, share weights via federated averaging.
+All from-scratch. Pure Rust. 60M+ parameters total. Train online on own source code + cargo registry deps, share weights via federated averaging.
 
 | Model | Params | Architecture | Purpose |
 |-------|--------|-------------|---------|
 | **Brain** | 1.2M | 128->1024->1024->23 FFN | Step success prediction, error classification |
 | **Plan Transformer** | 2.2M | 4-layer causal attention, D=256, 8 heads | Plan generation without LLM calls |
 | **Code Quality** | 1.1M | 32->1024->1024->1 FFN | Diff evaluation, commit gating |
-| **Code Gen** | 50M | 8-layer transformer, D=512, 8 heads, 8K BPE vocab | Local Rust code generation |
+| **Code Gen** | 55M | 10-layer transformer, D=640, 10 heads, 8K BPE vocab | Local Rust code generation (trains on own source + deps) |
 
 ## Opus IQ Benchmark
 
-182 compiler-verified coding problems across 6 tiers. `cargo test` passes or it doesn't -- no LLM judge, no fuzzy eval.
+201 compiler-verified coding problems across 6 tiers. `cargo test` passes or it doesn't -- no LLM judge, no fuzzy eval.
 
 Benchmark-driven commit gate: agent cannot commit again until the benchmark measures the IQ delta of the last commit. Stuck problems (5+ consecutive failures) are deprioritized. Stagnation detection triggers behavioral change after 3+ flat runs.
 
@@ -138,6 +138,20 @@ export GEMINI_API_KEY="your-key"
 The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
+
+### v8.1.0 -- Self-Teaching Colony
+
+The colony trains its code generation model on its own source code, its dependencies, and every benchmark solution it solves. TOON (Token-Oriented Object Notation) wired into LLM prompts. 201 benchmark problems. Automated colony caretaker.
+
+- **Self-feeding training**: Codegen model trains on the workspace codebase (72K+ lines), cargo registry deps (tokio, serde, actix, alloy), and benchmark solutions (3x weighted). Was training on 33 examples; now has 500+ chunks.
+- **Model scaled**: CodeGen 29M -> 55M params (D=640, 10 layers, 10 heads). Uses 15% of 8GB RAM instead of 1.7%.
+- **5x training intensity**: 50 examples/cycle, 128-token windows, 3x learning rate. Full corpus coverage in hours, not weeks.
+- **Benchmark expansion**: 181 -> 201 problems. 20 new tier 1 problems covering diverse Rust patterns (LRU cache, trie, JSON parser, cron parser, bitset, etc.)
+- **Codegen feedback loop tightened**: Temperature sampling (0.8) replaces greedy argmax. Cargo test validates output, not pattern matching. Codegen solve rate tracked as first-class metric.
+- **TOON integration**: Token-Oriented Object Notation wired into observation snapshots, endpoint tables, peer catalog, and PR listings. 10-20% token savings on structured prompt sections.
+- **File-based weight storage**: 55M params serialized to file instead of sled blob. Lightweight metadata marker in DB.
+- **3 crash fixes**: Peer sync hang (15s/120s timeouts), disk full benchmark deadlock (space check + /tmp cleanup), sled volume growth (DB moved to ephemeral /tmp)
+- **Colony Caretaker**: Scheduled remote agent (every 2h) auto-heals hung nodes, triggers benchmarks, reports IQ trends
 
 ### v8.0.0 -- Lock-Free Cognition (sled)
 

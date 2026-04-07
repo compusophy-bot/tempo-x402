@@ -1,16 +1,17 @@
 # tempo-x402-model
 
-Three ML models for autonomous agent intelligence. Pure Rust, no external ML frameworks.
+Four ML models for autonomous agent intelligence. Pure Rust, no external ML frameworks.
 
 ## Models
 
 | Model | File | Params | Purpose |
 |-------|------|--------|---------|
+| Code Gen | `codegen.rs` | 55M | 10-layer decoder transformer, D=640, 10 heads, 8K BPE vocab. Trains on workspace + deps. |
 | Plan Transformer | `transformer.rs` | 2.2M | Predict optimal plan step sequences |
 | Code Quality | `quality.rs` | 1.1M | Evaluate whether code diffs improve the codebase |
 | Diff Features | `diff_features.rs` | — | Extract 32-dim feature vectors from git diffs |
 
-Total: 4.5M parameters across brain (in soul crate) + these two models.
+Total: 60M+ parameters across codegen + brain (in soul crate) + these models.
 
 ## Architecture Principle
 
@@ -33,7 +34,7 @@ None. Pure math — no runtime deps beyond serde.
 
 ## Scaling
 
-Models should grow with data. Current sizes are right for ~300 training examples. As colony generates more data (thousands of commits, benchmark runs), scale hidden dims up. We have 8 GB RAM available — currently using 18 MB.
+Models should grow with data. CodeGen scaled to 55M params (D=640, 10 layers) to use available RAM (~220MB of 8GB). Trains on workspace source code, cargo registry deps, and benchmark solutions. File-based weight storage (codegen_model.bin) instead of sled for large models.
 
 ## If You're Changing...
 
