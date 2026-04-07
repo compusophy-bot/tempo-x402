@@ -298,10 +298,13 @@ pub fn train_model(db: &SoulDatabase) {
     let mut total_loss = 0.0f32;
     let mut trained = 0u32;
 
-    // Train on 10 examples per cycle (was 5) — more data justifies more steps.
-    // Rotate through all examples over multiple cycles.
+    // Train on 50 examples per cycle — the model has 29M params and was only
+    // seeing 10 examples (150 gradient steps) per cycle. At that rate it would
+    // take thousands of cycles to see the full corpus once. 50 examples × ~15
+    // windows × weight = ~1000+ gradient steps per cycle. With cycles every
+    // few minutes, the model will see the full corpus in hours, not weeks.
     let offset = (model.train_steps as usize) % total_examples.max(1);
-    let batch_size = 10.min(total_examples);
+    let batch_size = 50.min(total_examples);
     for (code, weight) in examples.iter().cycle().skip(offset).take(batch_size) {
         // Skip very short code
         if code.len() < 50 {
@@ -324,17 +327,22 @@ pub fn train_model(db: &SoulDatabase) {
 
         // Repeat training on high-weight examples (verified solutions get 3x passes)
         for _ in 0..*weight {
-            // Train on sliding windows (64 tokens, step 32)
-            let window_size = 64.min(tokens.len());
-            for start in (0..tokens.len().saturating_sub(window_size)).step_by(32) {
+            // Train on sliding windows (128 tokens, step 64)
+            // Was 64/32 — too small to learn function-level patterns.
+            // 128 tokens ≈ 5-10 lines of Rust, enough to see a complete function.
+            let window_size = 128.min(tokens.len());
+            for start in (0..tokens.len().saturating_sub(window_size)).step_by(64) {
                 let end = (start + window_size).min(tokens.len());
                 let window = &tokens[start..end];
                 let step = model.train_steps as f32;
-                let lr = if step < 100.0 {
-                    0.0001 + (0.001 - 0.0001) * (step / 100.0)
+                // Higher LR to converge faster. Was 0.0001-0.001, now 0.0005-0.003.
+                // The model is at loss 9.2 (random). It needs aggressive updates
+                // to break out of the noise floor, not gentle nudges.
+                let lr = if step < 200.0 {
+                    0.0005 + (0.003 - 0.0005) * (step / 200.0)
                 } else {
-                    let decay = ((step - 100.0) * std::f32::consts::PI / 5000.0).cos();
-                    0.0001 + (0.001 - 0.0001) * 0.5 * (1.0 + decay)
+                    let decay = ((step - 200.0) * std::f32::consts::PI / 10000.0).cos();
+                    0.0005 + (0.003 - 0.0005) * 0.5 * (1.0 + decay)
                 };
                 let loss = model.train_step(window, lr);
                 total_loss += loss;
