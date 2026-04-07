@@ -208,6 +208,31 @@ impl ThinkingLoop {
         // Run once after deploy to clean corrupted data from the trivial plan loop
         self.run_trivial_plans_migration();
 
+        // ── v8.1.0: nuke old /data cruft on startup ──
+        // Soul DB moved to /tmp but old sled data still fills /data volume.
+        // PRESERVE: gateway.db, x402-nonces.db, identity.json (gateway needs these)
+        // DELETE: soul.sled, soul.db, workspace, brain_checkpoints, cartridges
+        {
+            let cleaned = [
+                "/data/soul.sled",
+                "/data/soul.db",
+                "/data/workspace",
+                "/data/brain_checkpoints",
+                "/data/cartridges",
+            ];
+            let mut freed = 0u32;
+            for path in &cleaned {
+                if std::path::Path::new(path).exists() {
+                    let _ = std::fs::remove_dir_all(path);
+                    freed += 1;
+                    tracing::info!(path, "Startup: removed old /data cruft");
+                }
+            }
+            if freed > 0 {
+                tracing::info!(freed, "Startup: cleaned old /data directories");
+            }
+        }
+
         tracing::info!(
             dormant = self.llm.is_none(),
             tools_enabled = self.config.tools_enabled,

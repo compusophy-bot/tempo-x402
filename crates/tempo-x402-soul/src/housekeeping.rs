@@ -762,11 +762,22 @@ fn cleanup_disk(workspace_root: &str) {
                 }
             }
         }
-        // Remove old SQLite files that may still exist from pre-v8 deploys
+        // Remove old SQLite files
         let _ = std::process::Command::new("sh")
             .args(["-c", "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null"])
             .output();
-        // Clean /tmp except soul and bench dirs
+        // Remove old sled database — soul DB moved to /tmp in v8.1.0.
+        // The old /data/soul.sled/ can be gigabytes of dead WAL segments.
+        let _ = std::fs::remove_dir_all("/data/soul.sled");
+        let _ = std::fs::remove_dir_all("/data/soul.db");
+        // Remove old brain checkpoints (all of them in emergency)
+        let _ = std::fs::remove_dir_all("/data/brain_checkpoints");
+        // Remove old workspace if it's still on /data
+        let _ = std::fs::remove_dir_all("/data/workspace");
+        // Remove old cartridge data
+        let _ = std::fs::remove_dir_all("/data/cartridges");
+        // DO NOT delete gateway.db, x402-nonces.db, identity.json — gateway needs them
+        // Clean /tmp build artifacts
         let _ = std::process::Command::new("sh")
             .args(["-c", "rm -rf /tmp/cargo-* /tmp/rustc* /tmp/cc* 2>/dev/null"])
             .output();
