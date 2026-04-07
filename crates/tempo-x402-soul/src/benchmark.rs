@@ -139,13 +139,11 @@ pub async fn generate_solution(
                     total_successes = successes,
                     "Codegen: local model produced output (weaning attempt)"
                 );
-                // Use it if it looks like Rust (lowered bar — let cargo test be the judge)
-                if local_code.contains("fn ") || local_code.contains("pub ") || local_code.contains("struct ") {
-                    // Flag that this solution came from local codegen (for success tracking)
-                    let _ = db.set_state("codegen_last_used", "1");
-                    return Ok(local_code);
-                }
-                tracing::info!(slug = %problem.slug, "Codegen: output rejected (no Rust patterns)");
+                // Let cargo test be the judge — any non-trivial output gets a chance.
+                // The whole point of the benchmark is to measure real capability.
+                // Pattern matching was rejecting potentially valid code.
+                let _ = db.set_state("codegen_last_used", "1");
+                return Ok(local_code);
             }
             Some(local_code) => {
                 tracing::debug!(
@@ -1115,17 +1113,30 @@ pub async fn run_opus_benchmark_session(
 
     let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
 
+    // Codegen vs Gemini stats — THE metric for real learning
+    let codegen_attempts: u64 = db.get_state("codegen_benchmark_attempts").ok().flatten()
+        .and_then(|s| s.parse().ok()).unwrap_or(0);
+    let codegen_successes: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
+        .and_then(|s| s.parse().ok()).unwrap_or(0);
+    let codegen_rate = if codegen_attempts > 0 {
+        codegen_successes as f64 / codegen_attempts as f64 * 100.0
+    } else { 0.0 };
+
     tracing::info!(
         weighted = format!("{:.1}%", weighted_score),
         raw = format!("{:.1}%", raw_rate),
         iq = format!("{:.0}", iq),
         passed = passed,
         attempted = attempted,
+        codegen_attempts = codegen_attempts,
+        codegen_successes = codegen_successes,
+        codegen_rate = format!("{:.1}%", codegen_rate),
         "Opus IQ benchmark session complete"
     );
 
-    // Store IQ for prompt injection
+    // Store IQ and codegen rate for prompt injection
     let _ = db.set_state("opus_iq", &format!("{:.0}", iq));
+    let _ = db.set_state("codegen_solve_rate", &format!("{:.1}", codegen_rate));
 
     // Update benchmark hints from failure analysis — improves future sessions
     update_benchmark_hints(db);

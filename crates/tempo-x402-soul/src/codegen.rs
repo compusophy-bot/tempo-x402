@@ -242,13 +242,34 @@ pub fn generate(db: &SoulDatabase, prompt: &str, max_tokens: usize) -> Option<St
 
         let logits = model.forward(&tokens);
 
-        // Argmax
-        let next_token = logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx as u32)
-            .unwrap_or(x402_model::bpe::EOS_TOKEN);
+        // Temperature sampling — explore diverse outputs instead of repeating
+        // the same greedy argmax every time. Temperature 0.8 balances quality
+        // and diversity. Without this, codegen produces identical output forever.
+        let temperature: f32 = 0.8;
+        let next_token = {
+            // Apply temperature
+            let scaled: Vec<f32> = logits.iter().map(|l| l / temperature).collect();
+            // Softmax
+            let max_logit = scaled.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let exps: Vec<f32> = scaled.iter().map(|l| (l - max_logit).exp()).collect();
+            let sum: f32 = exps.iter().sum();
+            let probs: Vec<f32> = exps.iter().map(|e| e / sum).collect();
+            // Sample from distribution using a simple LCG PRNG seeded from token position
+            let seed = (tokens.len() as u64)
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64);
+            let r = ((seed >> 16) as f32) / (u32::MAX as f32);
+            let mut cumulative = 0.0f32;
+            let mut chosen = 0u32;
+            for (i, p) in probs.iter().enumerate() {
+                cumulative += p;
+                if cumulative >= r {
+                    chosen = i as u32;
+                    break;
+                }
+            }
+            chosen
+        };
 
         if next_token == x402_model::bpe::EOS_TOKEN {
             break;
