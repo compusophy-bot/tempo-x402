@@ -53,16 +53,24 @@ pub fn ready_for_phase3(_psi: f64, training_examples: usize, _pass_at_1: f64) ->
 /// Estimated memory usage for the target model at fp16.
 pub const CODEGEN_MEMORY_MB: usize = CODEGEN_PARAMS * 2 / (1024 * 1024); // ~700 MB
 
-// ── Phase 3 Validation Model (50M params) ──────────────────────────
-// Smaller model to validate the training pipeline before scaling to 350M.
-// Same architecture, reduced dimensions.
+// ── Phase 3 Model — scaled to use available RAM ──────────────────────
+// 8GB available, was using 1.7%. Now using ~15% for a model that can
+// actually learn to generate Rust code.
+//
+// Param count: embeddings (8192×640=5.2M) + pos (512×640=0.3M)
+//   + 10 layers × (4×640×640 + 2×640×2560) = 10×(1.6M+3.3M) = 49M
+//   + bias = ~55M params × 4 bytes = ~220MB RAM
+//
+// This is 7.5x more capacity than before (29M → 55M) while staying
+// well under the 8GB limit. JSON serialization of 55M params is ~440MB
+// which is large but manageable for sled on /tmp.
 
-/// Validation model constants.
-pub const SMALL_D_MODEL: usize = 512;
-pub const SMALL_N_HEADS: usize = 8;
+/// Model constants — scaled for 8GB RAM.
+pub const SMALL_D_MODEL: usize = 640;
+pub const SMALL_N_HEADS: usize = 10;
 pub const SMALL_D_HEAD: usize = SMALL_D_MODEL / SMALL_N_HEADS; // 64
-pub const SMALL_N_LAYERS: usize = 8;
-pub const SMALL_D_FF: usize = 2048;
+pub const SMALL_N_LAYERS: usize = 10;
+pub const SMALL_D_FF: usize = 2560;
 pub const SMALL_MAX_SEQ: usize = 512;
 pub const SMALL_VOCAB: usize = 8192;
 
