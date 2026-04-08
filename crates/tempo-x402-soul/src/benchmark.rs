@@ -1090,9 +1090,9 @@ pub async fn run_opus_benchmark_session(
             &task_id,
         );
 
-        // Clean shared target dir after EVERY problem to prevent /tmp from filling.
-        // Deps recompile each time (~30s overhead) but that's better than OOM-crashing.
-        let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
+        // DON'T clean shared target dir between problems — deps compile once,
+        // then each exercise only recompiles its own lib + tests (~5s vs ~5min).
+        // The target dir is cleaned at session start and end only.
     }
 
     // Guard: if no problems were actually attempted (all API errors), skip scoring.
