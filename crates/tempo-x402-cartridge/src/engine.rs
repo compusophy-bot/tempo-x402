@@ -85,6 +85,13 @@ impl CartridgeEngine {
         self.modules.remove(slug);
     }
 
+    /// Atomic hot-swap: unload old module and load new one.
+    /// If loading fails, the old module is already gone (no rollback).
+    pub fn replace_module(&self, slug: &str, wasm_path: &Path) -> Result<(), CartridgeError> {
+        self.unload_module(slug);
+        self.load_module(slug, wasm_path)
+    }
+
     /// Unload all cached modules.
     pub fn unload_all(&self) {
         self.modules.clear();

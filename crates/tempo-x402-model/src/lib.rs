@@ -31,6 +31,7 @@ pub mod inference;
 pub mod quality;
 pub mod trainer;
 pub mod transformer;
+pub mod unified;
 pub mod vocab;
 
 pub use diff_features::DiffFeatures;

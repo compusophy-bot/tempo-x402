@@ -56,6 +56,7 @@ pub mod autonomy;
 pub mod benchmark;
 pub mod bloch;
 pub mod brain;
+pub mod cognitive_cartridge;
 pub mod capability;
 pub mod chat;
 pub mod code_quality;
