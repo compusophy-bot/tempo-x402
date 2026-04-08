@@ -471,7 +471,7 @@ async fn main() -> std::io::Result<()> {
                 child_env_vars.insert("SOUL_CODING_ENABLED".into(), "true".into());
                 child_env_vars.insert("SOUL_AUTONOMOUS_CODING".into(), "true".into());
                 child_env_vars.insert("SOUL_DYNAMIC_TOOLS_ENABLED".into(), "true".into());
-                child_env_vars.insert("SOUL_DB_PATH".into(), "/tmp/soul.db".into());
+                child_env_vars.insert("SOUL_DB_PATH".into(), "/data/soul.db".into());
                 child_env_vars.insert("SOUL_WORKSPACE_ROOT".into(), "/tmp/workspace".into());
                 child_env_vars.insert("SOUL_REQUIRE_PLAN_APPROVAL".into(), "false".into());
 

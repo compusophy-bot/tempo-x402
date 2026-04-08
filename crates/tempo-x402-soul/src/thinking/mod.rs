@@ -208,28 +208,26 @@ impl ThinkingLoop {
         // Run once after deploy to clean corrupted data from the trivial plan loop
         self.run_trivial_plans_migration();
 
-        // ── v8.1.0: nuke old /data cruft on startup ──
-        // Soul DB moved to /tmp but old sled data still fills /data volume.
-        // PRESERVE: gateway.db, x402-nonces.db, identity.json, cartridges (user content!)
-        // DELETE: soul.sled, soul.db, workspace, brain_checkpoints
-        {
-            let cleaned = [
-                "/data/soul.sled",
-                "/data/soul.db",
-                "/data/workspace",
-                "/data/brain_checkpoints",
-                // NOTE: /data/cartridges is NOT deleted — cartridges are user-created content
-            ];
-            let mut freed = 0u32;
-            for path in &cleaned {
-                if std::path::Path::new(path).exists() {
-                    let _ = std::fs::remove_dir_all(path);
-                    freed += 1;
-                    tracing::info!(path, "Startup: removed old /data cruft");
+        // Clean cargo build artifacts on startup (these fill disks, not weights).
+        let _ = std::fs::remove_dir_all("/tmp/workspace/target");
+        let _ = std::fs::remove_dir_all("/tmp/bench_target");
+        let _ = std::fs::remove_dir_all("/data/workspace/target");
+        let _ = std::fs::remove_dir_all("/data/brain_checkpoints");
+
+        // v9.0.0: delete old wasip1-compiled cartridge binaries.
+        // They were compiled with wasm32-wasip1, engine doesn't provide WASI.
+        // Source code preserved — only bin/ deleted so they recompile correctly.
+        if let Ok(entries) = std::fs::read_dir("/data/cartridges") {
+            for entry in entries.flatten() {
+                let bin = entry.path().join("bin");
+                // Only delete if it has a .wasm file (not pkg/ which is frontend)
+                if bin.exists() && !entry.path().join("bin/pkg").exists() {
+                    let _ = std::fs::remove_dir_all(&bin);
+                    tracing::info!(
+                        slug = %entry.file_name().to_string_lossy(),
+                        "Startup: removed old wasip1 cartridge binary (will recompile)"
+                    );
                 }
-            }
-            if freed > 0 {
-                tracing::info!(freed, "Startup: cleaned old /data directories");
             }
         }
 

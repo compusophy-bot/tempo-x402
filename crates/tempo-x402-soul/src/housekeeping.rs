@@ -766,14 +766,12 @@ fn cleanup_disk(workspace_root: &str) {
         let _ = std::process::Command::new("sh")
             .args(["-c", "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null"])
             .output();
-        // Remove old sled database — soul DB moved to /tmp in v8.1.0.
-        // The old /data/soul.sled/ can be gigabytes of dead WAL segments.
-        let _ = std::fs::remove_dir_all("/data/soul.sled");
-        let _ = std::fs::remove_dir_all("/data/soul.db");
-        // Remove old brain checkpoints (all of them in emergency)
+        // DO NOT delete /data/soul.sled — that's the live DB with weights + benchmarks.
+        // Remove brain checkpoints (regenerable from training)
         let _ = std::fs::remove_dir_all("/data/brain_checkpoints");
-        // Remove old workspace if it's still on /data
-        let _ = std::fs::remove_dir_all("/data/workspace");
+        // Remove workspace target/ (cargo build artifacts — the actual disk hogs)
+        let _ = std::fs::remove_dir_all("/data/workspace/target");
+        let _ = std::fs::remove_dir_all("/tmp/workspace/target");
         // Remove cartridge BUILD TARGETS only — preserve source code (user content)
         if let Ok(entries) = std::fs::read_dir("/data/cartridges") {
             for entry in entries.flatten() {

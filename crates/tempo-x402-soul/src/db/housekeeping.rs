@@ -381,6 +381,14 @@ impl SoulDatabase {
             return false; // Same architecture, no reset needed
         }
 
+        // Empty old_version = fresh DB (first boot or /tmp wipe).
+        // NOT an architecture change. Just set the version and move on.
+        if last_version.is_empty() {
+            let _ = self.set_state("cognitive_architecture_version", version);
+            tracing::info!(version, "Cognitive architecture version set (first boot)");
+            return false;
+        }
+
         tracing::warn!(
             old_version = %last_version,
             new_version = %version,
