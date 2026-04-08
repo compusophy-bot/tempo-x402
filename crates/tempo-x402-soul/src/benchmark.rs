@@ -113,47 +113,33 @@ pub async fn generate_solution(
     problem: &BenchmarkProblem,
     peer_failures: &[SharedFailure],
 ) -> Result<String, String> {
-    // Phase 3 weaning: try local codegen model first (saves Gemini credits).
-    // Feed it real problem context, not just the slug.
+    // Phase 3 weaning: DISABLED during benchmark.
+    // The encoder-decoder generate() does 512 autoregressive forward passes
+    // through the 15M model. Each pass processes the full context via cross-
+    // attention. On CPU this takes 5-10 minutes PER PROBLEM, completely
+    // blocking the benchmark session. Enable once loss drops below 4.0
+    // and generation is fast enough (<10s per problem).
+    //
+    // The codegen model still TRAINS on benchmark solutions — it just
+    // doesn't try to generate during the benchmark session itself.
     {
-        let codegen_prompt = format!(
-            "// Rust solution for: {}\n// Instructions: {}\n// Tests:\n{}\n\n",
-            problem.slug,
-            problem.instructions.chars().take(500).collect::<String>(),
-            problem.test_code.chars().take(1000).collect::<String>(),
-        );
-        let attempts: u64 = db.get_state("codegen_benchmark_attempts").ok().flatten()
-            .and_then(|s| s.parse().ok()).unwrap_or(0);
-        let successes: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
-            .and_then(|s| s.parse().ok()).unwrap_or(0);
-
-        match crate::codegen::generate(db, &codegen_prompt, 512) {
-            Some(local_code) if local_code.len() > 30 => {
-                let _ = db.set_state("codegen_benchmark_attempts", &(attempts + 1).to_string());
-                // Log every attempt — we need visibility into codegen quality
-                tracing::info!(
-                    slug = %problem.slug,
-                    chars = local_code.len(),
-                    has_fn = local_code.contains("fn "),
-                    total_attempts = attempts + 1,
-                    total_successes = successes,
-                    "Codegen: local model produced output (weaning attempt)"
-                );
-                // Let cargo test be the judge — any non-trivial output gets a chance.
-                // The whole point of the benchmark is to measure real capability.
-                // Pattern matching was rejecting potentially valid code.
-                let _ = db.set_state("codegen_last_used", "1");
-                return Ok(local_code);
-            }
-            Some(local_code) => {
-                tracing::debug!(
-                    slug = %problem.slug,
-                    chars = local_code.len(),
-                    "Codegen: output too short, falling back to Gemini"
-                );
-            }
-            None => {
-                tracing::debug!(slug = %problem.slug, "Codegen: model not ready or produced nothing");
+        let codegen_loss: f32 = db.get_state("codegen_loss_display")
+            .ok().flatten().and_then(|s| s.parse().ok()).unwrap_or(99.0);
+        if codegen_loss < 4.0 {
+            let codegen_prompt = format!(
+                "// Rust solution for: {}\n// Instructions: {}\n// Tests:\n{}\n\n",
+                problem.slug,
+                problem.instructions.chars().take(500).collect::<String>(),
+                problem.test_code.chars().take(1000).collect::<String>(),
+            );
+            // Only try with max 64 tokens (fast) — don't burn 512 tokens at ~1s each
+            match crate::codegen::generate(db, &codegen_prompt, 64) {
+                Some(local_code) if local_code.len() > 30 => {
+                    let _ = db.set_state("codegen_last_used", "1");
+                    tracing::info!(slug = %problem.slug, chars = local_code.len(), "Codegen: attempting local solution");
+                    return Ok(local_code);
+                }
+                _ => {}
             }
         }
     }
