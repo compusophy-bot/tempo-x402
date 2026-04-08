@@ -1,17 +1,19 @@
 # tempo-x402-model
 
-Four ML models for autonomous agent intelligence. Pure Rust, no external ML frameworks.
+ML models for autonomous agent intelligence. Pure Rust, no external ML frameworks.
 
 ## Models
 
 | Model | File | Params | Purpose |
 |-------|------|--------|---------|
-| Code Gen | `codegen.rs` | 55M | 10-layer decoder transformer, D=640, 10 heads, 8K BPE vocab. Trains on workspace + deps. |
-| Plan Transformer | `transformer.rs` | 2.2M | Predict optimal plan step sequences |
-| Code Quality | `quality.rs` | 1.1M | Evaluate whether code diffs improve the codebase |
+| **Unified** | `unified.rs` | 16M | Shared encoder (3 layers D=384) + fast head (classify) + slow decoder (generate). ALL tasks. |
+| Code Gen | `codegen.rs` | 15M | 3+3 encoder-decoder, D=384, 8K BPE. Test→code generation. (Being absorbed into unified.) |
+| Plan Transformer | `transformer.rs` | 2.2M | Plan step sequences. (Being absorbed into unified.) |
+| Code Quality | `quality.rs` | 1.1M | Diff quality evaluation. (Being absorbed into unified.) |
+| BPE Tokenizer | `bpe.rs` | — | Byte-pair encoding, 8K vocab, shared by all models |
 | Diff Features | `diff_features.rs` | — | Extract 32-dim feature vectors from git diffs |
 
-Total: 60M+ parameters across codegen + brain (in soul crate) + these models.
+The Unified Model is the target architecture: one encoder, all tasks, knowledge transfer.
 
 ## Architecture Principle
 

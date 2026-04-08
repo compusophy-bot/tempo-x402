@@ -5681,7 +5681,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "alloy",
  "base64 0.22.1",
@@ -5705,7 +5705,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-app"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "base64 0.22.1",
  "console_error_panic_hook",
@@ -5727,7 +5727,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-cartridge"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "chrono",
  "dashmap 6.1.0",
@@ -5743,7 +5743,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-gateway"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -5772,7 +5772,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-identity"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "alloy",
  "chrono",
@@ -5789,7 +5789,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-model"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "rayon",
  "serde",
@@ -5799,7 +5799,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-node"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "actix-files",
  "actix-governor",
@@ -5827,7 +5827,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-security-audit"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "regex",
  "walkdir",
@@ -5835,7 +5835,7 @@ dependencies = [
 
 [[package]]
 name = "tempo-x402-soul"
-version = "8.1.0"
+version = "9.0.0"
 dependencies = [
  "alloy",
  "base64 0.22.1",

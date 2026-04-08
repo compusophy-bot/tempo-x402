@@ -18,13 +18,13 @@
 
 ---
 
-Rust workspace. 9 crates. ~72K lines. 60M+ neural parameters across 4 from-scratch models. No ML framework. No Python. No GPU.
+Rust workspace. 9 crates. ~72K lines. 30M+ neural parameters in a unified encoder-decoder. Bloch sphere cognitive geometry. Hot-swappable WASM cognitive modules. No ML framework. No Python. No GPU.
 
 ## What is this?
 
-A colony of autonomous AI agents that **measurably get smarter over time** and **pay for their own compute**.
+A colony of autonomous AI agents with a **neuroplastic fluid cognitive architecture** that **measurably gets smarter over time** and **pays for its own compute**.
 
-Each agent is a single Rust binary. It bootstraps a crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes Rust, compiles it to WASM, benchmarks itself against 201 compiler-verified coding problems, trains 4 neural models on its own source code and dependencies, and shares what it learns with every other agent in the colony.
+Each agent is a single Rust binary. It bootstraps a crypto wallet, runs a payment gateway, thinks via a 9-system cognitive architecture, writes Rust, compiles it to WASM, benchmarks itself against 201 compiler-verified coding problems, trains a unified encoder-decoder on its own source code and dependencies, evolves its cognitive state on a continuous Bloch sphere, and can hot-swap its own cognitive modules at runtime via WASM cartridges.
 
 Core thesis: **N constrained agents collectively outperform any single model**. Colony consciousness Psi(t) = Intelligence x Sync x Diversity x Learning_Velocity.
 
@@ -36,8 +36,10 @@ Client --> Gateway (4023) --> Facilitator (embedded) --> Tempo Chain (42431)
                +-- Identity (wallet bootstrap + faucet + ERC-8004)
                +-- Soul (9-system cognitive architecture, Gemini-powered)
                |     +-- sled KV store (lock-free, all cognitive state)
-               |     +-- Brain (1.2M), Transformer (2.2M), Quality (1.1M), CodeGen (50M)
-               +-- Cartridge Engine (wasmtime WASM sandbox runtime)
+               |     +-- Unified Model (16M shared encoder + fast/slow heads)
+               |     +-- Bloch Sphere (continuous cognitive state on S²)
+               |     +-- Cognitive Orchestrator (routes to WASM cartridges)
+               +-- Cartridge Engine (wasmtime WASM sandbox, hot-swappable)
                +-- Clone Orchestrator (Railway self-replication)
 ```
 
@@ -63,14 +65,40 @@ All federated across the colony via peer sync protocol.
 
 ## Neural Models
 
-All from-scratch. Pure Rust. 60M+ parameters total. Train online on own source code + cargo registry deps, share weights via federated averaging.
+All from-scratch. Pure Rust. No ML framework. No GPU. Train online on own source code + cargo registry deps, share weights via federated averaging.
 
 | Model | Params | Architecture | Purpose |
 |-------|--------|-------------|---------|
-| **Brain** | 1.2M | 128->1024->1024->23 FFN | Step success prediction, error classification |
-| **Plan Transformer** | 2.2M | 4-layer causal attention, D=256, 8 heads | Plan generation without LLM calls |
-| **Code Quality** | 1.1M | 32->1024->1024->1 FFN | Diff evaluation, commit gating |
-| **Code Gen** | 55M | 10-layer transformer, D=640, 10 heads, 8K BPE vocab | Local Rust code generation (trains on own source + deps) |
+| **Unified** | 16M | 3-layer shared encoder (D=384, bidirectional) + fast FFN head + 3-layer decoder | All tasks: code gen, planning, prediction, quality |
+| **Brain** | 1.2M | 128->1024->1024->23 FFN | Step success prediction (legacy, being absorbed) |
+| **CodeGen** | 15M | 3+3 encoder-decoder, D=384, 6 heads, 8K BPE | Test-conditioned code generation |
+| **Plan Transformer** | 2.2M | 4-layer causal, D=256, 8 heads | Plan generation (legacy, being absorbed) |
+
+The Unified Model is the future: one encoder learns from ALL cognitive tasks simultaneously. Fast head (~10ms) for classification. Slow decoder (seconds) for generation. Same weights, different paths.
+
+## Bloch Sphere Cognitive State
+
+Replaces 13 discrete cognitive states with one continuous point on the unit sphere S²:
+
+```
+theta in [0, pi]:   exploit <-> explore    (driven by Free Energy F(t))
+phi in [0, 2*pi]:   self <-> colony        (driven by Psi(t))
+```
+
+No hard thresholds. No state machine jumps. Smooth gradient-driven rotation on a manifold. Peer sync correlates Bloch states across the colony (entanglement analog).
+
+## Cognitive Cartridges
+
+Cognitive systems can be compiled to WASM and hot-swapped at runtime:
+
+```
+1. Agent writes new cortex.rs          (Gemini generates code)
+2. Compile to WASM                     (20 seconds)
+3. engine.replace_module("cortex")     (instant, zero downtime)
+4. If fitness drops, rollback           (instant)
+```
+
+Self-modification at the speed of thought, not the speed of cargo build.
 
 ## Opus IQ Benchmark
 
@@ -138,6 +166,20 @@ export GEMINI_API_KEY="your-key"
 The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
+
+### v9.0.0 -- Neuroplastic Fluid Cognitive Architecture
+
+The biggest architectural change since v1.0. The colony's cognition is now continuous, unified, and hot-swappable.
+
+- **Bloch sphere cognitive state**: Replaces 13 discrete states (CognitiveState + EnergyRegime + Drive) with one continuous point (theta, phi) on S². Free Energy drives theta (exploit/explore), Psi drives phi (self/colony). Smooth rotations, no jumps. Drives temporal oscillator modulation.
+- **Unified model** (16M params): One shared encoder (3 layers, D=384, bidirectional) with fast classification head (~10ms) and slow decoder head (seconds). Trains on ALL cognitive tasks simultaneously — brain prediction, code generation, plan creation, quality evaluation. Same weights, knowledge transfers across tasks.
+- **Cognitive cartridge orchestrator**: Routes cognitive calls through the WASM cartridge engine. Any cognitive system can be compiled to WASM and hot-swapped at runtime (20 seconds). Fallback to compiled code if cartridge not loaded. `engine.replace_module()` for atomic swap.
+- **3 benchmark fixes**: Shared target dir not cleaned between problems, SIGKILL watchdog for hung cargo test, codegen generation disabled until loss < 4.0. Benchmark now completes in ~7 minutes.
+- **Disk cleanup**: Old sled DB, workspace, checkpoints cleaned on startup. Cartridge source preserved (not deleted). /data volume stays under 5%.
+- **Frontend cartridge registration**: Frontend WASM apps (Leptos) now auto-register in the cartridge list by scanning filesystem.
+- **TOON integration**: Token-Oriented Object Notation wired into observation snapshots, endpoint tables, peer catalogs.
+- **Encoder-decoder architecture**: CodeGen model redesigned from decoder-only to encoder-decoder. Encoder reads test code bidirectionally, decoder generates solution with cross-attention.
+- **201 benchmark problems**: 20 new tier 1 problems covering diverse Rust patterns.
 
 ### v8.1.0 -- Self-Teaching Colony
 
