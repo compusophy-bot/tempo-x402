@@ -774,8 +774,15 @@ fn cleanup_disk(workspace_root: &str) {
         let _ = std::fs::remove_dir_all("/data/brain_checkpoints");
         // Remove old workspace if it's still on /data
         let _ = std::fs::remove_dir_all("/data/workspace");
-        // Remove old cartridge data
-        let _ = std::fs::remove_dir_all("/data/cartridges");
+        // Remove cartridge BUILD TARGETS only — preserve source code (user content)
+        if let Ok(entries) = std::fs::read_dir("/data/cartridges") {
+            for entry in entries.flatten() {
+                let target = entry.path().join("bin/target");
+                let _ = std::fs::remove_dir_all(&target);
+                let pkg = entry.path().join("bin/pkg");
+                let _ = std::fs::remove_dir_all(&pkg);
+            }
+        }
         // DO NOT delete gateway.db, x402-nonces.db, identity.json — gateway needs them
         // Clean /tmp build artifacts
         let _ = std::process::Command::new("sh")

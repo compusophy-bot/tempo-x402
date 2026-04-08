@@ -210,15 +210,15 @@ impl ThinkingLoop {
 
         // ── v8.1.0: nuke old /data cruft on startup ──
         // Soul DB moved to /tmp but old sled data still fills /data volume.
-        // PRESERVE: gateway.db, x402-nonces.db, identity.json (gateway needs these)
-        // DELETE: soul.sled, soul.db, workspace, brain_checkpoints, cartridges
+        // PRESERVE: gateway.db, x402-nonces.db, identity.json, cartridges (user content!)
+        // DELETE: soul.sled, soul.db, workspace, brain_checkpoints
         {
             let cleaned = [
                 "/data/soul.sled",
                 "/data/soul.db",
                 "/data/workspace",
                 "/data/brain_checkpoints",
-                "/data/cartridges",
+                // NOTE: /data/cartridges is NOT deleted — cartridges are user-created content
             ];
             let mut freed = 0u32;
             for path in &cleaned {
