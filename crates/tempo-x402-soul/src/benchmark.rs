@@ -446,13 +446,49 @@ pub async fn validate_solution(
 
     // Run cargo test with shared target dir (deps compile once across all exercises)
     let output = tokio::time::timeout(
+        // Use spawn_blocking with std::process::Command + explicit kill.
+        // tokio::process::Command + tokio::time::timeout does NOT reliably
+        // kill cargo test — the timeout fires but the process keeps running,
+        // blocking the entire thinking loop for 60+ minutes.
         std::time::Duration::from_secs(120),
-        tokio::process::Command::new("cargo")
-            .arg("test")
-            .arg("--manifest-path")
-            .arg(format!("{test_dir}/Cargo.toml"))
-            .env("CARGO_TARGET_DIR", BENCHMARK_TARGET_DIR)
-            .output(),
+        tokio::task::spawn_blocking({
+            let test_dir = test_dir.clone();
+            move || {
+                let child = std::process::Command::new("cargo")
+                    .arg("test")
+                    .arg("--manifest-path")
+                    .arg(format!("{test_dir}/Cargo.toml"))
+                    .env("CARGO_TARGET_DIR", BENCHMARK_TARGET_DIR)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()?;
+
+                // Wait with timeout — KILL the process if it takes too long.
+                // std::process::Child::wait() blocks, so use a watchdog thread.
+                let pid = child.id();
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+                let killed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let killed2 = killed.clone();
+
+                // Watchdog: kill the process after 90s
+                std::thread::spawn(move || {
+                    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                    std::thread::sleep(remaining);
+                    // Send SIGKILL via kill command (works on Linux)
+                    let _ = std::process::Command::new("kill")
+                        .args(["-9", &pid.to_string()])
+                        .output();
+                    killed2.store(true, std::sync::atomic::Ordering::Relaxed);
+                });
+
+                let output = child.wait_with_output();
+                if killed.load(std::sync::atomic::Ordering::Relaxed) {
+                    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "cargo test killed after 90s"))
+                } else {
+                    output
+                }
+            }
+        }),
     )
     .await;
 
@@ -460,16 +496,14 @@ pub async fn validate_solution(
     let _ = tokio::fs::remove_dir_all(&test_dir).await;
 
     match output {
-        Ok(Ok(out)) => {
+        Ok(Ok(Ok(out))) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
             if out.status.success() {
                 (true, String::new())
             } else {
-                // Extract useful error info
                 let error = if stderr.contains("error[E") {
-                    // Compilation error — show the first few errors
                     stderr
                         .lines()
                         .filter(|l| l.contains("error") || l.contains("-->"))
@@ -477,7 +511,6 @@ pub async fn validate_solution(
                         .collect::<Vec<_>>()
                         .join("\n")
                 } else if stdout.contains("FAILED") {
-                    // Test failure
                     stdout.chars().take(500).collect()
                 } else {
                     format!(
@@ -489,12 +522,15 @@ pub async fn validate_solution(
                 (false, error)
             }
         }
-        Ok(Err(e)) => (false, format!("exec error: {e}")),
-        Err(_) => {
-            // Clean shared target dir on timeout to prevent cascade failures
-            let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
-            (false, "timeout (120s)".into())
+        Ok(Ok(Err(e))) => {
+            if e.kind() == std::io::ErrorKind::TimedOut {
+                (false, "cargo test killed after 90s".into())
+            } else {
+                (false, format!("exec error: {e}"))
+            }
         }
+        Ok(Err(_)) => (false, "spawn_blocking panicked".into()),
+        Err(_) => (false, "outer timeout (120s)".into()),
     }
 }
 
