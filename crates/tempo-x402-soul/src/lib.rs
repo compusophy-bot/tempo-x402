@@ -54,6 +54,7 @@
 pub mod acceleration;
 pub mod autonomy;
 pub mod benchmark;
+pub mod bloch;
 pub mod brain;
 pub mod capability;
 pub mod chat;

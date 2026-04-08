@@ -370,6 +370,20 @@ impl ThinkingLoop {
                 );
             }
 
+            // Bloch sphere: continuous cognitive state evolution.
+            // F(t) trend drives θ (exploit ↔ explore).
+            // Ψ(t) trend drives φ (self ↔ colony).
+            let bloch = crate::bloch::tick(&self.db, fe.trend, colony_status.psi_trend);
+            tracing::info!(
+                theta = format!("{:.2}", bloch.theta),
+                phi = format!("{:.2}", bloch.phi),
+                regime = bloch.regime(),
+                drive = bloch.drive(),
+                explore = format!("{:.0}%", bloch.exploration_factor() * 100.0),
+                colony = format!("{:.0}%", bloch.colony_factor() * 100.0),
+                "Bloch \u{03C8}" // ψ
+            );
+
             // Colony worker: check for benchmark assignment from queen and re-register
             if self.config.colony_role == crate::collective::ColonyRole::Worker {
                 if let Some(queen) = &self.config.queen_url {
