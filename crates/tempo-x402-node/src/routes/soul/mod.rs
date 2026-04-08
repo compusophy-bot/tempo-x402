@@ -100,6 +100,12 @@ struct SoulStatus {
     /// Colony consciousness: Psi, colony size, phase3 readiness (alias of role for convenience).
     #[serde(skip_serializing_if = "Option::is_none")]
     colony: Option<serde_json::Value>,
+    /// Bloch sphere: continuous cognitive state (theta, phi) on S².
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bloch: Option<serde_json::Value>,
+    /// Unified model: shared encoder with fast/slow heads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unified_model: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]

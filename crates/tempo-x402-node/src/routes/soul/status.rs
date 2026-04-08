@@ -535,6 +535,12 @@ pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
             x402_soul::colony::load_status(soul_db)
                 .and_then(|s| serde_json::to_value(&s).ok())
         },
+        bloch: {
+            Some(x402_soul::bloch::status(soul_db))
+        },
+        unified_model: {
+            Some(x402_soul::unified_training::status(soul_db))
+        },
     })
 }
 

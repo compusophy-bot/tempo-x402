@@ -77,6 +77,10 @@ pub struct SignalSnapshot {
     // Self-repair signals
     pub brain_divergence: f64,
     pub synthesis_surprise: f64,
+
+    // Bloch sphere modulation — continuous multipliers per operation.
+    // Computed from the Bloch state (theta, phi) each cycle.
+    pub bloch_modulation: std::collections::HashMap<String, f64>,
 }
 
 /// Collect all internal signals from cognitive systems.
@@ -211,6 +215,25 @@ pub fn compute_signals(db: &Arc<SoulDatabase>) -> SignalSnapshot {
         crate::synthesis::CognitiveState::Exploring => 0.3,
         _ => 0.1,
     };
+
+    // ── Bloch sphere modulation ──
+    // Compute continuous multipliers for each operation based on the
+    // current Bloch state (theta, phi). Blends with discrete regime_multiplier.
+    let bloch = crate::bloch::load_bloch(db);
+    let ops = [
+        OP_BRAIN_TRAINING,
+        OP_CORTEX_DREAMING,
+        OP_GENESIS_EVOLUTION,
+        OP_PEER_SYNC,
+        OP_BENCHMARK,
+        OP_THOUGHT_DECAY,
+        OP_SELF_REPAIR,
+        OP_MEMORY_CONSOLIDATION,
+    ];
+    for op in &ops {
+        s.bloch_modulation
+            .insert(op.to_string(), bloch.oscillator_modulation(op));
+    }
 
     s
 }
@@ -501,7 +524,14 @@ impl TemporalBinding {
 
         for osc in &mut self.oscillators {
             let urgency = compute_urgency(osc, signals);
-            let regime_mult = regime_multiplier(&signals.regime, &osc.name);
+            // Blend discrete regime multiplier with continuous Bloch sphere modulation.
+            // The Bloch sphere gives smooth, gradient-driven modulation instead of
+            // hard-coded regime × operation lookup tables.
+            let discrete_mult = regime_multiplier(&signals.regime, &osc.name);
+            let bloch_mult = signals.bloch_modulation.get(&osc.name)
+                .copied().unwrap_or(1.0);
+            // Blend: 50% discrete + 50% Bloch (gradual transition)
+            let regime_mult = 0.5 * discrete_mult + 0.5 * bloch_mult;
 
             if osc.tick(urgency, regime_mult) {
                 tracing::info!(
