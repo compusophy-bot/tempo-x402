@@ -835,53 +835,36 @@ fn recover_brain_from_peer() -> Option<Brain> {
         return None;
     }
 
-    // Use block_in_place to run async HTTP from sync context safely.
-    // This works if we're called from within a multi-threaded tokio runtime.
-    // If not, we cannot recover from peer in this sync call, so return None.
-    let result = std::panic::catch_unwind(|| {
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            tokio::task::block_in_place(|| {
-                handle.block_on(async {
-                    let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_secs(15))
-                        .build()
-                        .ok()?;
+    // Synchronous HTTP — no tokio bridging, no block_in_place, no panics.
+    // This runs from both async (thinking loop) and sync (actix worker) contexts.
+    let mut best_brain: Option<Brain> = None;
+    let mut best_steps = 0u64;
 
-                    let mut best_brain: Option<Brain> = None;
-                    let mut best_steps = 0u64;
-
-                    for url in &urls {
-                        let endpoint = format!("{}/soul/brain/weights", url.trim_end_matches('/'));
-                        match client.get(&endpoint).send().await {
-                            Ok(resp) if resp.status().is_success() => {
-                                if let Ok(json) = resp.text().await {
-                                    if let Some(brain) = Brain::from_json(&json) {
-                                        if brain.train_steps > best_steps {
-                                            best_steps = brain.train_steps;
-                                            best_brain = Some(brain);
-                                        }
-                                    }
-                                }
-                            }
-                            _ => continue,
-                        }
+    for url in &urls {
+        let endpoint = format!("{}/soul/brain/weights", url.trim_end_matches('/'));
+        let resp = std::process::Command::new("curl")
+            .args(["-s", "-m", "10", &endpoint])
+            .output();
+        match resp {
+            Ok(output) if output.status.success() => {
+                let json = String::from_utf8_lossy(&output.stdout);
+                if let Some(brain) = Brain::from_json(&json) {
+                    if brain.train_steps > best_steps {
+                        tracing::info!(
+                            peer = %url,
+                            steps = brain.train_steps,
+                            "Brain: recovered weights from peer"
+                        );
+                        best_steps = brain.train_steps;
+                        best_brain = Some(brain);
                     }
-
-                    best_brain
-                })
-            })
-        } else {
-            None
-        }
-    });
-
-    match result {
-        Ok(brain) => brain,
-        Err(_) => {
-            tracing::warn!("Brain peer recovery panicked — starting fresh");
-            None
+                }
+            }
+            _ => continue,
         }
     }
+
+    best_brain
 }
 
 /// Save brain to database + periodic disk checkpoint.
