@@ -633,6 +633,7 @@ impl ThinkingLoop {
             {
                 let db_train = self.db.clone();
                 tokio::task::spawn_blocking(move || {
+                    // Legacy models (still active — unified model trains alongside)
                     let (examples, loss) = crate::brain::train_cycle(&db_train);
                     if examples > 0 {
                         tracing::info!(examples, loss = format!("{:.4}", loss), "Brain trained");
@@ -643,6 +644,10 @@ impl ThinkingLoop {
                     }
                     crate::codegen::train_tokenizer(&db_train);
                     crate::codegen::train_model(&db_train);
+
+                    // Unified model — trains on ALL tasks simultaneously.
+                    // Shares encoder weights across brain/quality/codegen/plan.
+                    crate::unified_training::train_cycle(&db_train);
                 });
                 // Don't await — training runs in background, thinking loop continues
             }

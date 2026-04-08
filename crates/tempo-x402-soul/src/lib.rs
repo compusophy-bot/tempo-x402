@@ -97,6 +97,7 @@ pub mod synthesis;
 pub mod temporal;
 pub mod thinking;
 pub mod toon;
+pub mod unified_training;
 pub mod tool_decl;
 pub mod tool_registry;
 pub mod tools;
