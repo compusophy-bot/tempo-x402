@@ -19,10 +19,7 @@ pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
         let loaded = engine.loaded_slugs();
         for slug in &loaded {
             if let Ok(None) = db::get_cartridge(&state.gateway.db, slug) {
-                // Not active in DB — either soft-deleted or never registered.
-                // Upsert will reactivate soft-deleted records or create new ones.
                 let now = chrono::Utc::now().timestamp();
-                // Detect if it's a frontend cartridge (has pkg/ dir)
                 let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {
                     "frontend".to_string()
                 } else {
@@ -45,6 +42,39 @@ pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
                     cartridge_type: cart_type,
                 };
                 let _ = db::upsert_cartridge(&state.gateway.db, &record);
+            }
+        }
+    }
+
+    // Auto-register frontend cartridges from filesystem.
+    // Frontend cartridges are NOT loaded into wasmtime — they're served as
+    // static JS/WASM files. So engine.loaded_slugs() doesn't see them.
+    // Scan /data/cartridges/ for any with bin/pkg/ (compiled frontend packages).
+    if let Ok(entries) = std::fs::read_dir("/data/cartridges") {
+        for entry in entries.flatten() {
+            let slug = entry.file_name().to_string_lossy().to_string();
+            let pkg_dir = entry.path().join("bin/pkg");
+            if pkg_dir.exists() {
+                if let Ok(None) = db::get_cartridge(&state.gateway.db, &slug) {
+                    let now = chrono::Utc::now().timestamp();
+                    let record = db::CartridgeRecord {
+                        slug: slug.clone(),
+                        name: slug.clone(),
+                        description: None,
+                        version: "0.1.0".to_string(),
+                        price_usd: "$0.001".to_string(),
+                        price_amount: "1000".to_string(),
+                        owner_address: String::new(),
+                        source_repo: None,
+                        wasm_path: format!("/data/cartridges/{slug}/bin/pkg"),
+                        wasm_hash: String::new(),
+                        active: true,
+                        created_at: now,
+                        updated_at: now,
+                        cartridge_type: "frontend".to_string(),
+                    };
+                    let _ = db::upsert_cartridge(&state.gateway.db, &record);
+                }
             }
         }
     }

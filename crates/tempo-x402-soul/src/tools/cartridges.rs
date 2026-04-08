@@ -112,6 +112,8 @@ impl ToolExecutor {
             {
                 Ok(pkg_dir) => {
                     let duration_ms = start.elapsed().as_millis() as u64;
+                    // Frontend cartridges are auto-registered by list_cartridges()
+                    // when it scans /data/cartridges/ for dirs with bin/pkg/.
                     return Ok(ToolResult {
                         stdout: format!(
                             "Frontend cartridge '{slug}' compiled successfully!\n\
