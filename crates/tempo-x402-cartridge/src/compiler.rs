@@ -517,12 +517,34 @@ pub async fn compile_frontend_cartridge(
         CartridgeError::CompilationFailed(format!("wasm-bindgen failed to start: {e}"))
     })?;
 
+    let bindgen_stderr = String::from_utf8_lossy(&bindgen_output.stderr).to_string();
+    let bindgen_stdout = String::from_utf8_lossy(&bindgen_output.stdout).to_string();
+
     if !bindgen_output.status.success() {
-        let stderr = String::from_utf8_lossy(&bindgen_output.stderr);
         return Err(CartridgeError::CompilationFailed(format!(
-            "wasm-bindgen failed: {stderr}"
+            "wasm-bindgen failed: {bindgen_stderr}"
         )));
     }
+
+    // Log any warnings from wasm-bindgen
+    if !bindgen_stderr.is_empty() {
+        tracing::warn!(stderr = %bindgen_stderr, "wasm-bindgen warnings");
+    }
+
+    // Verify pkg directory actually has files
+    let mut pkg_files = 0u32;
+    if let Ok(mut entries) = tokio::fs::read_dir(&pkg_dir).await {
+        while let Ok(Some(_)) = entries.next_entry().await {
+            pkg_files += 1;
+        }
+    }
+    if pkg_files == 0 {
+        return Err(CartridgeError::CompilationFailed(format!(
+            "wasm-bindgen produced no output files in {}\nstdout: {bindgen_stdout}\nstderr: {bindgen_stderr}",
+            pkg_dir.display()
+        )));
+    }
+    tracing::info!(files = pkg_files, dir = %pkg_dir.display(), "Frontend: wasm-bindgen output verified");
 
     // Clean up cargo build directory
     let _ = tokio::fs::remove_dir_all(&target_dir).await;
@@ -530,19 +552,11 @@ pub async fn compile_frontend_cartridge(
     Ok(pkg_dir)
 }
 
-/// Find wasm-bindgen binary — check PATH, then trunk's tools directory.
+/// Find wasm-bindgen binary — prefer trunk's version (matches build), then PATH.
 fn find_wasm_bindgen() -> Option<String> {
-    // Check PATH first
-    if std::process::Command::new("wasm-bindgen")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return Some("wasm-bindgen".to_string());
-    }
-
-    // Search trunk's tools directory
+    // Search trunk's tools directory FIRST — this version matches the
+    // wasm-bindgen crate version used during the app build, avoiding
+    // version mismatches that cause silent failures.
     let trunk_dir = std::path::Path::new("/root/.trunk/tools");
     if let Ok(entries) = std::fs::read_dir(trunk_dir) {
         for entry in entries.flatten() {
@@ -553,7 +567,7 @@ fn find_wasm_bindgen() -> Option<String> {
         }
     }
 
-    // Search common install locations
+    // Common install locations
     for path in &[
         "/usr/local/cargo/bin/wasm-bindgen",
         "/root/.cargo/bin/wasm-bindgen",
@@ -561,6 +575,16 @@ fn find_wasm_bindgen() -> Option<String> {
         if std::path::Path::new(path).exists() {
             return Some(path.to_string());
         }
+    }
+
+    // Fall back to PATH
+    if std::process::Command::new("wasm-bindgen")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Some("wasm-bindgen".to_string());
     }
 
     None
