@@ -29,19 +29,19 @@ pub async fn compile_cartridge(
     // Ensure output directory exists
     tokio::fs::create_dir_all(output_dir).await?;
 
-    // Ensure wasm32-wasip1 target is installed (might not be at runtime)
+    // Ensure wasm32-unknown-unknown target is installed (might not be at runtime)
     let target_check = tokio::process::Command::new("rustup")
         .args(["target", "list", "--installed"])
         .output()
         .await;
     let has_wasip1 = target_check
         .as_ref()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("wasm32-wasip1"))
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("wasm32-unknown-unknown"))
         .unwrap_or(false);
     if !has_wasip1 {
-        tracing::info!("Installing wasm32-wasip1 target for cartridge compilation");
+        tracing::info!("Installing wasm32-unknown-unknown target for cartridge compilation");
         let _ = tokio::process::Command::new("rustup")
-            .args(["target", "add", "wasm32-wasip1"])
+            .args(["target", "add", "wasm32-unknown-unknown"])
             .output()
             .await;
     }
@@ -52,14 +52,14 @@ pub async fn compile_cartridge(
         source_dir.file_name().unwrap_or_default().to_string_lossy()
     );
 
-    // Build with wasm32-wasip1 target
+    // Build with wasm32-unknown-unknown target
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(COMPILE_TIMEOUT_SECS),
         tokio::process::Command::new("cargo")
             .args([
                 "build",
                 "--target",
-                "wasm32-wasip1",
+                "wasm32-unknown-unknown",
                 "--release",
                 "--manifest-path",
             ])
@@ -89,7 +89,7 @@ pub async fn compile_cartridge(
     }
 
     // Find the compiled .wasm binary in the target directory
-    let release_dir_path = format!("{}/wasm32-wasip1/release", target_dir);
+    let release_dir_path = format!("{}/wasm32-unknown-unknown/release", target_dir);
     let pattern = format!("{}/*.wasm", release_dir_path);
 
     let release_dir = std::path::PathBuf::from(&release_dir_path);
@@ -153,6 +153,12 @@ pub fn default_lib_rs(slug: &str) -> String {
 //! This cartridge handles HTTP requests via the x402 host ABI.
 //! The host calls `x402_handle` with a JSON request.
 //! Call `x402_response` to set the HTTP response.
+
+#![no_std]
+#![no_main]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
 
 // Import host functions from the x402 namespace.
 // The #[link] attribute ensures WASM imports come from "x402" module, not "env".
@@ -229,6 +235,12 @@ pub fn default_interactive_lib_rs(slug: &str) -> String {
 //! This cartridge renders to a framebuffer. The host calls x402_tick()
 //! every frame, reads pixels via x402_get_framebuffer(), and blits to canvas.
 //! Arrow keys are forwarded via x402_key_down/x402_key_up.
+
+#![no_std]
+#![no_main]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! { loop {} }
 
 const WIDTH: usize = 320;
 const HEIGHT: usize = 240;
