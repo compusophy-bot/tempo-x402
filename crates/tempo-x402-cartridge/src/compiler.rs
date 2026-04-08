@@ -495,9 +495,13 @@ pub async fn compile_frontend_cartridge(
     let pkg_dir = output_dir.join("pkg");
     tokio::fs::create_dir_all(&pkg_dir).await?;
 
+    // Find wasm-bindgen — might be in PATH or in trunk's tools directory
+    let wasm_bindgen_bin = find_wasm_bindgen().unwrap_or_else(|| "wasm-bindgen".to_string());
+    tracing::info!(bin = %wasm_bindgen_bin, "Frontend: running wasm-bindgen");
+
     let bindgen_output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        tokio::process::Command::new("wasm-bindgen")
+        tokio::process::Command::new(&wasm_bindgen_bin)
             .args([
                 "--target",
                 "web",
@@ -524,6 +528,42 @@ pub async fn compile_frontend_cartridge(
     let _ = tokio::fs::remove_dir_all(&target_dir).await;
 
     Ok(pkg_dir)
+}
+
+/// Find wasm-bindgen binary — check PATH, then trunk's tools directory.
+fn find_wasm_bindgen() -> Option<String> {
+    // Check PATH first
+    if std::process::Command::new("wasm-bindgen")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Some("wasm-bindgen".to_string());
+    }
+
+    // Search trunk's tools directory
+    let trunk_dir = std::path::Path::new("/root/.trunk/tools");
+    if let Ok(entries) = std::fs::read_dir(trunk_dir) {
+        for entry in entries.flatten() {
+            let bin = entry.path().join("wasm-bindgen");
+            if bin.exists() {
+                return Some(bin.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Search common install locations
+    for path in &[
+        "/usr/local/cargo/bin/wasm-bindgen",
+        "/root/.cargo/bin/wasm-bindgen",
+    ] {
+        if std::path::Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+
+    None
 }
 
 /// Detect if a cartridge source is a frontend cartridge by checking Cargo.toml.
