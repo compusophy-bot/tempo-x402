@@ -439,9 +439,12 @@ impl ThinkingLoop {
                                 Ok(weighted_score) => {
                                     let iq =
                                         crate::opus_bench::weighted_score_to_iq(weighted_score);
+                                    // Compute worker's own ELO from its local results
+                                    crate::elo::update_rating(&self.db, weighted_score);
                                     tracing::info!(
                                         iq = format!("{:.0}", iq),
                                         score = format!("{:.1}%", weighted_score),
+                                        elo = crate::elo::rating_display(&self.db),
                                         "Worker: benchmark partition complete"
                                     );
                                     // Report results to queen
