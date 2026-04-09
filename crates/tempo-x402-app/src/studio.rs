@@ -634,15 +634,21 @@ pub fn StudioPage() -> impl IntoView {
                                 let (load_error, set_load_error) = create_signal(Option::<String>::None);
                                 let (loading, set_loading) = create_signal(true);
 
-                                // Load the frontend cartridge on mount
-                                spawn_local(async move {
-                                    match crate::cartridge_runner::load_frontend_cartridge(&slug_for_load, &mount_id_for_load).await {
-                                        Ok(()) => set_loading.set(false),
-                                        Err(e) => {
-                                            set_loading.set(false);
-                                            set_load_error.set(Some(e));
+                                // Load the frontend cartridge once — use create_effect to
+                                // avoid re-loading on every reactive re-render
+                                create_effect(move |ran| {
+                                    if ran.is_some() { return; } // only run once
+                                    let slug = slug_for_load.clone();
+                                    let mount = mount_id_for_load.clone();
+                                    spawn_local(async move {
+                                        match crate::cartridge_runner::load_frontend_cartridge(&slug, &mount).await {
+                                            Ok(()) => set_loading.set(false),
+                                            Err(e) => {
+                                                set_loading.set(false);
+                                                set_load_error.set(Some(e));
+                                            }
                                         }
-                                    }
+                                    });
                                 });
 
                                 view! {

@@ -78,12 +78,14 @@ impl ToolExecutor {
         std::fs::create_dir_all(&bin_dir).map_err(|e| format!("failed to create bin dir: {e}"))?;
 
         // Write Cargo.toml + lib.rs based on cartridge type
+        // Frontend cartridges MUST use the template — it exports init(selector)
+        // which the Studio calls to mount the app into the correct DOM element.
+        // User source_code with mount_to_body() or wasm_bindgen(start) breaks
+        // Studio display (renders outside the panel or not at all).
         let (cargo_toml, lib_rs, cartridge_type) = if frontend {
             (
                 x402_cartridge::compiler::frontend_cargo_toml(slug),
-                source_code
-                    .map(String::from)
-                    .unwrap_or_else(|| x402_cartridge::compiler::frontend_lib_rs(slug)),
+                x402_cartridge::compiler::frontend_lib_rs(slug),
                 "frontend (Leptos DOM app)",
             )
         } else if interactive {
