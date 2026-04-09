@@ -78,14 +78,30 @@ impl ToolExecutor {
         std::fs::create_dir_all(&bin_dir).map_err(|e| format!("failed to create bin dir: {e}"))?;
 
         // Write Cargo.toml + lib.rs based on cartridge type
-        // Frontend cartridges MUST use the template — it exports init(selector)
-        // which the Studio calls to mount the app into the correct DOM element.
-        // User source_code with mount_to_body() or wasm_bindgen(start) breaks
-        // Studio display (renders outside the panel or not at all).
         let (cargo_toml, lib_rs, cartridge_type) = if frontend {
+            let lib = match source_code {
+                Some(code) => {
+                    // Transform user source to use init(selector) pattern instead of
+                    // mount_to_body / wasm_bindgen(start). The Studio mounts cartridges
+                    // into a specific DOM element, not <body>.
+                    let mut transformed = code.to_string();
+                    // Replace mount_to_body with mount_to using the selector
+                    transformed = transformed.replace(
+                        "mount_to_body(",
+                        "{ let doc = web_sys::window().unwrap().document().unwrap(); let el = doc.query_selector(selector).unwrap().unwrap(); mount_to(el.unchecked_into(), ",
+                    );
+                    // Replace #[wasm_bindgen(start)] with regular init export
+                    transformed = transformed.replace("#[wasm_bindgen(start)]", "#[wasm_bindgen]");
+                    transformed = transformed.replace("#[wasm_bindgen::prelude::wasm_bindgen(start)]", "#[wasm_bindgen::prelude::wasm_bindgen]");
+                    // Replace pub fn main() with pub fn init(selector: &str)
+                    transformed = transformed.replace("pub fn main()", "pub fn init(selector: &str)");
+                    transformed
+                }
+                None => x402_cartridge::compiler::frontend_lib_rs(slug),
+            };
             (
                 x402_cartridge::compiler::frontend_cargo_toml(slug),
-                x402_cartridge::compiler::frontend_lib_rs(slug),
+                lib,
                 "frontend (Leptos DOM app)",
             )
         } else if interactive {
@@ -120,7 +136,9 @@ impl ToolExecutor {
                 interactive_note = if frontend {
                     "This is a FRONTEND cartridge — a full Leptos app that mounts into the Studio.\n\
                      It compiles to wasm32-unknown-unknown via wasm-bindgen (not wasip1).\n\
-                     The init(selector) function mounts the app into a DOM element.\n\
+                     IMPORTANT: Do NOT use mount_to_body() or #[wasm_bindgen(start)].\n\
+                     Use init(selector) pattern: #[wasm_bindgen] pub fn init(selector: &str)\n\
+                     with mount_to(el, App) to mount into the Studio's DOM element.\n\
                      You can use leptos view! macros, web-sys, and full DOM APIs.\n"
                 } else if interactive {
                     "Template includes: x402_init, x402_tick, x402_key_down/up, x402_get_framebuffer,\n\
