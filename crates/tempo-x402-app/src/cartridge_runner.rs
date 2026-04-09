@@ -388,13 +388,22 @@ pub async fn load_frontend_cartridge(slug: &str, mount_id: &str) -> Result<(), S
 
     // Use dynamic import() to load the JS glue module, then init WASM and mount.
     // Some cartridges export `init(selector)` (template pattern), others use
-    // `#[wasm_bindgen(start)]` which auto-runs on load. Handle both.
+    // `#[wasm_bindgen(start)]` which auto-runs on load and call mount_to_body().
+    // For the latter, we capture any new children added to <body> during init
+    // and move them into the Studio mount div.
     let script = format!(
         r#"(async () => {{
+            const mount = document.getElementById('{mount_id}');
+            const bodyCountBefore = document.body.children.length;
             const mod = await import('{js_url}');
             await mod.default('{wasm_url}');
             if (typeof mod.init === 'function') {{
                 mod.init('#{mount_id}');
+            }} else if (mount) {{
+                // wasm_bindgen(start) mounted to body — move new content into mount div
+                while (document.body.children.length > bodyCountBefore) {{
+                    mount.appendChild(document.body.children[bodyCountBefore]);
+                }}
             }}
         }})()"#
     );

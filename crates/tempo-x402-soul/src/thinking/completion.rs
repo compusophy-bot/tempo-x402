@@ -89,10 +89,26 @@ impl ThinkingLoop {
         plan.status = PlanStatus::Completed;
         self.db.update_plan(plan)?;
         let _ = self.db.set_state("active_plan_id", "");
-        let _ = self.db.set_state(
-            "last_plan_completed_at",
-            &chrono::Utc::now().timestamp().to_string(),
-        );
+        let now = chrono::Utc::now().timestamp();
+        let _ = self.db.set_state("last_plan_completed_at", &now.to_string());
+
+        // Auto-complete the goal when a substantive plan succeeds.
+        // Previously, goals were only completed if the LLM reflection explicitly
+        // returned a `complete_goal` operation — which it often didn't, causing
+        // infinite loops where the same goal kept getting re-planned.
+        let is_substantive = plan.executed_substantive();
+        if is_substantive {
+            let _ = self.db.update_goal(
+                &plan.goal_id,
+                Some("completed"),
+                Some("auto-completed: plan succeeded"),
+                Some(now),
+            );
+            tracing::info!(
+                goal_id = %plan.goal_id,
+                "Goal auto-completed after substantive plan success"
+            );
+        }
 
         // Emit structured event
         crate::events::emit_event(

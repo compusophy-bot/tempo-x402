@@ -885,7 +885,9 @@ impl<'a> PlanExecutor<'a> {
                 } else if !result.stderr.is_empty() {
                     StepResult::Failed(result.stderr)
                 } else {
-                    StepResult::Success(result.stdout)
+                    // Non-zero exit with empty stderr — the error is in stdout
+                    // (e.g. commit_changes returns exit_code=1 when cargo test fails)
+                    StepResult::Failed(result.stdout)
                 }
             }
             Err(e) => StepResult::Failed(e),
