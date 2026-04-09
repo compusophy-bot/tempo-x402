@@ -213,11 +213,7 @@ impl SoulDatabase {
             .events
             .iter()
             .filter_map(|r| r.ok())
-            .filter_map(|(k, v)| {
-                serde_json::from_slice::<SoulEvent>(&v)
-                    .ok()
-                    .map(|e| (k, e))
-            })
+            .filter_map(|(k, v)| serde_json::from_slice::<SoulEvent>(&v).ok().map(|e| (k, e)))
             .collect();
 
         // Determine which keys to delete based on tiered retention

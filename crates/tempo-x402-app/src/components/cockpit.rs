@@ -53,10 +53,9 @@ pub fn CockpitPage() -> impl IntoView {
             }
 
             // System metrics
-            if let Ok(resp) =
-                gloo_net::http::Request::get(&format!("{}/soul/system", base))
-                    .send()
-                    .await
+            if let Ok(resp) = gloo_net::http::Request::get(&format!("{}/soul/system", base))
+                .send()
+                .await
             {
                 if resp.ok() {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {

@@ -14,38 +14,6 @@ use crate::state::NodeState;
 /// `GET /c` — list all registered cartridges.
 /// Also auto-registers any engine-loaded modules missing from DB (e.g. compiled at runtime by soul).
 pub async fn list_cartridges(state: web::Data<NodeState>) -> HttpResponse {
-    // Auto-register engine-loaded modules not yet active in DB
-    if let Some(ref engine) = state.cartridge_engine {
-        let loaded = engine.loaded_slugs();
-        for slug in &loaded {
-            if let Ok(None) = db::get_cartridge(&state.gateway.db, slug) {
-                let now = chrono::Utc::now().timestamp();
-                let cart_type = if std::path::Path::new(&format!("/data/cartridges/{slug}/bin/pkg")).exists() {
-                    "frontend".to_string()
-                } else {
-                    "backend".to_string()
-                };
-                let record = db::CartridgeRecord {
-                    slug: slug.clone(),
-                    name: slug.clone(),
-                    description: None,
-                    version: "0.1.0".to_string(),
-                    price_usd: "$0.001".to_string(),
-                    price_amount: "1000".to_string(),
-                    owner_address: String::new(),
-                    source_repo: None,
-                    wasm_path: format!("/data/cartridges/{slug}/bin/{slug}.wasm"),
-                    wasm_hash: String::new(),
-                    active: true,
-                    created_at: now,
-                    updated_at: now,
-                    cartridge_type: cart_type,
-                };
-                let _ = db::upsert_cartridge(&state.gateway.db, &record);
-            }
-        }
-    }
-
     // Auto-register frontend cartridges from filesystem.
     // Frontend cartridges are NOT loaded into wasmtime — they're served as
     // static JS/WASM files. So engine.loaded_slugs() doesn't see them.
@@ -226,16 +194,26 @@ pub async fn handle_cartridge(
     let slug_clone = slug.clone();
     let result = web::block(move || engine.execute(&slug_clone, &cartridge_request, kv, 30))
         .await
-        .unwrap_or_else(|e| Err(x402_cartridge::CartridgeError::ExecutionFailed(format!("block: {e}"))));
+        .unwrap_or_else(|e| {
+            Err(x402_cartridge::CartridgeError::ExecutionFailed(format!(
+                "block: {e}"
+            )))
+        });
 
     match result {
-        Ok(r) => {
+        Ok((r, kv_out)) => {
             tracing::info!(
                 slug = %slug,
                 status = r.status,
                 duration_ms = r.duration_ms,
                 "Cartridge executed"
             );
+            // Persist modified KV store back to DB
+            if !kv_out.is_empty() {
+                if let Err(e) = db::cartridge_kv_save(&state.gateway.db, &slug, &kv_out) {
+                    tracing::warn!(slug = %slug, error = %e, "Failed to persist cartridge KV");
+                }
+            }
             HttpResponse::build(
                 actix_web::http::StatusCode::from_u16(r.status)
                     .unwrap_or(actix_web::http::StatusCode::OK),
@@ -373,9 +351,9 @@ pub async fn compile_cartridge(
                 let _ = db::upsert_cartridge(&state.gateway.db, &record);
             }
 
-            // Load into engine
+            // Hot-reload into engine (replaces old module if cached)
             if let Some(ref engine) = state.cartridge_engine {
-                if let Err(e) = engine.load_module(&slug, &wasm_path) {
+                if let Err(e) = engine.replace_module(&slug, &wasm_path) {
                     tracing::warn!(slug = %slug, error = %e, "Failed to load compiled cartridge");
                 }
             }
@@ -445,6 +423,8 @@ pub async fn delete_cartridge_handler(
 
     match db::delete_cartridge(&state.gateway.db, &slug) {
         Ok(true) => {
+            // Clean up KV store for this cartridge
+            let _ = db::cartridge_kv_delete(&state.gateway.db, &slug);
             // Unload from engine
             if let Some(ref engine) = state.cartridge_engine {
                 engine.unload_module(&slug);
@@ -465,9 +445,7 @@ pub async fn delete_cartridge_handler(
 }
 
 /// `DELETE /admin/cartridges` — deactivate all cartridges and remove files.
-pub async fn delete_all_cartridges_handler(
-    state: web::Data<NodeState>,
-) -> HttpResponse {
+pub async fn delete_all_cartridges_handler(state: web::Data<NodeState>) -> HttpResponse {
     match db::delete_all_cartridges(&state.gateway.db) {
         Ok(count) => {
             // Unload all from engine
@@ -493,9 +471,7 @@ pub async fn delete_all_cartridges_handler(
 }
 
 /// `GET /c/{slug}/pkg/{file}` — serve frontend cartridge assets (JS glue + WASM).
-pub async fn serve_frontend_pkg(
-    path: web::Path<(String, String)>,
-) -> HttpResponse {
+pub async fn serve_frontend_pkg(path: web::Path<(String, String)>) -> HttpResponse {
     let (slug, file) = path.into_inner();
 
     // Sanitize filename — no path traversal

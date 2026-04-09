@@ -286,7 +286,9 @@ impl ToolExecutor {
             .await
             {
                 Err(_) => {
-                    tracing::debug!("On-chain peer discovery timed out after 15s, falling back to HTTP");
+                    tracing::debug!(
+                        "On-chain peer discovery timed out after 15s, falling back to HTTP"
+                    );
                 }
                 Ok(inner) => match inner {
                     Ok(peers) => {
@@ -318,7 +320,7 @@ impl ToolExecutor {
                     Err(e) => {
                         tracing::debug!(error = %e, "On-chain peer discovery failed, falling back to HTTP");
                     }
-                }
+                },
             }
         }
 

@@ -571,6 +571,30 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
             }),
         });
 
+        tools.push(FunctionDeclaration {
+            name: "create_cognitive_cartridge".to_string(),
+            description: "Create a cognitive cartridge — a hot-swappable WASM module for a cognitive system \
+                         (brain, cortex, genesis, hivemind, synthesis, unified). \
+                         Cognitive cartridges are routed through the CognitiveOrchestrator and can be \
+                         hot-swapped at runtime without restart. They receive JSON requests and return \
+                         JSON predictions. Use this to evolve your own cognitive architecture.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "system": {
+                        "type": "string",
+                        "description": "Cognitive system: brain, cortex, genesis, hivemind, synthesis, or unified",
+                        "enum": ["brain", "cortex", "genesis", "hivemind", "synthesis", "unified"]
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description of the cognitive cartridge's purpose"
+                    }
+                },
+                "required": ["system"]
+            }),
+        });
+
         // GitHub tools — create repos, fork repos, expand into external projects
         tools.push(FunctionDeclaration {
             name: "create_github_repo".to_string(),

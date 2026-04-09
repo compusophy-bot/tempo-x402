@@ -17,11 +17,8 @@ impl SoulDatabase {
         let seven_days = one_day * 7;
 
         // 1. Cap total thoughts at 500 — delete oldest beyond cap
-        let thoughts_pruned = prune_tree_by_cap::<crate::memory::Thought>(
-            &self.thoughts,
-            500,
-            |t| t.created_at,
-        );
+        let thoughts_pruned =
+            prune_tree_by_cap::<crate::memory::Thought>(&self.thoughts, 500, |t| t.created_at);
 
         // 2. Delete completed/abandoned goals older than 7 days (keep last 10 regardless of age)
         let goals_pruned = {
@@ -36,9 +33,7 @@ impl SoulDatabase {
             // Only consider completed/abandoned goals
             let mut terminal: Vec<(String, Goal)> = items
                 .into_iter()
-                .filter(|(_, g)| {
-                    matches!(g.status, GoalStatus::Completed | GoalStatus::Abandoned)
-                })
+                .filter(|(_, g)| matches!(g.status, GoalStatus::Completed | GoalStatus::Abandoned))
                 .collect();
             // Sort by updated_at DESC to keep the 10 most recent
             terminal.sort_by(|a, b| b.1.updated_at.cmp(&a.1.updated_at));
@@ -83,8 +78,7 @@ impl SoulDatabase {
         };
 
         // 4. Cap mutations at 50 — delete oldest beyond cap
-        let mutations_pruned =
-            prune_tree_by_cap::<Mutation>(&self.mutations, 50, |m| m.created_at);
+        let mutations_pruned = prune_tree_by_cap::<Mutation>(&self.mutations, 50, |m| m.created_at);
 
         // 5. Delete processed nudges older than 24h
         let nudges_pruned = {
@@ -168,11 +162,9 @@ impl SoulDatabase {
         };
 
         // 9. Cap plan_outcomes at 100
-        let _ = prune_tree_by_cap::<crate::feedback::PlanOutcome>(
-            &self.plan_outcomes,
-            100,
-            |o| o.created_at,
-        );
+        let _ = prune_tree_by_cap::<crate::feedback::PlanOutcome>(&self.plan_outcomes, 100, |o| {
+            o.created_at
+        });
 
         // 10. Cap capability_events at 500
         let _ = prune_tree_by_cap::<crate::capability::CapabilityEvent>(
@@ -182,11 +174,10 @@ impl SoulDatabase {
         );
 
         // 11. Cap benchmark_runs at 200
-        let _ = prune_tree_by_cap::<crate::benchmark::BenchmarkRun>(
-            &self.benchmark_runs,
-            200,
-            |r| r.created_at,
-        );
+        let _ =
+            prune_tree_by_cap::<crate::benchmark::BenchmarkRun>(&self.benchmark_runs, 200, |r| {
+                r.created_at
+            });
 
         // 12. Prune events (tiered retention)
         let mut events_pruned = 0u32;

@@ -53,7 +53,11 @@ impl SoulDatabase {
             .filter_map(|res| {
                 let (_k, v) = res.ok()?;
                 let t: DynamicTool = serde_json::from_slice(&v).ok()?;
-                if t.enabled { Some(()) } else { None }
+                if t.enabled {
+                    Some(())
+                } else {
+                    None
+                }
             })
             .count();
         Ok(count as u32)

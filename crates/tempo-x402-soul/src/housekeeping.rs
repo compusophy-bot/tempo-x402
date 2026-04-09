@@ -312,13 +312,13 @@ fn prune_soul_state(db: &Arc<SoulDatabase>) {
     // Cap large neural model blobs — these are the #1 cause of sled bloat.
     // All of these are regenerable (models retrain from data, cortex rebuilds from experience).
     let large_blob_caps: &[(&str, usize)] = &[
-        ("brain_weights", 20_000_000),      // 20MB — 1.2M params as JSON ~15MB
-        ("cortex_state", 15_000_000),        // 15MB — experiences + causal graph
-        ("genesis_pool", 5_000_000),         // 5MB — template pool
-        ("hivemind_state", 5_000_000),       // 5MB — pheromone trails
-        ("synthesis_state", 3_000_000),      // 3MB — metacognitive state
-        ("codegen_solutions", 5_000_000),    // 5MB — benchmark solutions
-        ("plan_transformer", 15_000_000),    // 15MB — transformer weights
+        ("brain_weights", 20_000_000),    // 20MB — 1.2M params as JSON ~15MB
+        ("cortex_state", 15_000_000),     // 15MB — experiences + causal graph
+        ("genesis_pool", 5_000_000),      // 5MB — template pool
+        ("hivemind_state", 5_000_000),    // 5MB — pheromone trails
+        ("synthesis_state", 3_000_000),   // 3MB — metacognitive state
+        ("codegen_solutions", 5_000_000), // 5MB — benchmark solutions
+        ("plan_transformer", 15_000_000), // 15MB — transformer weights
         ("plan_transformer_vocab", 5_000_000), // 5MB — vocab
     ];
     for &(key, max_bytes) in large_blob_caps {
@@ -764,7 +764,10 @@ fn cleanup_disk(workspace_root: &str) {
         }
         // Remove old SQLite files
         let _ = std::process::Command::new("sh")
-            .args(["-c", "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null"])
+            .args([
+                "-c",
+                "rm -f /data/*.db /data/*.db-wal /data/*.db-shm 2>/dev/null",
+            ])
             .output();
         // DO NOT delete /data/soul.sled — that's the live DB with weights + benchmarks.
         // Remove brain checkpoints (regenerable from training)

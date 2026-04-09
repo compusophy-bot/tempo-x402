@@ -10,8 +10,16 @@ pub fn NavBar() -> impl IntoView {
     let link = |href: &'static str, label: &'static str| {
         let class = move || {
             let p = pathname();
-            let active = if href == "/" { p == "/" } else { p.starts_with(href) };
-            if active { "app-nav-link active" } else { "app-nav-link" }
+            let active = if href == "/" {
+                p == "/"
+            } else {
+                p.starts_with(href)
+            };
+            if active {
+                "app-nav-link active"
+            } else {
+                "app-nav-link"
+            }
         };
         view! {
             <A href=href class=class>{label}</A>

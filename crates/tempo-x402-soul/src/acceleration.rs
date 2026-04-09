@@ -81,8 +81,7 @@ pub fn measure(db: &SoulDatabase) -> LearningAcceleration {
         "free_energy_history",
         "free_energy",
         |json| {
-            let arr: Vec<serde_json::Value> =
-                serde_json::from_str(json).ok()?;
+            let arr: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
             Some(
                 arr.iter()
                     .filter_map(|v| v.get("total").and_then(|t| t.as_f64()))
@@ -100,8 +99,7 @@ pub fn measure(db: &SoulDatabase) -> LearningAcceleration {
         "elo_history",
         "elo",
         |json| {
-            let arr: Vec<serde_json::Value> =
-                serde_json::from_str(json).ok()?;
+            let arr: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
             Some(
                 arr.iter()
                     .filter_map(|v| v.get("rating").and_then(|r| r.as_f64()))
@@ -118,9 +116,11 @@ pub fn measure(db: &SoulDatabase) -> LearningAcceleration {
         db,
         "brain_loss_history",
         "brain_loss",
-        |json| serde_json::from_str::<Vec<(i64, f64)>>(json)
-            .ok()
-            .map(|v| v.into_iter().map(|(_, loss)| loss).collect()),
+        |json| {
+            serde_json::from_str::<Vec<(i64, f64)>>(json)
+                .ok()
+                .map(|v| v.into_iter().map(|(_, loss)| loss).collect())
+        },
         W_BRAIN_LOSS,
         true, // invert: decreasing loss is good
     );
@@ -131,9 +131,11 @@ pub fn measure(db: &SoulDatabase) -> LearningAcceleration {
         db,
         "codegen_loss_history",
         "codegen_loss",
-        |json| serde_json::from_str::<Vec<(i64, f64)>>(json)
-            .ok()
-            .map(|v| v.into_iter().map(|(_, loss)| loss).collect()),
+        |json| {
+            serde_json::from_str::<Vec<(i64, f64)>>(json)
+                .ok()
+                .map(|v| v.into_iter().map(|(_, loss)| loss).collect())
+        },
         W_CODEGEN_LOSS,
         true,
     );
@@ -145,8 +147,7 @@ pub fn measure(db: &SoulDatabase) -> LearningAcceleration {
         "fitness_history",
         "fitness",
         |json| {
-            let arr: Vec<serde_json::Value> =
-                serde_json::from_str(json).ok()?;
+            let arr: Vec<serde_json::Value> = serde_json::from_str(json).ok()?;
             Some(
                 arr.iter()
                     .filter_map(|v| v.get("total").and_then(|t| t.as_f64()))
@@ -348,7 +349,11 @@ fn linear_regression_slope(values: &[f64]) -> f64 {
         return 0.0;
     }
     let slope = num / den;
-    if slope.is_finite() { slope } else { 0.0 }
+    if slope.is_finite() {
+        slope
+    } else {
+        0.0
+    }
 }
 
 /// Compute acceleration as the slope of windowed velocities.

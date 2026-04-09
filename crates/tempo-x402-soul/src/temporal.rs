@@ -528,8 +528,11 @@ impl TemporalBinding {
             // The Bloch sphere gives smooth, gradient-driven modulation instead of
             // hard-coded regime × operation lookup tables.
             let discrete_mult = regime_multiplier(&signals.regime, &osc.name);
-            let bloch_mult = signals.bloch_modulation.get(&osc.name)
-                .copied().unwrap_or(1.0);
+            let bloch_mult = signals
+                .bloch_modulation
+                .get(&osc.name)
+                .copied()
+                .unwrap_or(1.0);
             // Blend: 50% discrete + 50% Bloch (gradual transition)
             let regime_mult = 0.5 * discrete_mult + 0.5 * bloch_mult;
 

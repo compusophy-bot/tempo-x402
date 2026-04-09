@@ -176,8 +176,7 @@ impl UnifiedModel {
         for (pos, &tok) in tokens.iter().take(seq_len).enumerate() {
             let tok_idx = tok as usize % UNIFIED_VOCAB;
             for j in 0..d {
-                hidden[pos * d + j] =
-                    self.embeddings[tok_idx * d + j] + self.enc_pos[pos * d + j];
+                hidden[pos * d + j] = self.embeddings[tok_idx * d + j] + self.enc_pos[pos * d + j];
             }
         }
 
@@ -249,8 +248,7 @@ impl UnifiedModel {
         for (pos, &tok) in target.iter().take(seq_len).enumerate() {
             let tok_idx = tok as usize % UNIFIED_VOCAB;
             for j in 0..d {
-                hidden[pos * d + j] =
-                    self.embeddings[tok_idx * d + j] + self.dec_pos[pos * d + j];
+                hidden[pos * d + j] = self.embeddings[tok_idx * d + j] + self.dec_pos[pos * d + j];
             }
         }
 
@@ -563,8 +561,7 @@ impl UnifiedModel {
             let d_out = &d_dec_output;
 
             // --- FFN backprop ---
-            let normed3 =
-                layer_norm(layer_in, &self.decoder_layers[l_idx].ln3_scale, dec_len, d);
+            let normed3 = layer_norm(layer_in, &self.decoder_layers[l_idx].ln3_scale, dec_len, d);
 
             let d_residual = d_out.clone();
 
@@ -633,17 +630,14 @@ impl UnifiedModel {
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             q[j] = (0..d)
-                                .map(|k| {
-                                    inp[k] * self.decoder_layers[l_idx].cross_wq[w_idx + k]
-                                })
+                                .map(|k| inp[k] * self.decoder_layers[l_idx].cross_wq[w_idx + k])
                                 .sum();
                         }
 
                         // Cross-attention weights
                         let mut weights = vec![0.0f32; enc_len];
                         for enc_pos in 0..enc_len {
-                            let enc_inp =
-                                &encoder_output[enc_pos * d..(enc_pos + 1) * d];
+                            let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             let mut score = 0.0f32;
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
@@ -658,8 +652,7 @@ impl UnifiedModel {
                             weights[enc_pos] = score / (d_head as f32).sqrt();
                         }
 
-                        let max_w =
-                            weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                        let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                         let exp_s: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
                         for w in &mut weights {
                             *w = (*w - max_w).exp() / exp_s;
@@ -668,8 +661,7 @@ impl UnifiedModel {
                         // Recompute cross-attention output for this head
                         let mut cross_head = vec![0.0f32; d_head];
                         for enc_pos in 0..enc_len {
-                            let enc_inp =
-                                &encoder_output[enc_pos * d..(enc_pos + 1) * d];
+                            let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
                                 let v_j: f32 = (0..d)
@@ -692,8 +684,7 @@ impl UnifiedModel {
                                 let idx = j * d + h_off + jj;
                                 self.decoder_layers[l_idx].cross_wo[idx] -=
                                     lr_cross * clip_grad(d_pos[j] * cross_head[jj]);
-                                d_cross[jj] +=
-                                    d_pos[j] * self.decoder_layers[l_idx].cross_wo[idx];
+                                d_cross[jj] += d_pos[j] * self.decoder_layers[l_idx].cross_wo[idx];
                             }
                         }
 
@@ -702,8 +693,7 @@ impl UnifiedModel {
                             if weights[enc_pos] < 1e-6 {
                                 continue;
                             }
-                            let enc_inp =
-                                &encoder_output[enc_pos * d..(enc_pos + 1) * d];
+                            let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
                                 let g = d_cross[j] * weights[enc_pos];
@@ -712,8 +702,7 @@ impl UnifiedModel {
                                         lr_cross * clip_grad(g * enc_inp[kk]);
                                     d_encoder[enc_pos * d + kk] += lr_cross
                                         * clip_grad(
-                                            g * self.decoder_layers[l_idx].cross_wv
-                                                [w_idx + kk],
+                                            g * self.decoder_layers[l_idx].cross_wv[w_idx + kk],
                                         );
                                 }
                             }
@@ -723,8 +712,7 @@ impl UnifiedModel {
             }
 
             // --- Causal self-attention backprop ---
-            let normed1 =
-                layer_norm(layer_in, &self.decoder_layers[l_idx].ln1_scale, dec_len, d);
+            let normed1 = layer_norm(layer_in, &self.decoder_layers[l_idx].ln1_scale, dec_len, d);
 
             for pos in 0..dec_len {
                 let d_pos = &d_residual[pos * d..(pos + 1) * d];
@@ -753,9 +741,7 @@ impl UnifiedModel {
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let k_j: f32 = (0..d)
-                                .map(|kk| {
-                                    prev_inp[kk] * self.decoder_layers[l_idx].wk[w_idx + kk]
-                                })
+                                .map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wk[w_idx + kk])
                                 .sum();
                             score += q[j] * k_j;
                         }
@@ -774,9 +760,7 @@ impl UnifiedModel {
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let v_j: f32 = (0..d)
-                                .map(|kk| {
-                                    prev_inp[kk] * self.decoder_layers[l_idx].wv[w_idx + kk]
-                                })
+                                .map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wv[w_idx + kk])
                                 .sum();
                             attn_head[j] += weights[prev] * v_j;
                         }
@@ -905,12 +889,7 @@ impl UnifiedModel {
     // ── Internal: encoder layer forward ───────────────────────────
 
     /// Apply a single encoder layer (bidirectional self-attention + FFN).
-    fn apply_encoder_layer(
-        &self,
-        layer: &EncoderLayer,
-        input: &[f32],
-        seq_len: usize,
-    ) -> Vec<f32> {
+    fn apply_encoder_layer(&self, layer: &EncoderLayer, input: &[f32], seq_len: usize) -> Vec<f32> {
         let d = self.d_model;
         let n_heads = N_HEADS;
         let d_head = D_HEAD;
@@ -1122,15 +1101,15 @@ impl UnifiedModel {
                         let mut q = vec![0.0f32; d_head];
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            q[j] =
-                                (0..d).map(|k| inp[k] * layer.cross_wq[w_idx + k]).sum::<f32>();
+                            q[j] = (0..d)
+                                .map(|k| inp[k] * layer.cross_wq[w_idx + k])
+                                .sum::<f32>();
                         }
 
                         // K, V from encoder output -- attend to ALL encoder positions
                         let mut weights = vec![0.0f32; enc_len];
                         for enc_pos in 0..enc_len {
-                            let enc_inp =
-                                &encoder_output[enc_pos * d..(enc_pos + 1) * d];
+                            let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             let mut score = 0.0f32;
                             for j in 0..d_head {
                                 let w_idx = (h * d_head + j) * d;
@@ -1142,16 +1121,14 @@ impl UnifiedModel {
                             weights[enc_pos] = score / (d_head as f32).sqrt();
                         }
 
-                        let max_w =
-                            weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                        let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                         let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
                         for w in &mut weights {
                             *w = (*w - max_w).exp() / exp_sum;
                         }
 
                         for enc_pos in 0..enc_len {
-                            let enc_inp =
-                                &encoder_output[enc_pos * d..(enc_pos + 1) * d];
+                            let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h * d_head + j) * d;
                                 let v_j: f32 = (0..d)
@@ -1237,8 +1214,7 @@ impl UnifiedModel {
             let d_out = &*d_enc_output;
 
             // --- FFN backprop ---
-            let normed2 =
-                layer_norm(layer_in, &self.encoder_layers[l_idx].ln2_scale, enc_len, d);
+            let normed2 = layer_norm(layer_in, &self.encoder_layers[l_idx].ln2_scale, enc_len, d);
             let d_residual = d_out.to_vec();
 
             for pos in 0..enc_len {
@@ -1285,8 +1261,7 @@ impl UnifiedModel {
             }
 
             // --- Bidirectional attention backprop ---
-            let normed1 =
-                layer_norm(layer_in, &self.encoder_layers[l_idx].ln1_scale, enc_len, d);
+            let normed1 = layer_norm(layer_in, &self.encoder_layers[l_idx].ln1_scale, enc_len, d);
 
             for pos in 0..enc_len {
                 let d_pos = &d_residual[pos * d..(pos + 1) * d];
@@ -1316,9 +1291,7 @@ impl UnifiedModel {
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let k_j: f32 = (0..d)
-                                .map(|kk| {
-                                    prev_inp[kk] * self.encoder_layers[l_idx].wk[w_idx + kk]
-                                })
+                                .map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wk[w_idx + kk])
                                 .sum();
                             score += q[j] * k_j;
                         }
@@ -1337,9 +1310,7 @@ impl UnifiedModel {
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let v_j: f32 = (0..d)
-                                .map(|kk| {
-                                    prev_inp[kk] * self.encoder_layers[l_idx].wv[w_idx + kk]
-                                })
+                                .map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wv[w_idx + kk])
                                 .sum();
                             attn_head[j] += weights[prev] * v_j;
                         }

@@ -10,11 +10,7 @@ impl SoulDatabase {
             .beliefs
             .iter()
             .filter_map(|r| r.ok())
-            .filter_map(|(k, v)| {
-                serde_json::from_slice::<Belief>(&v)
-                    .ok()
-                    .map(|b| (k, b))
-            })
+            .filter_map(|(k, v)| serde_json::from_slice::<Belief>(&v).ok().map(|b| (k, b)))
             .find(|(_, b)| {
                 b.active
                     && b.domain.as_str() == belief.domain.as_str()
@@ -49,7 +45,11 @@ impl SoulDatabase {
             .filter_map(|(_, v)| serde_json::from_slice::<Belief>(&v).ok())
             .filter(|b| b.active && b.domain.as_str() == domain_str)
             .collect();
-        beliefs.sort_by(|a, b| a.subject.cmp(&b.subject).then(a.predicate.cmp(&b.predicate)));
+        beliefs.sort_by(|a, b| {
+            a.subject
+                .cmp(&b.subject)
+                .then(a.predicate.cmp(&b.predicate))
+        });
         Ok(beliefs)
     }
 

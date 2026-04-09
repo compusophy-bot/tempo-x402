@@ -37,8 +37,7 @@ impl SoulDatabase {
             let mut outcome: crate::feedback::PlanOutcome = serde_json::from_slice(&raw)?;
             outcome.status = new_status.to_string();
             let value = serde_json::to_vec(&outcome)?;
-            self.plan_outcomes
-                .insert(outcome_id.as_bytes(), value)?;
+            self.plan_outcomes.insert(outcome_id.as_bytes(), value)?;
         }
         Ok(())
     }

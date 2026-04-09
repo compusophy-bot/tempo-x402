@@ -18,7 +18,7 @@
 
 ---
 
-Rust workspace. 9 crates. ~72K lines. 30M+ neural parameters in a unified encoder-decoder. Bloch sphere cognitive geometry. Hot-swappable WASM cognitive modules. No ML framework. No Python. No GPU.
+Rust workspace. 9 crates. ~72K lines. 30M+ neural parameters in a unified encoder-decoder. Bloch sphere cognitive geometry. Hot-swappable WASM cognitive modules. Persistent KV cartridge state. No ML framework. No Python. No GPU.
 
 ## What is this?
 
@@ -114,6 +114,7 @@ Agents write Rust, compile to WASM, deploy instantly at `/c/{slug}` -- no restar
 |------|---------|----------|
 | **Backend** | `x402_handle` | HTTP APIs, JSON services, server compute |
 | **Interactive** | `x402_tick`, `x402_get_framebuffer` | Games, visualizations, 60fps canvas apps |
+| **Frontend** | `init(selector)` | Leptos SPA mounted to DOM via wasm-bindgen |
 | **Cognitive** | Registered as tools | Self-modification -- agent rewires its own intelligence |
 
 Sandboxed: 64MB memory, fuel CPU limit, 30s timeout, no filesystem access.
@@ -166,6 +167,21 @@ export GEMINI_API_KEY="your-key"
 The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
+
+### v9.1.0 -- Cartridge System Overhaul
+
+The cartridge system actually works end-to-end now. Six bugs fixed, cognitive cartridges wired as primary dispatch, soul iterates deeper.
+
+- **Hot-reload on recompile**: `engine.replace_module()` now called on compile -- recompiled cartridges actually swap in instead of serving stale cached versions
+- **KV persistence**: Cartridge KV store changes are persisted to DB after execution. Previously, all `kv_set()` calls were lost when the request ended
+- **KV cleanup on delete**: Deleting a cartridge now cleans up its KV store. Re-creating the same slug starts fresh
+- **Double-registration removed**: `list_cartridges()` no longer duplicates the startup auto-registration
+- **Cognitive CartridgeKind**: New `Cognitive` variant for hot-swappable brain modules (prefixed `cognitive-`)
+- **Soul iteration depth**: Observe 5->10, Code 15->25 tool calls. Graceful termination: LLM gets one final call to summarize instead of being hard-stopped mid-task
+- **CognitiveOrchestrator wired**: Brain predictions route through WASM cartridges when `cognitive-brain` is loaded, falling back to compiled code
+- **`create_cognitive_cartridge` tool**: Soul can scaffold, compile, and hot-swap cognitive cartridges for any system (brain, cortex, genesis, hivemind, synthesis, unified)
+- **Cognitive status in /soul/status**: Shows which cognitive systems have hot-swappable cartridges loaded
+- **Flaky model test fixed**: Plan transformer training test now uses 500 rounds (was 100) with softer assertion
 
 ### v9.0.0 -- Neuroplastic Fluid Cognitive Architecture
 

@@ -87,6 +87,8 @@ pub struct ThinkingLoop {
     pub(super) llm: Option<LlmClient>,
     pub(super) observer: Arc<dyn NodeObserver>,
     pub(super) tool_executor: ToolExecutor,
+    /// Cognitive cartridge orchestrator — routes brain/cortex/etc. through WASM cartridges.
+    pub(super) cognitive_orchestrator: Option<crate::cognitive_cartridge::CognitiveOrchestrator>,
 }
 
 impl ThinkingLoop {
@@ -148,23 +150,31 @@ impl ThinkingLoop {
             llm,
             observer,
             tool_executor,
+            cognitive_orchestrator: None,
         }
     }
 
     /// Set the cartridge engine for cognitive cartridge execution (Phase 4).
     /// Called by the node after construction to wire in the engine.
-    pub fn set_cartridge_engine(&mut self, engine: std::sync::Arc<x402_cartridge::CartridgeEngine>) {
+    pub fn set_cartridge_engine(
+        &mut self,
+        engine: std::sync::Arc<x402_cartridge::CartridgeEngine>,
+    ) {
         // Set on tool executor
-        self.tool_executor = std::mem::replace(
-            &mut self.tool_executor,
-            ToolExecutor::new(0, String::new()),
-        )
-        .with_cartridge_engine(engine.clone());
+        self.tool_executor =
+            std::mem::replace(&mut self.tool_executor, ToolExecutor::new(0, String::new()))
+                .with_cartridge_engine(engine.clone());
 
         // Also set on the dynamic tool registry (for cartridge-backed tools)
         if let Some(ref mut registry) = self.tool_executor.registry {
-            registry.set_cartridge_engine(engine);
+            registry.set_cartridge_engine(engine.clone());
         }
+
+        // Create cognitive orchestrator for routing brain/cortex/etc. through cartridges
+        self.cognitive_orchestrator = Some(crate::cognitive_cartridge::CognitiveOrchestrator::new(
+            Some(engine),
+        ));
+        tracing::info!("Cognitive cartridge orchestrator initialized");
     }
 
     /// Run the thinking loop.
@@ -245,8 +255,15 @@ impl ThinkingLoop {
             if let Some(queen) = &self.config.queen_url {
                 let instance_id = self.config.instance_id.clone().unwrap_or_default();
                 // Derive self URL: prefer GATEWAY_URL, fall back to RAILWAY_PUBLIC_DOMAIN
-                let self_url = self.config.gateway_url.clone()
-                    .or_else(|| std::env::var("RAILWAY_PUBLIC_DOMAIN").ok().map(|d| format!("https://{}", d)))
+                let self_url = self
+                    .config
+                    .gateway_url
+                    .clone()
+                    .or_else(|| {
+                        std::env::var("RAILWAY_PUBLIC_DOMAIN")
+                            .ok()
+                            .map(|d| format!("https://{}", d))
+                    })
                     .unwrap_or_default();
                 let queen = queen.clone();
                 if crate::collective::register_with_queen(&queen, &instance_id, &self_url).await {
@@ -386,8 +403,15 @@ impl ThinkingLoop {
             if self.config.colony_role == crate::collective::ColonyRole::Worker {
                 if let Some(queen) = &self.config.queen_url {
                     let instance_id = self.config.instance_id.clone().unwrap_or_default();
-                    let self_url = self.config.gateway_url.clone()
-                        .or_else(|| std::env::var("RAILWAY_PUBLIC_DOMAIN").ok().map(|d| format!("https://{}", d)))
+                    let self_url = self
+                        .config
+                        .gateway_url
+                        .clone()
+                        .or_else(|| {
+                            std::env::var("RAILWAY_PUBLIC_DOMAIN")
+                                .ok()
+                                .map(|d| format!("https://{}", d))
+                        })
                         .unwrap_or_default();
 
                     // Re-register (heartbeat) every cycle
@@ -413,7 +437,8 @@ impl ThinkingLoop {
                             .await
                             {
                                 Ok(weighted_score) => {
-                                    let iq = crate::opus_bench::weighted_score_to_iq(weighted_score);
+                                    let iq =
+                                        crate::opus_bench::weighted_score_to_iq(weighted_score);
                                     tracing::info!(
                                         iq = format!("{:.0}", iq),
                                         score = format!("{:.1}%", weighted_score),
@@ -421,9 +446,12 @@ impl ThinkingLoop {
                                     );
                                     // Report results to queen
                                     // (results already stored locally via record_run)
-                                    let runs = self.db.get_recent_benchmark_runs(
-                                        assignment.problem_slugs.len() as u32,
-                                    ).unwrap_or_default();
+                                    let runs = self
+                                        .db
+                                        .get_recent_benchmark_runs(
+                                            assignment.problem_slugs.len() as u32
+                                        )
+                                        .unwrap_or_default();
                                     let results: Vec<crate::collective::BenchmarkResult> = runs
                                         .iter()
                                         .map(|r| crate::collective::BenchmarkResult {
@@ -515,18 +543,16 @@ impl ThinkingLoop {
                         &self.config.workspace_root,
                         crate::benchmark::DEFAULT_SAMPLE_SIZE,
                     );
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(600),
-                        bench_future,
-                    ).await {
+                    match tokio::time::timeout(std::time::Duration::from_secs(600), bench_future)
+                        .await
+                    {
                         Err(_) => {
                             tracing::warn!("Opus benchmark session timed out after 10 min — will retry next cycle");
                             // Don't set last_benchmark_at — allow immediate retry
                         }
                         Ok(bench_result) => match bench_result {
                             Ok(weighted_score) => {
-                                let iq =
-                                    crate::opus_bench::weighted_score_to_iq(weighted_score);
+                                let iq = crate::opus_bench::weighted_score_to_iq(weighted_score);
                                 crate::elo::update_rating(&self.db, weighted_score);
                                 // Store score for commit gate delta comparison
                                 let _ = self.db.set_state(
@@ -550,21 +576,21 @@ impl ThinkingLoop {
                                     .unwrap_or(weighted_score);
                                 let delta = weighted_score - pre_score;
                                 if delta.abs() > 0.1 {
-                                    crate::code_quality::train_on_benchmark_delta(
-                                        &self.db, delta,
-                                    );
+                                    crate::code_quality::train_on_benchmark_delta(&self.db, delta);
                                 }
 
                                 // Stagnation detection: if IQ hasn't changed for 3+ runs,
                                 // inject a nudge to investigate stuck benchmark problems.
                                 {
-                                    let prev_iq: f64 = self.db
+                                    let prev_iq: f64 = self
+                                        .db
                                         .get_state("benchmark_last_iq")
                                         .ok()
                                         .flatten()
                                         .and_then(|s| s.parse().ok())
                                         .unwrap_or(0.0);
-                                    let stagnation: u32 = self.db
+                                    let stagnation: u32 = self
+                                        .db
                                         .get_state("benchmark_stagnation_count")
                                         .ok()
                                         .flatten()
@@ -576,8 +602,13 @@ impl ThinkingLoop {
                                     } else {
                                         0 // IQ moved — reset
                                     };
-                                    let _ = self.db.set_state("benchmark_last_iq", &format!("{:.1}", iq));
-                                    let _ = self.db.set_state("benchmark_stagnation_count", &new_stagnation.to_string());
+                                    let _ = self
+                                        .db
+                                        .set_state("benchmark_last_iq", &format!("{:.1}", iq));
+                                    let _ = self.db.set_state(
+                                        "benchmark_stagnation_count",
+                                        &new_stagnation.to_string(),
+                                    );
 
                                     if new_stagnation >= 3 {
                                         tracing::warn!(
@@ -599,7 +630,8 @@ impl ThinkingLoop {
                                             5, // high priority
                                         );
                                         // Reset counter so we don't spam nudges every run
-                                        let _ = self.db.set_state("benchmark_stagnation_count", "0");
+                                        let _ =
+                                            self.db.set_state("benchmark_stagnation_count", "0");
                                     }
                                 }
                                 // Mark benchmark as completed (timestamps set AFTER success)
@@ -607,10 +639,9 @@ impl ThinkingLoop {
                                     "last_benchmark_at",
                                     &chrono::Utc::now().timestamp().to_string(),
                                 );
-                                let _ = self.db.set_state(
-                                    "last_benchmark_cycle",
-                                    &current_cycle.to_string(),
-                                );
+                                let _ = self
+                                    .db
+                                    .set_state("last_benchmark_cycle", &current_cycle.to_string());
                                 // Train codegen IMMEDIATELY after benchmark (tight feedback loop).
                                 crate::codegen::train_tokenizer(&self.db);
                                 crate::codegen::train_model(&self.db);
@@ -619,7 +650,7 @@ impl ThinkingLoop {
                             Err(e) => {
                                 tracing::warn!(error = %e, "Opus IQ benchmark failed — will retry next eligible cycle");
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -638,7 +669,11 @@ impl ThinkingLoop {
                     }
                     let (mt, ml) = crate::model::train_from_outcomes(&db_train);
                     if mt > 0 {
-                        tracing::info!(trained = mt, loss = format!("{:.4}", ml), "Transformer trained");
+                        tracing::info!(
+                            trained = mt,
+                            loss = format!("{:.4}", ml),
+                            "Transformer trained"
+                        );
                     }
                     crate::codegen::train_tokenizer(&db_train);
                     crate::codegen::train_model(&db_train);
@@ -738,116 +773,130 @@ impl ThinkingLoop {
                 // Timeout the entire peer sync to prevent hanging the thinking loop
                 let peer_sync_result = tokio::time::timeout(
                     std::time::Duration::from_secs(120),
-                    self.tool_executor.execute("discover_peers", &serde_json::json!({})),
-                ).await;
+                    self.tool_executor
+                        .execute("discover_peers", &serde_json::json!({})),
+                )
+                .await;
                 match peer_sync_result {
                     Err(_) => {
                         tracing::warn!("Peer sync timed out after 120s — skipping this cycle");
                     }
-                    Ok(result) => { match result {
                     Ok(result) => {
-                        // discover_peers returns HTTP status as exit_code (200, not 0)
-                        if result.exit_code == 0 || (200..300).contains(&result.exit_code) {
-                            tracing::info!(
+                        match result {
+                            Ok(result) => {
+                                // discover_peers returns HTTP status as exit_code (200, not 0)
+                                if result.exit_code == 0 || (200..300).contains(&result.exit_code) {
+                                    tracing::info!(
                                 output_len = result.stdout.len(),
                                 "Peer sync complete — paid calls made, brain weights merged, lessons fetched"
                             );
 
-                            // Cognitive architecture sync: share cortex, genesis, hivemind
-                            // with ALL known peers AND parent (if we have one).
-                            let mut peer_urls = self.get_known_peer_urls();
+                                    // Cognitive architecture sync: share cortex, genesis, hivemind
+                                    // with ALL known peers AND parent (if we have one).
+                                    let mut peer_urls = self.get_known_peer_urls();
 
-                            // Also add parent as a sync target — children need to sync
-                            // with their parent too, not just siblings.
-                            if let Ok(Some(parent)) = self.db.get_state("parent_url") {
-                                if !parent.is_empty()
-                                    && !peer_urls.iter().any(|(_, u)| u == &parent)
-                                {
-                                    peer_urls.push(("parent".to_string(), parent));
-                                }
-                            }
-                            // Also try PARENT_URL env var
-                            if let Ok(parent_env) = std::env::var("PARENT_URL") {
-                                if !parent_env.is_empty()
-                                    && !peer_urls.iter().any(|(_, u)| u == &parent_env)
-                                {
-                                    peer_urls.push(("parent".to_string(), parent_env));
-                                }
-                            }
+                                    // Also add parent as a sync target — children need to sync
+                                    // with their parent too, not just siblings.
+                                    if let Ok(Some(parent)) = self.db.get_state("parent_url") {
+                                        if !parent.is_empty()
+                                            && !peer_urls.iter().any(|(_, u)| u == &parent)
+                                        {
+                                            peer_urls.push(("parent".to_string(), parent));
+                                        }
+                                    }
+                                    // Also try PARENT_URL env var
+                                    if let Ok(parent_env) = std::env::var("PARENT_URL") {
+                                        if !parent_env.is_empty()
+                                            && !peer_urls.iter().any(|(_, u)| u == &parent_env)
+                                        {
+                                            peer_urls.push(("parent".to_string(), parent_env));
+                                        }
+                                    }
 
-                            let http_client = reqwest::Client::builder()
-                                .timeout(std::time::Duration::from_secs(15))
-                                .redirect(reqwest::redirect::Policy::limited(5))
-                                .build()
-                                .unwrap_or_default();
-                            let mut synced = 0u32;
-                            if peer_urls.is_empty() {
-                                tracing::warn!(
-                                    "Cognitive sync: 0 peer URLs — catalog may be empty"
-                                );
-                                crate::events::emit_event(
-                                    &self.db,
-                                    "warn",
-                                    "colony.sync",
-                                    "Cognitive sync skipped: 0 peer URLs in catalog",
-                                    None,
-                                    crate::events::EventRefs::default(),
-                                );
-                            }
-                            for (peer_id, peer_url) in &peer_urls {
-                                crate::autonomy::sync_cognitive_systems(
-                                    &self.db,
-                                    peer_url,
-                                    peer_id,
-                                    &http_client,
-                                )
-                                .await;
-                                synced += 1;
-                            }
-                            if synced > 0 {
-                                // Update MoE router with peer expertise data
-                                for (peer_id, peer_url) in &peer_urls {
-                                    let _cap_profile = crate::capability::compute_profile(&self.db);
-                                    // Fetch peer's capability profile
-                                    let profile_url =
-                                        format!("{}/soul/lessons", peer_url.trim_end_matches('/'));
-                                    if let Ok(resp) = http_client.get(&profile_url).send().await {
-                                        if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                            if let Some(profile) = body.get("capability_profile") {
-                                                let mut cap_scores: std::collections::HashMap<
+                                    let http_client = reqwest::Client::builder()
+                                        .timeout(std::time::Duration::from_secs(15))
+                                        .redirect(reqwest::redirect::Policy::limited(5))
+                                        .build()
+                                        .unwrap_or_default();
+                                    let mut synced = 0u32;
+                                    if peer_urls.is_empty() {
+                                        tracing::warn!(
+                                            "Cognitive sync: 0 peer URLs — catalog may be empty"
+                                        );
+                                        crate::events::emit_event(
+                                            &self.db,
+                                            "warn",
+                                            "colony.sync",
+                                            "Cognitive sync skipped: 0 peer URLs in catalog",
+                                            None,
+                                            crate::events::EventRefs::default(),
+                                        );
+                                    }
+                                    for (peer_id, peer_url) in &peer_urls {
+                                        crate::autonomy::sync_cognitive_systems(
+                                            &self.db,
+                                            peer_url,
+                                            peer_id,
+                                            &http_client,
+                                        )
+                                        .await;
+                                        synced += 1;
+                                    }
+                                    if synced > 0 {
+                                        // Update MoE router with peer expertise data
+                                        for (peer_id, peer_url) in &peer_urls {
+                                            let _cap_profile =
+                                                crate::capability::compute_profile(&self.db);
+                                            // Fetch peer's capability profile
+                                            let profile_url = format!(
+                                                "{}/soul/lessons",
+                                                peer_url.trim_end_matches('/')
+                                            );
+                                            if let Ok(resp) =
+                                                http_client.get(&profile_url).send().await
+                                            {
+                                                if let Ok(body) =
+                                                    resp.json::<serde_json::Value>().await
+                                                {
+                                                    if let Some(profile) =
+                                                        body.get("capability_profile")
+                                                    {
+                                                        let mut cap_scores: std::collections::HashMap<
                                                     String,
                                                     f64,
                                                 > = std::collections::HashMap::new();
-                                                if let Some(obj) = profile.as_object() {
-                                                    for (k, v) in obj {
-                                                        if let Some(rate) = v
-                                                            .get("success_rate")
-                                                            .and_then(|r| r.as_f64())
-                                                        {
-                                                            cap_scores.insert(k.clone(), rate);
+                                                        if let Some(obj) = profile.as_object() {
+                                                            for (k, v) in obj {
+                                                                if let Some(rate) = v
+                                                                    .get("success_rate")
+                                                                    .and_then(|r| r.as_f64())
+                                                                {
+                                                                    cap_scores
+                                                                        .insert(k.clone(), rate);
+                                                                }
+                                                            }
                                                         }
+                                                        let overall =
+                                                            cap_scores.values().sum::<f64>()
+                                                                / cap_scores.len().max(1) as f64;
+                                                        let brain_steps = body
+                                                            .get("brain_steps")
+                                                            .and_then(|v| v.as_u64())
+                                                            .unwrap_or(0);
+                                                        crate::moe::update_from_peer_sync(
+                                                            &self.db,
+                                                            peer_id,
+                                                            peer_url,
+                                                            &cap_scores,
+                                                            overall,
+                                                            brain_steps,
+                                                        );
                                                     }
                                                 }
-                                                let overall = cap_scores.values().sum::<f64>()
-                                                    / cap_scores.len().max(1) as f64;
-                                                let brain_steps = body
-                                                    .get("brain_steps")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(0);
-                                                crate::moe::update_from_peer_sync(
-                                                    &self.db,
-                                                    peer_id,
-                                                    peer_url,
-                                                    &cap_scores,
-                                                    overall,
-                                                    brain_steps,
-                                                );
                                             }
                                         }
-                                    }
-                                }
 
-                                crate::events::emit_info(
+                                        crate::events::emit_info(
                                     &self.db,
                                     "colony.sync",
                                     &format!(
@@ -855,18 +904,19 @@ impl ThinkingLoop {
                                         synced
                                     ),
                                 );
+                                    }
+                                } else {
+                                    tracing::debug!(
+                                        stderr = %result.stderr,
+                                        "Peer sync returned non-zero"
+                                    );
+                                }
                             }
-                        } else {
-                            tracing::debug!(
-                                stderr = %result.stderr,
-                                "Peer sync returned non-zero"
-                            );
+                            Err(e) => {
+                                tracing::debug!(error = %e, "Peer sync failed (non-fatal)");
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::debug!(error = %e, "Peer sync failed (non-fatal)");
-                    }
-                } } // close inner match + Ok(result) arm
+                    } // close inner match + Ok(result) arm
                 }
 
                 // Evaluation: measure accuracy AFTER sync for colony benefit

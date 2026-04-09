@@ -494,9 +494,16 @@ impl ToolExecutor {
                     .ok_or_else(|| "missing 'slug' argument".to_string())?;
                 let source_code = args.get("source_code").and_then(|v| v.as_str());
                 let description = args.get("description").and_then(|v| v.as_str());
-                let interactive = args.get("interactive").and_then(|v| v.as_bool()).unwrap_or(false);
-                let frontend = args.get("frontend").and_then(|v| v.as_bool()).unwrap_or(false);
-                self.create_cartridge(slug, source_code, description, interactive, frontend).await
+                let interactive = args
+                    .get("interactive")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let frontend = args
+                    .get("frontend")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                self.create_cartridge(slug, source_code, description, interactive, frontend)
+                    .await
             }
             "compile_cartridge" => {
                 let slug = args
@@ -516,6 +523,14 @@ impl ToolExecutor {
                 self.test_cartridge(slug, method, path, body).await
             }
             "list_cartridges" => self.list_cartridges().await,
+            "create_cognitive_cartridge" => {
+                let system = args
+                    .get("system")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'system' argument".to_string())?;
+                let description = args.get("description").and_then(|v| v.as_str());
+                self.create_cognitive_cartridge(system, description).await
+            }
             "screenshot" => {
                 let executor = crate::computer_use::ComputerExecutor::new(
                     std::path::PathBuf::from("/tmp/screenshots"),

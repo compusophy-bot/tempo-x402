@@ -8,13 +8,17 @@ use wasm_bindgen::JsCast;
 use super::wallet_panel::WalletButtons;
 
 #[derive(Clone, Debug)]
-struct SoulEventMsg { code: String, message: String }
+struct SoulEventMsg {
+    code: String,
+    message: String,
+}
 
 /// The Colony — one distributed mind visualized as a living organism.
 /// Shows collective intelligence, not individual node stats.
 #[component]
 pub fn Mandala() -> impl IntoView {
-    let (wallet, set_wallet) = expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
+    let (wallet, set_wallet) =
+        expect_context::<(ReadSignal<WalletState>, WriteSignal<WalletState>)>();
     let (soul, set_soul) = create_signal(None::<serde_json::Value>);
     let (info, set_info) = create_signal(None::<serde_json::Value>);
     let (system, set_system) = create_signal(None::<serde_json::Value>);
@@ -29,40 +33,88 @@ pub fn Mandala() -> impl IntoView {
     let fetch_all = move || {
         spawn_local(async move {
             let base = api::gateway_base_url();
-            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/instance/info", base)).send().await {
-                if r.ok() { if let Ok(d) = r.json::<serde_json::Value>().await { set_info.set(Some(d)); } }
+            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/instance/info", base))
+                .send()
+                .await
+            {
+                if r.ok() {
+                    if let Ok(d) = r.json::<serde_json::Value>().await {
+                        set_info.set(Some(d));
+                    }
+                }
             }
-            if let Ok(d) = api::fetch_soul_status().await { set_soul.set(Some(d)); }
-            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/soul/system", base)).send().await {
-                if r.ok() { if let Ok(d) = r.json::<serde_json::Value>().await { set_system.set(Some(d)); } }
+            if let Ok(d) = api::fetch_soul_status().await {
+                set_soul.set(Some(d));
+            }
+            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/soul/system", base))
+                .send()
+                .await
+            {
+                if r.ok() {
+                    if let Ok(d) = r.json::<serde_json::Value>().await {
+                        set_system.set(Some(d));
+                    }
+                }
             }
             // Fetch colony peers (works on queen, returns empty on standalone)
-            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/soul/colony/peers", base)).send().await {
-                if r.ok() { if let Ok(d) = r.json::<serde_json::Value>().await { set_colony.set(Some(d)); } }
+            if let Ok(r) = gloo_net::http::Request::get(&format!("{}/soul/colony/peers", base))
+                .send()
+                .await
+            {
+                if r.ok() {
+                    if let Ok(d) = r.json::<serde_json::Value>().await {
+                        set_colony.set(Some(d));
+                    }
+                }
             }
         });
     };
     fetch_all();
-    let interval = Interval::new(8_000, move || { fetch_all(); });
+    let interval = Interval::new(8_000, move || {
+        fetch_all();
+    });
     on_cleanup(move || drop(interval));
 
     // SSE
     {
         let base = api::gateway_base_url().to_string();
         spawn_local(async move {
-            let es = match web_sys::EventSource::new(&format!("{}/soul/events/stream", base)) { Ok(e) => e, Err(_) => return };
-            let on_msg = Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |ev: web_sys::MessageEvent| {
-                let s = ev.data().as_string().unwrap_or_default();
-                if let Ok(p) = serde_json::from_str::<serde_json::Value>(&s) {
-                    let code = p.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let msg = p.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    if !code.is_empty() && code != "heartbeat" {
-                        set_events.update(|e| { e.push(SoulEventMsg { code: code.clone(), message: msg }); if e.len() > 40 { e.drain(..e.len()-40); } });
-                        set_pulses.update(|p| { p.insert(code, js_sys::Date::now()); });
+            let es = match web_sys::EventSource::new(&format!("{}/soul/events/stream", base)) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            let on_msg =
+                Closure::<dyn Fn(web_sys::MessageEvent)>::new(move |ev: web_sys::MessageEvent| {
+                    let s = ev.data().as_string().unwrap_or_default();
+                    if let Ok(p) = serde_json::from_str::<serde_json::Value>(&s) {
+                        let code = p
+                            .get("code")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let msg = p
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if !code.is_empty() && code != "heartbeat" {
+                            set_events.update(|e| {
+                                e.push(SoulEventMsg {
+                                    code: code.clone(),
+                                    message: msg,
+                                });
+                                if e.len() > 40 {
+                                    e.drain(..e.len() - 40);
+                                }
+                            });
+                            set_pulses.update(|p| {
+                                p.insert(code, js_sys::Date::now());
+                            });
+                        }
                     }
-                }
-            });
-            es.add_event_listener_with_callback("soul_event", on_msg.as_ref().unchecked_ref()).ok();
+                });
+            es.add_event_listener_with_callback("soul_event", on_msg.as_ref().unchecked_ref())
+                .ok();
             on_msg.forget();
         });
     }
@@ -454,7 +506,11 @@ pub fn Mandala() -> impl IntoView {
 }
 
 fn render_progress_ring(solved: u64, total: u64) -> impl IntoView {
-    let pct = if total > 0 { solved as f64 / total as f64 } else { 0.0 };
+    let pct = if total > 0 {
+        solved as f64 / total as f64
+    } else {
+        0.0
+    };
     let r = 32.0_f64;
     let circumference = 2.0 * std::f64::consts::PI * r;
     let filled = circumference * pct;
@@ -476,17 +532,29 @@ fn render_progress_ring(solved: u64, total: u64) -> impl IntoView {
 }
 
 fn health_color(health: f64) -> &'static str {
-    if health > 0.7 { "#00ff41" }
-    else if health > 0.4 { "#ffa000" }
-    else { "#ff1744" }
+    if health > 0.7 {
+        "#00ff41"
+    } else if health > 0.4 {
+        "#ffa000"
+    } else {
+        "#ff1744"
+    }
 }
 
 fn event_color(code: &str) -> &'static str {
-    if code.starts_with("brain") { "#00ff41" }
-    else if code.starts_with("transformer") { "#00e5ff" }
-    else if code.starts_with("codegen") { "#ffa000" }
-    else if code.starts_with("plan") { "#b388ff" }
-    else if code.starts_with("benchmark") { "#00ff41" }
-    else if code.starts_with("peer") || code.starts_with("colony") { "#00e5ff" }
-    else { "#5a6a5a" }
+    if code.starts_with("brain") {
+        "#00ff41"
+    } else if code.starts_with("transformer") {
+        "#00e5ff"
+    } else if code.starts_with("codegen") {
+        "#ffa000"
+    } else if code.starts_with("plan") {
+        "#b388ff"
+    } else if code.starts_with("benchmark") {
+        "#00ff41"
+    } else if code.starts_with("peer") || code.starts_with("colony") {
+        "#00e5ff"
+    } else {
+        "#5a6a5a"
+    }
 }

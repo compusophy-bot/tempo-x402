@@ -541,6 +541,14 @@ pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
         unified_model: {
             Some(x402_soul::unified_training::status(soul_db))
         },
+        cognitive_cartridges: {
+            if let Some(ref engine) = state.cartridge_engine {
+                let orch = x402_soul::cognitive_cartridge::CognitiveOrchestrator::new(Some(engine.clone()));
+                Some(x402_soul::cognitive_cartridge::status(&orch))
+            } else {
+                None
+            }
+        },
     })
 }
 
@@ -1158,8 +1166,7 @@ pub(super) async fn soul_event_stream(state: web::Data<NodeState>) -> HttpRespon
     };
 
     // Use a channel-based stream (no futures crate needed)
-    let (tx, rx) =
-        tokio::sync::mpsc::channel::<Result<actix_web::web::Bytes, std::io::Error>>(32);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<actix_web::web::Bytes, std::io::Error>>(32);
 
     tokio::spawn(async move {
         let mut last_ts = chrono::Utc::now().timestamp();

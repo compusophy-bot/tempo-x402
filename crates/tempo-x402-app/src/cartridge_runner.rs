@@ -45,7 +45,8 @@ pub async fn run_cartridge(slug: &str) -> Result<CartridgeOutput, String> {
     }
 
     let array_buffer = JsFuture::from(
-        resp.array_buffer().map_err(|e| format!("array_buffer: {e:?}"))?,
+        resp.array_buffer()
+            .map_err(|e| format!("array_buffer: {e:?}"))?,
     )
     .await
     .map_err(|e| format!("await array_buffer: {e:?}"))?;
@@ -96,27 +97,24 @@ pub async fn run_cartridge(slug: &str) -> Result<CartridgeOutput, String> {
 
     let (req_ptr, req_len) = if let Some(alloc) = alloc_fn {
         let ptr_val = alloc
-            .call1(&JsValue::undefined(), &JsValue::from(request_bytes.len() as i32))
+            .call1(
+                &JsValue::undefined(),
+                &JsValue::from(request_bytes.len() as i32),
+            )
             .map_err(|e| format!("alloc failed: {e:?}"))?;
         let ptr = ptr_val.as_f64().unwrap_or(0.0) as u32;
 
         // Write request bytes into guest memory
         let buffer = mem.buffer();
-        let view = Uint8Array::new_with_byte_offset_and_length(
-            &buffer,
-            ptr,
-            request_bytes.len() as u32,
-        );
+        let view =
+            Uint8Array::new_with_byte_offset_and_length(&buffer, ptr, request_bytes.len() as u32);
         view.copy_from(request_bytes);
         (ptr as i32, request_bytes.len() as i32)
     } else {
         // No allocator — write at offset 0 (risky but works for simple cartridges)
         let buffer = mem.buffer();
-        let view = Uint8Array::new_with_byte_offset_and_length(
-            &buffer,
-            0,
-            request_bytes.len() as u32,
-        );
+        let view =
+            Uint8Array::new_with_byte_offset_and_length(&buffer, 0, request_bytes.len() as u32);
         view.copy_from(request_bytes);
         (0i32, request_bytes.len() as i32)
     };
@@ -146,11 +144,7 @@ fn read_guest_string(mem: &WebAssembly::Memory, ptr: i32, len: i32) -> String {
         return String::new();
     }
     let buffer = mem.buffer();
-    let view = Uint8Array::new_with_byte_offset_and_length(
-        &buffer,
-        ptr as u32,
-        len as u32,
-    );
+    let view = Uint8Array::new_with_byte_offset_and_length(&buffer, ptr as u32, len as u32);
     let mut bytes = vec![0u8; len as usize];
     view.copy_to(&mut bytes);
     String::from_utf8_lossy(&bytes).to_string()
@@ -188,21 +182,20 @@ fn build_imports(
     // ── response ──
     let resp_output = output.clone();
     let resp_mem = memory_ref.clone();
-    let response_closure =
-        wasm_bindgen::closure::Closure::<dyn Fn(i32, i32, i32, i32, i32)>::new(
-            move |status: i32, body_ptr: i32, body_len: i32, ct_ptr: i32, ct_len: i32| {
-                if let Some(ref mem) = *resp_mem.borrow() {
-                    let body = read_guest_string(mem, body_ptr, body_len);
-                    let ct = read_guest_string(mem, ct_ptr, ct_len);
-                    let mut out = resp_output.borrow_mut();
-                    out.status = status as u16;
-                    out.body = body;
-                    if !ct.is_empty() {
-                        out.content_type = ct;
-                    }
+    let response_closure = wasm_bindgen::closure::Closure::<dyn Fn(i32, i32, i32, i32, i32)>::new(
+        move |status: i32, body_ptr: i32, body_len: i32, ct_ptr: i32, ct_len: i32| {
+            if let Some(ref mem) = *resp_mem.borrow() {
+                let body = read_guest_string(mem, body_ptr, body_len);
+                let ct = read_guest_string(mem, ct_ptr, ct_len);
+                let mut out = resp_output.borrow_mut();
+                out.status = status as u16;
+                out.body = body;
+                if !ct.is_empty() {
+                    out.content_type = ct;
                 }
-            },
-        );
+            }
+        },
+    );
     let resp_fn: &JsValue = response_closure.as_ref().unchecked_ref();
     Reflect::set(&x402_ns, &"response".into(), resp_fn).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&env_ns, &"x402_response".into(), resp_fn).map_err(|e| format!("{e:?}"))?;
@@ -217,10 +210,9 @@ fn build_imports(
     kv_get_closure.forget();
 
     // ── kv_set (stub — no-op) ──
-    let kv_set_closure =
-        wasm_bindgen::closure::Closure::<dyn Fn(i32, i32, i32, i32) -> i32>::new(
-            |_: i32, _: i32, _: i32, _: i32| 0,
-        );
+    let kv_set_closure = wasm_bindgen::closure::Closure::<dyn Fn(i32, i32, i32, i32) -> i32>::new(
+        |_: i32, _: i32, _: i32, _: i32| 0,
+    );
     let kv_set_fn: &JsValue = kv_set_closure.as_ref().unchecked_ref();
     Reflect::set(&x402_ns, &"kv_set".into(), kv_set_fn).map_err(|e| format!("{e:?}"))?;
     Reflect::set(&env_ns, &"x402_kv_set".into(), kv_set_fn).map_err(|e| format!("{e:?}"))?;
@@ -230,8 +222,7 @@ fn build_imports(
     let payment_closure = wasm_bindgen::closure::Closure::<dyn Fn() -> f64>::new(|| 0.0);
     let payment_fn: &JsValue = payment_closure.as_ref().unchecked_ref();
     Reflect::set(&x402_ns, &"payment_info".into(), payment_fn).map_err(|e| format!("{e:?}"))?;
-    Reflect::set(&env_ns, &"x402_payment_info".into(), payment_fn)
-        .map_err(|e| format!("{e:?}"))?;
+    Reflect::set(&env_ns, &"x402_payment_info".into(), payment_fn).map_err(|e| format!("{e:?}"))?;
     payment_closure.forget();
 
     // Attach namespaces

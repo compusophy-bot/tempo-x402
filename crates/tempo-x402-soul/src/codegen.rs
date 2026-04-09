@@ -12,10 +12,8 @@ use crate::db::SoulDatabase;
 /// Load the BPE tokenizer from soul_state.
 pub fn load_tokenizer(db: &SoulDatabase) -> x402_model::bpe::BpeTokenizer {
     match db.get_state("codegen_bpe_tokenizer").ok().flatten() {
-        Some(json) if !json.is_empty() => {
-            x402_model::bpe::BpeTokenizer::from_json(&json)
-                .unwrap_or_else(|| x402_model::bpe::BpeTokenizer::new(8192))
-        }
+        Some(json) if !json.is_empty() => x402_model::bpe::BpeTokenizer::from_json(&json)
+            .unwrap_or_else(|| x402_model::bpe::BpeTokenizer::new(8192)),
         _ => x402_model::bpe::BpeTokenizer::new(8192),
     }
 }
@@ -176,8 +174,8 @@ pub fn train_tokenizer(db: &SoulDatabase) {
     }
 
     // Source 2: workspace codebase (massive, real-world Rust)
-    let workspace_root = std::env::var("SOUL_WORKSPACE_ROOT")
-        .unwrap_or_else(|_| "/tmp/workspace".to_string());
+    let workspace_root =
+        std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/tmp/workspace".to_string());
     let ws_corpus = collect_workspace_corpus(&workspace_root);
     let ws_bytes = ws_corpus.len();
     corpus.push_str(&ws_corpus);
@@ -213,8 +211,7 @@ pub fn train_tokenizer(db: &SoulDatabase) {
 /// Path for binary model weights (much faster than JSON in sled).
 /// At 55M params, JSON = 660MB, binary = 220MB. Binary also loads 10x faster.
 fn model_weights_path() -> std::path::PathBuf {
-    let dir = std::env::var("SOUL_WORKSPACE_ROOT")
-        .unwrap_or_else(|_| "/tmp".to_string());
+    let dir = std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/tmp".to_string());
     std::path::Path::new(&dir).join("codegen_model.bin")
 }
 
@@ -233,8 +230,7 @@ pub fn load_model(db: &SoulDatabase) -> x402_model::codegen::CodeGenModel {
     // Fall back to sled (legacy / small models)
     match db.get_state("codegen_model").ok().flatten() {
         Some(json) if json.len() > 100 => {
-            x402_model::codegen::CodeGenModel::from_json(&json)
-                .unwrap_or_default()
+            x402_model::codegen::CodeGenModel::from_json(&json).unwrap_or_default()
         }
         _ => x402_model::codegen::CodeGenModel::new(),
     }
@@ -296,7 +292,10 @@ pub fn train_model(db: &SoulDatabase) {
         if sol.get("passed").and_then(|v| v.as_bool()).unwrap_or(true) {
             if let Some(code) = sol.get("code").and_then(|v| v.as_str()) {
                 if code.len() >= 50 {
-                    let context = sol.get("context").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let context = sol
+                        .get("context")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     examples.push((context, code.to_string(), 3)); // 3x weight for verified code
                 }
             }
@@ -304,8 +303,8 @@ pub fn train_model(db: &SoulDatabase) {
     }
 
     // Source 2: workspace .rs files (bulk training data)
-    let workspace_root = std::env::var("SOUL_WORKSPACE_ROOT")
-        .unwrap_or_else(|_| "/tmp/workspace".to_string());
+    let workspace_root =
+        std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/tmp/workspace".to_string());
     let ws_corpus = collect_workspace_corpus(&workspace_root);
     // Split workspace into function-sized chunks (~200 lines each)
     // so the model sees complete logical units, not arbitrary slices

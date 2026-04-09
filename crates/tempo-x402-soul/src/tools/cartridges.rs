@@ -2,6 +2,54 @@
 
 use super::*;
 
+/// Generate a cognitive cartridge template for the given system.
+/// The cartridge receives JSON input via x402_handle and returns JSON predictions.
+fn cognitive_cartridge_template(system: &str) -> String {
+    let template = r##"#![no_std]
+
+#[link(wasm_import_module = "x402")]
+extern "C" {
+    fn log(level: i32, msg_ptr: *const u8, msg_len: i32);
+    fn response(status: i32, body_ptr: *const u8, body_len: i32, ct_ptr: *const u8, ct_len: i32);
+}
+
+static mut SCRATCH: [u8; 65536] = [0u8; 65536];
+
+fn respond(status: i32, body: &str) {
+    let ct = "application/json";
+    unsafe {
+        response(
+            status,
+            body.as_ptr(),
+            body.len() as i32,
+            ct.as_ptr(),
+            ct.len() as i32,
+        );
+    }
+}
+
+fn log_info(msg: &str) {
+    unsafe { log(1, msg.as_ptr(), msg.len() as i32); }
+}
+
+#[no_mangle]
+pub extern "C" fn x402_handle(req_ptr: i32, req_len: i32) {
+    log_info("cognitive-SYSTEM_NAME: handling request");
+
+    // Default cognitive response — override with actual model logic
+    let response_json = r#"{"success_prob":0.5,"likely_error":"unknown","error_confidence":0.5,"system":"SYSTEM_NAME","source":"cartridge"}"#;
+
+    respond(200, response_json);
+}
+
+#[no_mangle]
+pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
+    unsafe { SCRATCH.as_mut_ptr() }
+}
+"##;
+    template.replace("SYSTEM_NAME", system)
+}
+
 impl ToolExecutor {
     /// Create a new cartridge project with source code.
     pub(super) async fn create_cartridge(
@@ -155,9 +203,11 @@ impl ToolExecutor {
                 // and the list endpoint can auto-register it in the DB.
                 let mut load_status = String::new();
                 if let Some(ref engine) = self.cartridge_engine {
-                    match engine.load_module(slug, &wasm_path) {
-                        Ok(()) => load_status = "Loaded into runtime.".to_string(),
-                        Err(e) => load_status = format!("Warning: failed to load into runtime: {e}"),
+                    match engine.replace_module(slug, &wasm_path) {
+                        Ok(()) => load_status = "Loaded into runtime (hot-reloaded).".to_string(),
+                        Err(e) => {
+                            load_status = format!("Warning: failed to load into runtime: {e}")
+                        }
                     }
                 }
 
@@ -228,7 +278,7 @@ impl ToolExecutor {
 
         let start = std::time::Instant::now();
         match engine.execute(slug, &request, Default::default(), 10) {
-            Ok(result) => Ok(ToolResult {
+            Ok((result, _kv)) => Ok(ToolResult {
                 stdout: format!(
                     "Status: {}\nContent-Type: {}\nDuration: {}ms\n\nBody:\n{}",
                     result.status, result.content_type, result.duration_ms, result.body
@@ -244,6 +294,61 @@ impl ToolExecutor {
                 duration_ms: start.elapsed().as_millis() as u64,
             }),
         }
+    }
+
+    /// Create a cognitive cartridge — a hot-swappable brain module.
+    pub(super) async fn create_cognitive_cartridge(
+        &self,
+        system: &str,
+        description: Option<&str>,
+    ) -> Result<ToolResult, String> {
+        let valid_systems = [
+            "brain",
+            "cortex",
+            "genesis",
+            "hivemind",
+            "synthesis",
+            "unified",
+        ];
+        if !valid_systems.contains(&system) {
+            return Err(format!(
+                "invalid cognitive system '{system}'. Valid: {}",
+                valid_systems.join(", ")
+            ));
+        }
+
+        let slug = format!("cognitive-{system}");
+        let cartridge_dir = format!("/data/cartridges/{slug}");
+        let src_dir = format!("{cartridge_dir}/src");
+        let bin_dir = format!("{cartridge_dir}/bin");
+
+        std::fs::create_dir_all(format!("{src_dir}/src"))
+            .map_err(|e| format!("failed to create source dir: {e}"))?;
+        std::fs::create_dir_all(&bin_dir).map_err(|e| format!("failed to create bin dir: {e}"))?;
+
+        let cargo_toml = x402_cartridge::compiler::default_cargo_toml(&slug);
+        let lib_rs = cognitive_cartridge_template(system);
+
+        std::fs::write(format!("{src_dir}/Cargo.toml"), &cargo_toml)
+            .map_err(|e| format!("failed to write Cargo.toml: {e}"))?;
+        std::fs::write(format!("{src_dir}/src/lib.rs"), &lib_rs)
+            .map_err(|e| format!("failed to write lib.rs: {e}"))?;
+
+        let desc = description.unwrap_or("Cognitive cartridge");
+
+        Ok(ToolResult {
+            stdout: format!(
+                "Cognitive cartridge '{slug}' created [{system} system]\n\
+                 Description: {desc}\n\
+                 Source: {src_dir}/src/lib.rs\n\
+                 IMPORTANT: Do NOT add dependencies. Uses x402 host ABI.\n\
+                 The cartridge receives JSON requests and returns JSON predictions.\n\
+                 Next: compile_cartridge('{slug}') to build and hot-swap into the cognitive orchestrator."
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+        })
     }
 
     /// List all cartridges on disk.

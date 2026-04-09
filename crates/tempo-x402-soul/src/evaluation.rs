@@ -295,12 +295,19 @@ impl Evaluation {
     /// If no new predictions since sync, uses the most recent 30 as fallback.
     pub fn post_sync_measurement(&mut self) {
         // Count predictions made SINCE the pre_sync snapshot
-        let new_predictions = self.records.len().saturating_sub(self.pre_sync_record_count);
+        let new_predictions = self
+            .records
+            .len()
+            .saturating_sub(self.pre_sync_record_count);
 
         let recent_acc = if new_predictions >= 5 {
             // Enough new predictions — measure only those
-            let new_recs: Vec<&PredictionRecord> = self.records.iter().rev().take(new_predictions).collect();
-            let correct = new_recs.iter().filter(|r| (r.predicted_prob > 0.5) == r.actual).count();
+            let new_recs: Vec<&PredictionRecord> =
+                self.records.iter().rev().take(new_predictions).collect();
+            let correct = new_recs
+                .iter()
+                .filter(|r| (r.predicted_prob > 0.5) == r.actual)
+                .count();
             correct as f32 / new_recs.len() as f32
         } else {
             // Not enough new predictions yet — use recent 30 (will still show some benefit

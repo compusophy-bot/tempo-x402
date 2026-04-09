@@ -119,7 +119,11 @@ impl PlanTemplate {
         let gen_bonus = 1.0 + (self.generation as f32 * 0.05).min(0.5);
         let raw = success * recency * gen_bonus;
         // High-use low-success penalty: templates tried many times that mostly fail
-        let use_penalty = if self.uses > 5 && success < 0.3 { 0.1 } else { 1.0 };
+        let use_penalty = if self.uses > 5 && success < 0.3 {
+            0.1
+        } else {
+            1.0
+        };
         let adjusted = raw * use_penalty;
         if !self.substantive {
             adjusted.min(0.1) // Cap trivial templates hard (was 0.3)

@@ -66,11 +66,7 @@ impl CognitiveOrchestrator {
 
     /// Execute a cognitive request against a cartridge.
     /// Returns the response body as a JSON value, or None if the cartridge isn't loaded.
-    pub fn execute(
-        &self,
-        system: &str,
-        request: &serde_json::Value,
-    ) -> Option<serde_json::Value> {
+    pub fn execute(&self, system: &str, request: &serde_json::Value) -> Option<serde_json::Value> {
         let engine = self.engine.as_ref()?;
         let slug = format!("cognitive-{system}");
 
@@ -88,10 +84,8 @@ impl CognitiveOrchestrator {
         };
 
         match engine.execute(&slug, &cart_request, std::collections::HashMap::new(), 30) {
-            Ok(result) if result.status == 200 => {
-                serde_json::from_str(&result.body).ok()
-            }
-            Ok(result) => {
+            Ok((result, _kv)) if result.status == 200 => serde_json::from_str(&result.body).ok(),
+            Ok((result, _kv)) => {
                 tracing::debug!(
                     system,
                     status = result.status,
@@ -108,11 +102,7 @@ impl CognitiveOrchestrator {
 
     /// Hot-swap a cognitive cartridge: unload old, load new.
     /// Returns Ok(()) if successful, Err with reason if not.
-    pub fn hot_swap(
-        &self,
-        system: &str,
-        wasm_path: &std::path::Path,
-    ) -> Result<(), String> {
+    pub fn hot_swap(&self, system: &str, wasm_path: &std::path::Path) -> Result<(), String> {
         let engine = self.engine.as_ref().ok_or("no cartridge engine")?;
         let slug = format!("cognitive-{system}");
 
@@ -138,7 +128,10 @@ impl CognitiveOrchestrator {
         if let Some(engine) = &self.engine {
             let slug = format!("cognitive-{system}");
             engine.unload_module(&slug);
-            tracing::info!(system, "Cognitive cartridge rolled back to compiled fallback");
+            tracing::info!(
+                system,
+                "Cognitive cartridge rolled back to compiled fallback"
+            );
         }
     }
 }

@@ -186,11 +186,7 @@ pub fn partition_benchmark(
             idx += 1;
         }
         if !worker_probs.is_empty() {
-            worker_assignments.push((
-                worker.instance_id.clone(),
-                worker.url.clone(),
-                worker_probs,
-            ));
+            worker_assignments.push((worker.instance_id.clone(), worker.url.clone(), worker_probs));
         }
     }
 
@@ -269,7 +265,10 @@ pub async fn register_with_queen(queen: &str, instance_id: &str, self_url: &str)
         .unwrap_or_default();
 
     match client
-        .post(format!("{}/soul/colony/register", queen.trim_end_matches('/')))
+        .post(format!(
+            "{}/soul/colony/register",
+            queen.trim_end_matches('/')
+        ))
         .json(&serde_json::json!({
             "instance_id": instance_id,
             "url": self_url,
@@ -360,10 +359,7 @@ pub async fn report_benchmark_results(
 }
 
 /// Submit training examples to queen.
-pub async fn submit_training_data(
-    queen: &str,
-    examples: &[serde_json::Value],
-) -> bool {
+pub async fn submit_training_data(queen: &str, examples: &[serde_json::Value]) -> bool {
     if examples.is_empty() {
         return true;
     }
@@ -373,10 +369,7 @@ pub async fn submit_training_data(
         .unwrap_or_default();
 
     match client
-        .post(format!(
-            "{}/soul/colony/train",
-            queen.trim_end_matches('/')
-        ))
+        .post(format!("{}/soul/colony/train", queen.trim_end_matches('/')))
         .json(&serde_json::json!({ "examples": examples }))
         .send()
         .await
@@ -394,10 +387,7 @@ pub async fn fetch_work(queen: &str, instance_id: &str) -> Option<WorkAssignment
         .ok()?;
 
     let resp = client
-        .post(format!(
-            "{}/soul/colony/work",
-            queen.trim_end_matches('/')
-        ))
+        .post(format!("{}/soul/colony/work", queen.trim_end_matches('/')))
         .json(&serde_json::json!({ "worker_id": instance_id }))
         .send()
         .await
@@ -452,7 +442,9 @@ pub async fn fetch_queen_brain(queen: &str) -> Option<String> {
 
     if resp.status().is_success() {
         let data: serde_json::Value = resp.json().await.ok()?;
-        data.get("weights").and_then(|v| v.as_str()).map(|s| s.to_string())
+        data.get("weights")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
     } else {
         None
     }

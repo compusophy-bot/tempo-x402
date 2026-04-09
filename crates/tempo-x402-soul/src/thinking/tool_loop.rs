@@ -76,7 +76,24 @@ pub(crate) async fn run_tool_loop_with_model(
             }
             LlmResult::FunctionCall(fc) => {
                 if tool_calls_made >= max_tool_calls {
-                    tracing::warn!("Hit max tool calls ({max_tool_calls}), stopping");
+                    tracing::warn!("Hit max tool calls ({max_tool_calls}), requesting summary");
+                    // Give the LLM one final chance to summarize instead of hard-stopping
+                    conversation.push(ConversationMessage {
+                        role: "user".to_string(),
+                        parts: vec![ConversationPart::Text(format!(
+                            "You've used {tool_calls_made} tool calls (limit: {max_tool_calls}). \
+                             Summarize your progress and provide your final answer now."
+                        ))],
+                    });
+                    // One more LLM call to get the summary
+                    let summary_result = tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        llm.think_with_tools(system_prompt, conversation, &[]),
+                    )
+                    .await;
+                    if let Ok(Ok(LlmResult::Text(text))) = summary_result {
+                        final_text = text;
+                    }
                     break;
                 }
 

@@ -42,7 +42,9 @@ fn save_model(db: &SoulDatabase, model: &x402_model::unified::UnifiedModel) {
     }
     let marker = format!(
         r#"{{"steps":{},"loss":{:.4},"params":{}}}"#,
-        model.train_steps, model.running_loss, model.param_count(),
+        model.train_steps,
+        model.running_loss,
+        model.param_count(),
     );
     let _ = db.set_state("unified_model_meta", &marker);
 }
@@ -73,7 +75,11 @@ pub fn train_cycle(db: &SoulDatabase) {
         // Encode the outcome as a text prompt for the shared encoder
         let input_text = format!(
             "[PREDICT] goal={} status={} steps={} replan={}",
-            &outcome.goal_description.chars().take(100).collect::<String>(),
+            &outcome
+                .goal_description
+                .chars()
+                .take(100)
+                .collect::<String>(),
             outcome.status,
             outcome.steps_completed,
             outcome.replan_count,
@@ -90,7 +96,11 @@ pub fn train_cycle(db: &SoulDatabase) {
 
         // Target: [success_prob, 11 error cats (one-hot), 11 capabilities, quality]
         let mut targets = vec![0.0f32; x402_model::unified::FAST_OUTPUT];
-        targets[0] = if outcome.status == "completed" { 1.0 } else { 0.0 };
+        targets[0] = if outcome.status == "completed" {
+            1.0
+        } else {
+            0.0
+        };
         // Error category (if failed)
         if let Some(ref cat) = outcome.error_category {
             let cat_idx = match cat.as_str() {
@@ -181,14 +191,8 @@ pub fn train_cycle(db: &SoulDatabase) {
         );
 
         // Store loss for status API
-        let _ = db.set_state(
-            "unified_model_loss",
-            &format!("{:.4}", model.running_loss),
-        );
-        let _ = db.set_state(
-            "unified_model_steps",
-            &model.train_steps.to_string(),
-        );
+        let _ = db.set_state("unified_model_loss", &format!("{:.4}", model.running_loss));
+        let _ = db.set_state("unified_model_steps", &model.train_steps.to_string());
     }
 }
 

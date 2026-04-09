@@ -38,7 +38,10 @@ impl ToolRegistry {
     }
 
     /// Set the cartridge engine for cartridge-backed tools.
-    pub fn set_cartridge_engine(&mut self, engine: std::sync::Arc<x402_cartridge::CartridgeEngine>) {
+    pub fn set_cartridge_engine(
+        &mut self,
+        engine: std::sync::Arc<x402_cartridge::CartridgeEngine>,
+    ) {
         self.cartridge_engine = Some(engine);
     }
 
@@ -360,7 +363,9 @@ impl ToolRegistry {
 
         // Cartridge-backed tools: execute WASM directly, no shell
         if tool.handler_type == "cartridge" {
-            return self.execute_cartridge_tool(&tool.handler_config, args).await;
+            return self
+                .execute_cartridge_tool(&tool.handler_config, args)
+                .await;
         }
 
         let command = match tool.handler_type.as_str() {
@@ -461,7 +466,7 @@ impl ToolRegistry {
         let duration_ms = start.elapsed().as_millis() as u64;
 
         match result {
-            Ok(r) => {
+            Ok((r, _kv)) => {
                 tracing::info!(
                     slug = %slug,
                     status = r.status,

@@ -639,7 +639,11 @@ pub async fn sync_cognitive_systems(
                                 crate::codegen::record_training_example(
                                     db,
                                     code,
-                                    &format!("peer/{}/{}", peer_id.chars().take(8).collect::<String>(), source),
+                                    &format!(
+                                        "peer/{}/{}",
+                                        peer_id.chars().take(8).collect::<String>(),
+                                        source
+                                    ),
                                 );
                                 imported += 1;
                             }

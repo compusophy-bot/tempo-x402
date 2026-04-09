@@ -130,12 +130,10 @@ impl ThinkingLoop {
 
         // Train quality model on plan outcome — if this plan involved commits,
         // the diff features are still stored from the pre-commit evaluation.
-        let had_commits = plan.steps.iter().any(|s| {
-            matches!(
-                s,
-                crate::plan::PlanStep::Commit { .. }
-            )
-        });
+        let had_commits = plan
+            .steps
+            .iter()
+            .any(|s| matches!(s, crate::plan::PlanStep::Commit { .. }));
         crate::code_quality::train_on_plan_outcome(&self.db, true, had_commits);
 
         // Genesis: record successful plan + close template feedback loop
@@ -322,12 +320,10 @@ impl ThinkingLoop {
             );
 
             // Train quality model on failed plan outcome
-            let had_commits = plan.steps.iter().any(|s| {
-                matches!(
-                    s,
-                    crate::plan::PlanStep::Commit { .. }
-                )
-            });
+            let had_commits = plan
+                .steps
+                .iter()
+                .any(|s| matches!(s, crate::plan::PlanStep::Commit { .. }));
             crate::code_quality::train_on_plan_outcome(&self.db, false, had_commits);
             // Genesis feedback: record template failure
             if let Some(tid_str) = self

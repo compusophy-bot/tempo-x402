@@ -400,7 +400,44 @@ impl ThinkingLoop {
                 cycle_count,
                 ..Default::default()
             };
-            let local_prediction = crate::brain::predict_step(&self.db, &step, &brain_ctx);
+            // Try cognitive cartridge first, fall back to compiled brain
+            let local_prediction = if let Some(ref orch) = self.cognitive_orchestrator {
+                if let Some(cart_result) = orch.execute(
+                    "brain",
+                    &serde_json::json!({
+                        "step_type": format!("{:?}", step),
+                        "consecutive_failures": consecutive_failures,
+                        "cycle_count": cycle_count,
+                    }),
+                ) {
+                    // Parse cartridge response into BrainPrediction
+                    let success_prob = cart_result
+                        .get("success_prob")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.5) as f32;
+                    let error_confidence = cart_result
+                        .get("error_confidence")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.5) as f32;
+                    let likely_error = cart_result
+                        .get("likely_error")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| {
+                            serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
+                        })
+                        .unwrap_or(crate::feedback::ErrorCategory::Unknown);
+                    crate::brain::BrainPrediction {
+                        success_prob,
+                        likely_error,
+                        error_confidence,
+                        capability_confidence: std::collections::HashMap::new(),
+                    }
+                } else {
+                    crate::brain::predict_step(&self.db, &step, &brain_ctx)
+                }
+            } else {
+                crate::brain::predict_step(&self.db, &step, &brain_ctx)
+            };
 
             // Combine local prediction with colony expertise (MoE)
             let capability = crate::moe::step_to_capability(&step);

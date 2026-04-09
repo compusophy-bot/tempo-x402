@@ -123,8 +123,12 @@ pub async fn generate_solution(
     // The codegen model still TRAINS on benchmark solutions — it just
     // doesn't try to generate during the benchmark session itself.
     {
-        let codegen_loss: f32 = db.get_state("codegen_loss_display")
-            .ok().flatten().and_then(|s| s.parse().ok()).unwrap_or(99.0);
+        let codegen_loss: f32 = db
+            .get_state("codegen_loss_display")
+            .ok()
+            .flatten()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(99.0);
         if codegen_loss < 4.0 {
             let codegen_prompt = format!(
                 "// Rust solution for: {}\n// Instructions: {}\n// Tests:\n{}\n\n",
@@ -150,10 +154,17 @@ pub async fn generate_solution(
     // Per-problem context: what specifically failed last time for THIS problem
     let problem_context = {
         let key = format!("problem_context_{}", problem.slug);
-        db.get_state(&key).ok().flatten().map(|ctx| {
-            format!("\n## Previous Failure Analysis for '{}'\n{}\n\
-                     Use this knowledge to avoid the same mistakes.\n", problem.slug, ctx)
-        }).unwrap_or_default()
+        db.get_state(&key)
+            .ok()
+            .flatten()
+            .map(|ctx| {
+                format!(
+                    "\n## Previous Failure Analysis for '{}'\n{}\n\
+                     Use this knowledge to avoid the same mistakes.\n",
+                    problem.slug, ctx
+                )
+            })
+            .unwrap_or_default()
     };
 
     let base_system = format!(
@@ -191,10 +202,7 @@ pub async fn generate_solution(
         )
     };
 
-    let mut prompt = format!(
-        "Implement this Rust exercise: {}\n\n",
-        problem.slug
-    );
+    let mut prompt = format!("Implement this Rust exercise: {}\n\n", problem.slug);
 
     if !problem.instructions.is_empty() {
         // Truncate very long instructions
@@ -232,9 +240,7 @@ pub async fn generate_solution(
         .filter(|f| f.task_id == task_id)
         .collect();
     if !relevant_failures.is_empty() {
-        prompt.push_str(
-            "## FAILED PREVIOUS ATTEMPTS — study these carefully\n\n",
-        );
+        prompt.push_str("## FAILED PREVIOUS ATTEMPTS — study these carefully\n\n");
         for (i, failure) in relevant_failures.iter().enumerate().take(2) {
             let sol_preview: String = failure.failed_solution.chars().take(1500).collect();
             // Parse test output to extract specific failing tests and assertions
@@ -469,7 +475,10 @@ pub async fn validate_solution(
 
                 let output = child.wait_with_output();
                 if killed.load(std::sync::atomic::Ordering::Relaxed) {
-                    Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "cargo test killed after 90s"))
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "cargo test killed after 90s",
+                    ))
                 } else {
                     output
                 }
@@ -775,8 +784,14 @@ pub async fn run_opus_benchmark_session(
         .await
         .map(|o| {
             let s = String::from_utf8_lossy(&o.stdout);
-            let pct: u64 = s.lines().last().unwrap_or("0")
-                .trim().trim_end_matches('%').parse().unwrap_or(0);
+            let pct: u64 = s
+                .lines()
+                .last()
+                .unwrap_or("0")
+                .trim()
+                .trim_end_matches('%')
+                .parse()
+                .unwrap_or(0);
             pct < 90
         })
         .unwrap_or(true); // if df fails, try anyway
@@ -859,8 +874,7 @@ pub async fn run_opus_benchmark_session(
                     non_stuck
                 };
                 if !pool.is_empty() {
-                    rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1))
-                        % pool.len();
+                    rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1)) % pool.len();
                     selected.push((*pool[rng]).clone());
                 }
             }
@@ -892,8 +906,8 @@ pub async fn run_opus_benchmark_session(
                 .filter(|p| stuck_slugs.contains(&p.slug))
                 .collect();
             if !stuck_problems.is_empty() {
-                rng = (rng.wrapping_mul(6364136223846793005).wrapping_add(1))
-                    % stuck_problems.len();
+                rng =
+                    (rng.wrapping_mul(6364136223846793005).wrapping_add(1)) % stuck_problems.len();
                 selected.push(stuck_problems[rng].clone());
             }
         }
@@ -1024,8 +1038,12 @@ pub async fn run_opus_benchmark_session(
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
         // Check if codegen was used for this solution
-        let codegen_used = db.get_state("codegen_last_used").ok().flatten()
-            .map(|v| v == "1").unwrap_or(false);
+        let codegen_used = db
+            .get_state("codegen_last_used")
+            .ok()
+            .flatten()
+            .map(|v| v == "1")
+            .unwrap_or(false);
         let _ = db.set_state("codegen_last_used", "0"); // Reset flag
 
         if success {
@@ -1049,8 +1067,12 @@ pub async fn run_opus_benchmark_session(
 
             // Track codegen success
             if codegen_used {
-                let s: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
-                    .and_then(|s| s.parse().ok()).unwrap_or(0);
+                let s: u64 = db
+                    .get_state("codegen_benchmark_successes")
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
                 let _ = db.set_state("codegen_benchmark_successes", &(s + 1).to_string());
                 tracing::info!(
                     slug = %problem.slug,
@@ -1075,8 +1097,11 @@ pub async fn run_opus_benchmark_session(
             let key = format!("problem_context_{}", problem.slug);
             let failures = parse_test_failures(&error_output);
             let ctx = if failures.is_empty() {
-                format!("Last error ({}): {}", chrono::Utc::now().format("%Y-%m-%d"),
-                    error_output.chars().take(300).collect::<String>())
+                format!(
+                    "Last error ({}): {}",
+                    chrono::Utc::now().format("%Y-%m-%d"),
+                    error_output.chars().take(300).collect::<String>()
+                )
             } else {
                 format!("Last attempt ({}) failed these tests:\n{}\nTry a different algorithm or approach.",
                     chrono::Utc::now().format("%Y-%m-%d"), failures)
@@ -1147,13 +1172,23 @@ pub async fn run_opus_benchmark_session(
     let _ = tokio::fs::remove_dir_all(BENCHMARK_TARGET_DIR).await;
 
     // Codegen vs Gemini stats — THE metric for real learning
-    let codegen_attempts: u64 = db.get_state("codegen_benchmark_attempts").ok().flatten()
-        .and_then(|s| s.parse().ok()).unwrap_or(0);
-    let codegen_successes: u64 = db.get_state("codegen_benchmark_successes").ok().flatten()
-        .and_then(|s| s.parse().ok()).unwrap_or(0);
+    let codegen_attempts: u64 = db
+        .get_state("codegen_benchmark_attempts")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let codegen_successes: u64 = db
+        .get_state("codegen_benchmark_successes")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
     let codegen_rate = if codegen_attempts > 0 {
         codegen_successes as f64 / codegen_attempts as f64 * 100.0
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     tracing::info!(
         weighted = format!("{:.1}%", weighted_score),

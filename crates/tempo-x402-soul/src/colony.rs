@@ -457,11 +457,8 @@ fn compute_psi(
 
     // Ψ = geometric mean (all must be positive for high Ψ)
     // +0.1 offsets prevent zero from killing the product
-    let psi = (intelligence.max(0.01)
-        * (sync + 0.1)
-        * (diversity + 0.1)
-        * (velocity + 0.1))
-    .powf(0.25);
+    let psi =
+        (intelligence.max(0.01) * (sync + 0.1) * (diversity + 0.1) * (velocity + 0.1)).powf(0.25);
 
     // Trend vs previous Ψ
     let prev_psi: f64 = db

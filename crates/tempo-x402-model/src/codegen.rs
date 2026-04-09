@@ -235,8 +235,7 @@ impl CodeGenModel {
         for (pos, &tok) in context.iter().take(seq_len).enumerate() {
             let tok_idx = tok as usize % self.vocab_size;
             for j in 0..d {
-                hidden[pos * d + j] =
-                    self.embeddings[tok_idx * d + j] + self.enc_pos[pos * d + j];
+                hidden[pos * d + j] = self.embeddings[tok_idx * d + j] + self.enc_pos[pos * d + j];
             }
         }
 
@@ -263,8 +262,7 @@ impl CodeGenModel {
         for (pos, &tok) in target.iter().take(seq_len).enumerate() {
             let tok_idx = tok as usize % self.vocab_size;
             for j in 0..d {
-                hidden[pos * d + j] =
-                    self.embeddings[tok_idx * d + j] + self.dec_pos[pos * d + j];
+                hidden[pos * d + j] = self.embeddings[tok_idx * d + j] + self.dec_pos[pos * d + j];
             }
         }
 
@@ -332,7 +330,8 @@ impl CodeGenModel {
                         let mut score = 0.0f32;
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
+                            let k_j: f32 =
+                                (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
                             score += q[j] * k_j;
                         }
                         weights[prev] = score / (d_head as f32).sqrt();
@@ -340,13 +339,16 @@ impl CodeGenModel {
 
                     let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                    for w in &mut weights { *w = (*w - max_w).exp() / exp_sum; }
+                    for w in &mut weights {
+                        *w = (*w - max_w).exp() / exp_sum;
+                    }
 
                     for prev in 0..seq_len {
                         let prev_inp = &normed[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
+                            let v_j: f32 =
+                                (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
                             head_out[pos * d_head + j] += weights[prev] * v_j;
                         }
                     }
@@ -448,7 +450,8 @@ impl CodeGenModel {
                         let mut score = 0.0f32;
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
+                            let k_j: f32 =
+                                (0..d).map(|kk| prev_inp[kk] * layer.wk[w_idx + kk]).sum();
                             score += q[j] * k_j;
                         }
                         weights[prev] = score / (d_head as f32).sqrt();
@@ -456,13 +459,16 @@ impl CodeGenModel {
 
                     let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                    for w in &mut weights { *w = (*w - max_w).exp() / exp_sum; }
+                    for w in &mut weights {
+                        *w = (*w - max_w).exp() / exp_sum;
+                    }
 
                     for prev in 0..=pos {
                         let prev_inp = &normed[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
+                            let v_j: f32 =
+                                (0..d).map(|kk| prev_inp[kk] * layer.wv[w_idx + kk]).sum();
                             head_out[pos * d_head + j] += weights[prev] * v_j;
                         }
                     }
@@ -508,7 +514,9 @@ impl CodeGenModel {
                         let mut q = vec![0.0f32; d_head];
                         for j in 0..d_head {
                             let w_idx = (h * d_head + j) * d;
-                            q[j] = (0..d).map(|k| inp[k] * layer.cross_wq[w_idx + k]).sum::<f32>();
+                            q[j] = (0..d)
+                                .map(|k| inp[k] * layer.cross_wq[w_idx + k])
+                                .sum::<f32>();
                         }
 
                         // K, V from encoder output — attend to ALL encoder positions
@@ -518,7 +526,9 @@ impl CodeGenModel {
                             let mut score = 0.0f32;
                             for j in 0..d_head {
                                 let w_idx = (h * d_head + j) * d;
-                                let k_j: f32 = (0..d).map(|kk| enc_inp[kk] * layer.cross_wk[w_idx + kk]).sum();
+                                let k_j: f32 = (0..d)
+                                    .map(|kk| enc_inp[kk] * layer.cross_wk[w_idx + kk])
+                                    .sum();
                                 score += q[j] * k_j;
                             }
                             weights[enc_pos] = score / (d_head as f32).sqrt();
@@ -526,13 +536,17 @@ impl CodeGenModel {
 
                         let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                         let exp_sum: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                        for w in &mut weights { *w = (*w - max_w).exp() / exp_sum; }
+                        for w in &mut weights {
+                            *w = (*w - max_w).exp() / exp_sum;
+                        }
 
                         for enc_pos in 0..enc_len {
                             let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h * d_head + j) * d;
-                                let v_j: f32 = (0..d).map(|kk| enc_inp[kk] * layer.cross_wv[w_idx + kk]).sum();
+                                let v_j: f32 = (0..d)
+                                    .map(|kk| enc_inp[kk] * layer.cross_wv[w_idx + kk])
+                                    .sum();
                                 head_out[pos * d_head + j] += weights[enc_pos] * v_j;
                             }
                         }
@@ -648,7 +662,8 @@ impl CodeGenModel {
         dec_layer_inputs.push(dec_hidden.clone());
 
         for layer in &self.decoder_layers {
-            dec_hidden = self.apply_decoder_layer(layer, &dec_hidden, dec_len, &encoder_output, enc_len);
+            dec_hidden =
+                self.apply_decoder_layer(layer, &dec_hidden, dec_len, &encoder_output, enc_len);
             dec_layer_inputs.push(dec_hidden.clone());
         }
 
@@ -661,7 +676,9 @@ impl CodeGenModel {
             .map(|v_idx| {
                 let mut dot = self.output_bias[v_idx];
                 let off = v_idx * d;
-                for j in 0..d { dot += last_hidden[j] * self.embeddings[off + j]; }
+                for j in 0..d {
+                    dot += last_hidden[j] * self.embeddings[off + j];
+                }
                 dot
             })
             .collect();
@@ -682,9 +699,12 @@ impl CodeGenModel {
         let lr = learning_rate;
 
         // 1. Output bias
-        self.output_bias.par_iter_mut().zip(d_logits.par_iter()).for_each(|(b, &g)| {
-            *b -= lr * clip_grad(g);
-        });
+        self.output_bias
+            .par_iter_mut()
+            .zip(d_logits.par_iter())
+            .for_each(|(b, &g)| {
+                *b -= lr * clip_grad(g);
+            });
 
         // 2. Embedding gradient from output projection
         let d_hidden_last: Vec<f32> = (0..d)
@@ -692,7 +712,9 @@ impl CodeGenModel {
             .map(|j| {
                 let mut sum = 0.0f32;
                 for v_idx in 0..self.vocab_size {
-                    if d_logits[v_idx].abs() < 1e-7 { continue; }
+                    if d_logits[v_idx].abs() < 1e-7 {
+                        continue;
+                    }
                     sum += d_logits[v_idx] * self.embeddings[v_idx * d + j];
                 }
                 sum
@@ -701,7 +723,9 @@ impl CodeGenModel {
 
         // Update embeddings from output projection
         for v_idx in 0..self.vocab_size {
-            if d_logits[v_idx].abs() < 1e-7 { continue; }
+            if d_logits[v_idx].abs() < 1e-7 {
+                continue;
+            }
             let g = d_logits[v_idx];
             let emb_off = v_idx * d;
             for j in 0..d {
@@ -728,13 +752,17 @@ impl CodeGenModel {
 
             for pos in 0..dec_len {
                 let d_norm = &d_out[pos * d..(pos + 1) * d];
-                if d_norm.iter().all(|&x| x.abs() < 1e-8) { continue; }
+                if d_norm.iter().all(|&x| x.abs() < 1e-8) {
+                    continue;
+                }
 
                 let inp = &normed3[pos * d..(pos + 1) * d];
                 let mut ff_hidden = vec![0.0f32; ff];
                 for k in 0..ff {
                     let w_idx = k * d;
-                    let val: f32 = (0..d).map(|j| inp[j] * self.decoder_layers[l_idx].ff_w1[w_idx + j]).sum();
+                    let val: f32 = (0..d)
+                        .map(|j| inp[j] * self.decoder_layers[l_idx].ff_w1[w_idx + j])
+                        .sum();
                     ff_hidden[k] = val.max(0.0);
                 }
 
@@ -742,30 +770,39 @@ impl CodeGenModel {
                 let mut d_ff = vec![0.0f32; ff];
                 for j in 0..d {
                     let g_j = d_norm[j];
-                    if g_j.abs() < 1e-8 { continue; }
+                    if g_j.abs() < 1e-8 {
+                        continue;
+                    }
                     for k in 0..ff {
                         let idx = j * ff + k;
-                        self.decoder_layers[l_idx].ff_w2[idx] -= lr_ff * clip_grad(g_j * ff_hidden[k]);
+                        self.decoder_layers[l_idx].ff_w2[idx] -=
+                            lr_ff * clip_grad(g_j * ff_hidden[k]);
                         d_ff[k] += g_j * self.decoder_layers[l_idx].ff_w2[idx];
                     }
                 }
 
                 for k in 0..ff {
-                    if ff_hidden[k] <= 0.0 { continue; }
+                    if ff_hidden[k] <= 0.0 {
+                        continue;
+                    }
                     let w_idx = k * d;
                     for j in 0..d {
-                        self.decoder_layers[l_idx].ff_w1[w_idx + j] -= lr_ff * clip_grad(d_ff[k] * inp[j]);
+                        self.decoder_layers[l_idx].ff_w1[w_idx + j] -=
+                            lr_ff * clip_grad(d_ff[k] * inp[j]);
                     }
                 }
             }
 
             // --- Cross-attention backprop ---
             if enc_len > 0 {
-                let normed2 = layer_norm(layer_in, &self.decoder_layers[l_idx].ln2_scale, dec_len, d);
+                let normed2 =
+                    layer_norm(layer_in, &self.decoder_layers[l_idx].ln2_scale, dec_len, d);
 
                 for pos in 0..dec_len {
                     let d_pos = &d_residual[pos * d..(pos + 1) * d];
-                    if d_pos.iter().all(|&x| x.abs() < 1e-8) { continue; }
+                    if d_pos.iter().all(|&x| x.abs() < 1e-8) {
+                        continue;
+                    }
 
                     let lr_cross = lr * 0.3;
 
@@ -777,7 +814,9 @@ impl CodeGenModel {
                         let mut q = vec![0.0f32; d_head];
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
-                            q[j] = (0..d).map(|k| inp[k] * self.decoder_layers[l_idx].cross_wq[w_idx + k]).sum();
+                            q[j] = (0..d)
+                                .map(|k| inp[k] * self.decoder_layers[l_idx].cross_wq[w_idx + k])
+                                .sum();
                         }
 
                         // Cross-attention weights (attend to all encoder positions)
@@ -787,7 +826,12 @@ impl CodeGenModel {
                             let mut score = 0.0f32;
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
-                                let k_j: f32 = (0..d).map(|kk| enc_inp[kk] * self.decoder_layers[l_idx].cross_wk[w_idx + kk]).sum();
+                                let k_j: f32 = (0..d)
+                                    .map(|kk| {
+                                        enc_inp[kk]
+                                            * self.decoder_layers[l_idx].cross_wk[w_idx + kk]
+                                    })
+                                    .sum();
                                 score += q[j] * k_j;
                             }
                             weights[enc_pos] = score / (d_head as f32).sqrt();
@@ -795,7 +839,9 @@ impl CodeGenModel {
 
                         let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                         let exp_s: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                        for w in &mut weights { *w = (*w - max_w).exp() / exp_s; }
+                        for w in &mut weights {
+                            *w = (*w - max_w).exp() / exp_s;
+                        }
 
                         // Recompute cross-attention output for this head
                         let mut cross_head = vec![0.0f32; d_head];
@@ -803,7 +849,12 @@ impl CodeGenModel {
                             let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
-                                let v_j: f32 = (0..d).map(|kk| enc_inp[kk] * self.decoder_layers[l_idx].cross_wv[w_idx + kk]).sum();
+                                let v_j: f32 = (0..d)
+                                    .map(|kk| {
+                                        enc_inp[kk]
+                                            * self.decoder_layers[l_idx].cross_wv[w_idx + kk]
+                                    })
+                                    .sum();
                                 cross_head[j] += weights[enc_pos] * v_j;
                             }
                         }
@@ -811,25 +862,34 @@ impl CodeGenModel {
                         // Gradient through cross_wo
                         let mut d_cross = vec![0.0f32; d_head];
                         for j in 0..d {
-                            if d_pos[j].abs() < 1e-8 { continue; }
+                            if d_pos[j].abs() < 1e-8 {
+                                continue;
+                            }
                             for jj in 0..d_head {
                                 let idx = j * d + h_off + jj;
-                                self.decoder_layers[l_idx].cross_wo[idx] -= lr_cross * clip_grad(d_pos[j] * cross_head[jj]);
+                                self.decoder_layers[l_idx].cross_wo[idx] -=
+                                    lr_cross * clip_grad(d_pos[j] * cross_head[jj]);
                                 d_cross[jj] += d_pos[j] * self.decoder_layers[l_idx].cross_wo[idx];
                             }
                         }
 
                         // Gradient through cross_wv → also propagates to encoder output
                         for enc_pos in 0..enc_len {
-                            if weights[enc_pos] < 1e-6 { continue; }
+                            if weights[enc_pos] < 1e-6 {
+                                continue;
+                            }
                             let enc_inp = &encoder_output[enc_pos * d..(enc_pos + 1) * d];
                             for j in 0..d_head {
                                 let w_idx = (h_off + j) * d;
                                 let g = d_cross[j] * weights[enc_pos];
                                 for kk in 0..d {
-                                    self.decoder_layers[l_idx].cross_wv[w_idx + kk] -= lr_cross * clip_grad(g * enc_inp[kk]);
+                                    self.decoder_layers[l_idx].cross_wv[w_idx + kk] -=
+                                        lr_cross * clip_grad(g * enc_inp[kk]);
                                     // Propagate gradient to encoder output
-                                    d_encoder[enc_pos * d + kk] += lr_cross * clip_grad(g * self.decoder_layers[l_idx].cross_wv[w_idx + kk]);
+                                    d_encoder[enc_pos * d + kk] += lr_cross
+                                        * clip_grad(
+                                            g * self.decoder_layers[l_idx].cross_wv[w_idx + kk],
+                                        );
                                 }
                             }
                         }
@@ -842,7 +902,9 @@ impl CodeGenModel {
 
             for pos in 0..dec_len {
                 let d_pos = &d_residual[pos * d..(pos + 1) * d];
-                if d_pos.iter().all(|&x| x.abs() < 1e-8) { continue; }
+                if d_pos.iter().all(|&x| x.abs() < 1e-8) {
+                    continue;
+                }
 
                 let lr_attn = lr * 0.3;
 
@@ -853,7 +915,9 @@ impl CodeGenModel {
                     let mut q = vec![0.0f32; d_head];
                     for j in 0..d_head {
                         let w_idx = (h_off + j) * d;
-                        q[j] = (0..d).map(|k| inp[k] * self.decoder_layers[l_idx].wq[w_idx + k]).sum();
+                        q[j] = (0..d)
+                            .map(|k| inp[k] * self.decoder_layers[l_idx].wq[w_idx + k])
+                            .sum();
                     }
 
                     let mut weights = vec![0.0f32; pos + 1];
@@ -862,7 +926,9 @@ impl CodeGenModel {
                         let mut score = 0.0f32;
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
-                            let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wk[w_idx + kk]).sum();
+                            let k_j: f32 = (0..d)
+                                .map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wk[w_idx + kk])
+                                .sum();
                             score += q[j] * k_j;
                         }
                         weights[prev] = score / (d_head as f32).sqrt();
@@ -870,36 +936,46 @@ impl CodeGenModel {
 
                     let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     let exp_s: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                    for w in &mut weights { *w = (*w - max_w).exp() / exp_s; }
+                    for w in &mut weights {
+                        *w = (*w - max_w).exp() / exp_s;
+                    }
 
                     let mut attn_head = vec![0.0f32; d_head];
                     for prev in 0..=pos {
                         let prev_inp = &normed1[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
-                            let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wv[w_idx + kk]).sum();
+                            let v_j: f32 = (0..d)
+                                .map(|kk| prev_inp[kk] * self.decoder_layers[l_idx].wv[w_idx + kk])
+                                .sum();
                             attn_head[j] += weights[prev] * v_j;
                         }
                     }
 
                     let mut d_attn = vec![0.0f32; d_head];
                     for j in 0..d {
-                        if d_pos[j].abs() < 1e-8 { continue; }
+                        if d_pos[j].abs() < 1e-8 {
+                            continue;
+                        }
                         for jj in 0..d_head {
                             let idx = j * d + h_off + jj;
-                            self.decoder_layers[l_idx].wo[idx] -= lr_attn * clip_grad(d_pos[j] * attn_head[jj]);
+                            self.decoder_layers[l_idx].wo[idx] -=
+                                lr_attn * clip_grad(d_pos[j] * attn_head[jj]);
                             d_attn[jj] += d_pos[j] * self.decoder_layers[l_idx].wo[idx];
                         }
                     }
 
                     for prev in 0..=pos {
-                        if weights[prev] < 1e-6 { continue; }
+                        if weights[prev] < 1e-6 {
+                            continue;
+                        }
                         let prev_inp = &normed1[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let g = d_attn[j] * weights[prev];
                             for kk in 0..d {
-                                self.decoder_layers[l_idx].wv[w_idx + kk] -= lr_attn * clip_grad(g * prev_inp[kk]);
+                                self.decoder_layers[l_idx].wv[w_idx + kk] -=
+                                    lr_attn * clip_grad(g * prev_inp[kk]);
                             }
                         }
                     }
@@ -923,13 +999,17 @@ impl CodeGenModel {
 
             for pos in 0..enc_len {
                 let d_norm = &d_out[pos * d..(pos + 1) * d];
-                if d_norm.iter().all(|&x| x.abs() < 1e-8) { continue; }
+                if d_norm.iter().all(|&x| x.abs() < 1e-8) {
+                    continue;
+                }
 
                 let inp = &normed2[pos * d..(pos + 1) * d];
                 let mut ff_hidden = vec![0.0f32; ff];
                 for k in 0..ff {
                     let w_idx = k * d;
-                    let val: f32 = (0..d).map(|j| inp[j] * self.encoder_layers[l_idx].ff_w1[w_idx + j]).sum();
+                    let val: f32 = (0..d)
+                        .map(|j| inp[j] * self.encoder_layers[l_idx].ff_w1[w_idx + j])
+                        .sum();
                     ff_hidden[k] = val.max(0.0);
                 }
 
@@ -937,19 +1017,25 @@ impl CodeGenModel {
                 let mut d_ff = vec![0.0f32; ff];
                 for j in 0..d {
                     let g_j = d_norm[j];
-                    if g_j.abs() < 1e-8 { continue; }
+                    if g_j.abs() < 1e-8 {
+                        continue;
+                    }
                     for k in 0..ff {
                         let idx = j * ff + k;
-                        self.encoder_layers[l_idx].ff_w2[idx] -= lr_ff * clip_grad(g_j * ff_hidden[k]);
+                        self.encoder_layers[l_idx].ff_w2[idx] -=
+                            lr_ff * clip_grad(g_j * ff_hidden[k]);
                         d_ff[k] += g_j * self.encoder_layers[l_idx].ff_w2[idx];
                     }
                 }
 
                 for k in 0..ff {
-                    if ff_hidden[k] <= 0.0 { continue; }
+                    if ff_hidden[k] <= 0.0 {
+                        continue;
+                    }
                     let w_idx = k * d;
                     for j in 0..d {
-                        self.encoder_layers[l_idx].ff_w1[w_idx + j] -= lr_ff * clip_grad(d_ff[k] * inp[j]);
+                        self.encoder_layers[l_idx].ff_w1[w_idx + j] -=
+                            lr_ff * clip_grad(d_ff[k] * inp[j]);
                     }
                 }
             }
@@ -959,7 +1045,9 @@ impl CodeGenModel {
 
             for pos in 0..enc_len {
                 let d_pos = &d_residual[pos * d..(pos + 1) * d];
-                if d_pos.iter().all(|&x| x.abs() < 1e-8) { continue; }
+                if d_pos.iter().all(|&x| x.abs() < 1e-8) {
+                    continue;
+                }
 
                 let lr_attn = lr * 0.3;
 
@@ -970,7 +1058,9 @@ impl CodeGenModel {
                     let mut q = vec![0.0f32; d_head];
                     for j in 0..d_head {
                         let w_idx = (h_off + j) * d;
-                        q[j] = (0..d).map(|k| inp[k] * self.encoder_layers[l_idx].wq[w_idx + k]).sum();
+                        q[j] = (0..d)
+                            .map(|k| inp[k] * self.encoder_layers[l_idx].wq[w_idx + k])
+                            .sum();
                     }
 
                     // Bidirectional: attend to ALL positions
@@ -980,7 +1070,9 @@ impl CodeGenModel {
                         let mut score = 0.0f32;
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
-                            let k_j: f32 = (0..d).map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wk[w_idx + kk]).sum();
+                            let k_j: f32 = (0..d)
+                                .map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wk[w_idx + kk])
+                                .sum();
                             score += q[j] * k_j;
                         }
                         weights[prev] = score / (d_head as f32).sqrt();
@@ -988,36 +1080,46 @@ impl CodeGenModel {
 
                     let max_w = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                     let exp_s: f32 = weights.iter().map(|w| (w - max_w).exp()).sum();
-                    for w in &mut weights { *w = (*w - max_w).exp() / exp_s; }
+                    for w in &mut weights {
+                        *w = (*w - max_w).exp() / exp_s;
+                    }
 
                     let mut attn_head = vec![0.0f32; d_head];
                     for prev in 0..enc_len {
                         let prev_inp = &normed1[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
-                            let v_j: f32 = (0..d).map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wv[w_idx + kk]).sum();
+                            let v_j: f32 = (0..d)
+                                .map(|kk| prev_inp[kk] * self.encoder_layers[l_idx].wv[w_idx + kk])
+                                .sum();
                             attn_head[j] += weights[prev] * v_j;
                         }
                     }
 
                     let mut d_attn = vec![0.0f32; d_head];
                     for j in 0..d {
-                        if d_pos[j].abs() < 1e-8 { continue; }
+                        if d_pos[j].abs() < 1e-8 {
+                            continue;
+                        }
                         for jj in 0..d_head {
                             let idx = j * d + h_off + jj;
-                            self.encoder_layers[l_idx].wo[idx] -= lr_attn * clip_grad(d_pos[j] * attn_head[jj]);
+                            self.encoder_layers[l_idx].wo[idx] -=
+                                lr_attn * clip_grad(d_pos[j] * attn_head[jj]);
                             d_attn[jj] += d_pos[j] * self.encoder_layers[l_idx].wo[idx];
                         }
                     }
 
                     for prev in 0..enc_len {
-                        if weights[prev] < 1e-6 { continue; }
+                        if weights[prev] < 1e-6 {
+                            continue;
+                        }
                         let prev_inp = &normed1[prev * d..(prev + 1) * d];
                         for j in 0..d_head {
                             let w_idx = (h_off + j) * d;
                             let g = d_attn[j] * weights[prev];
                             for kk in 0..d {
-                                self.encoder_layers[l_idx].wv[w_idx + kk] -= lr_attn * clip_grad(g * prev_inp[kk]);
+                                self.encoder_layers[l_idx].wv[w_idx + kk] -=
+                                    lr_attn * clip_grad(g * prev_inp[kk]);
                             }
                         }
                     }

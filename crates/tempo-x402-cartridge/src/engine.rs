@@ -102,14 +102,14 @@ impl CartridgeEngine {
         self.modules.iter().map(|e| e.key().clone()).collect()
     }
 
-    /// Execute a cartridge with a request. Returns the response.
+    /// Execute a cartridge with a request. Returns the response and the modified KV store.
     pub fn execute(
         &self,
         slug: &str,
         request: &CartridgeRequest,
         kv_preload: HashMap<String, String>,
         timeout_secs: u64,
-    ) -> Result<CartridgeResult, CartridgeError> {
+    ) -> Result<(CartridgeResult, HashMap<String, String>), CartridgeError> {
         let module = self
             .modules
             .get(slug)
@@ -118,9 +118,11 @@ impl CartridgeEngine {
         let start = Instant::now();
 
         // Create per-request store with limits
-        let mut state = CartridgeState::default();
-        state.kv_store = kv_preload;
-        state.payment = request.payment.clone();
+        let state = CartridgeState {
+            kv_store: kv_preload,
+            payment: request.payment.clone(),
+            ..Default::default()
+        };
 
         let mut store = Store::new(&self.engine, state);
         store
@@ -137,10 +139,7 @@ impl CartridgeEngine {
             .map_err(|e| CartridgeError::ExecutionFailed(format!("instantiate: {e}")))?;
 
         // Call x402_init if exported
-        if let Some(init_fn) = instance
-            .get_typed_func::<(), i32>(&mut store, "x402_init")
-            .ok()
-        {
+        if let Ok(init_fn) = instance.get_typed_func::<(), i32>(&mut store, "x402_init") {
             let result = init_fn
                 .call(&mut store, ())
                 .map_err(|e| CartridgeError::ExecutionFailed(format!("x402_init: {e}")))?;
@@ -233,14 +232,16 @@ impl CartridgeEngine {
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
-        // Read response from store state (set by x402_response host function)
+        // Read response and KV from store state
         let state = store.data();
-        Ok(CartridgeResult {
+        let result = CartridgeResult {
             status: state.response_status,
             body: state.response_body.clone(),
             content_type: state.response_content_type.clone(),
             duration_ms,
-        })
+        };
+        let kv_out = state.kv_store.clone();
+        Ok((result, kv_out))
     }
 
     /// Compute SHA-256 hash of a WASM binary file.

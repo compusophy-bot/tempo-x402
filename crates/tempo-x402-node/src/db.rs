@@ -654,7 +654,9 @@ pub fn get_cartridge(db: &Database, slug: &str) -> Result<Option<CartridgeRecord
                     active: row.get::<_, i32>(10)? != 0,
                     created_at: row.get(11)?,
                     updated_at: row.get(12)?,
-                    cartridge_type: row.get::<_, String>(13).unwrap_or_else(|_| "backend".to_string()),
+                    cartridge_type: row
+                        .get::<_, String>(13)
+                        .unwrap_or_else(|_| "backend".to_string()),
                 })
             },
         )
@@ -691,7 +693,9 @@ pub fn list_cartridges(db: &Database) -> Result<Vec<CartridgeRecord>, GatewayErr
                     active: row.get::<_, i32>(10)? != 0,
                     created_at: row.get(11)?,
                     updated_at: row.get(12)?,
-                    cartridge_type: row.get::<_, String>(13).unwrap_or_else(|_| "backend".to_string()),
+                    cartridge_type: row
+                        .get::<_, String>(13)
+                        .unwrap_or_else(|_| "backend".to_string()),
                 })
             })
             .map_err(|e| GatewayError::Internal(format!("list cartridges query: {e}")))?;
@@ -741,5 +745,33 @@ pub fn cartridge_kv_load(
             })
             .map_err(|e| GatewayError::Internal(format!("kv load query: {e}")))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
+    })
+}
+
+/// Save all KV pairs for a cartridge (persist modified state after execution).
+pub fn cartridge_kv_save(
+    db: &Database,
+    slug: &str,
+    kv: &std::collections::HashMap<String, String>,
+) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        for (key, value) in kv {
+            conn.execute(
+                "INSERT INTO cartridge_kv (slug, key, value) VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(slug, key) DO UPDATE SET value = excluded.value",
+                params![slug, key, value],
+            )
+            .map_err(|e| GatewayError::Internal(format!("kv save: {e}")))?;
+        }
+        Ok(())
+    })
+}
+
+/// Delete all KV pairs for a cartridge (cleanup on delete).
+pub fn cartridge_kv_delete(db: &Database, slug: &str) -> Result<(), GatewayError> {
+    db.with_connection(|conn| {
+        conn.execute("DELETE FROM cartridge_kv WHERE slug = ?1", params![slug])
+            .map_err(|e| GatewayError::Internal(format!("kv delete: {e}")))?;
+        Ok(())
     })
 }

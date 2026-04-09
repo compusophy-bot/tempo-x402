@@ -23,7 +23,7 @@
 //!     payment: None,
 //! };
 //!
-//! let result = engine.execute("hello", &request, Default::default(), 30)?;
+//! let (result, _kv) = engine.execute("hello", &request, Default::default(), 30)?;
 //! println!("Status: {}, Body: {}", result.status, result.body);
 //! ```
 

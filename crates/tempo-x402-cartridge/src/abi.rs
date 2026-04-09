@@ -210,7 +210,9 @@ pub fn register_host_functions(linker: &mut Linker<CartridgeState>) -> Result<()
                 write_bytes_to_guest(&mut caller, json.as_bytes())
             },
         )
-        .map_err(|e| CartridgeError::Abi(format!("failed to register env::x402_payment_info: {e}")))?;
+        .map_err(|e| {
+            CartridgeError::Abi(format!("failed to register env::x402_payment_info: {e}"))
+        })?;
 
     Ok(())
 }
@@ -253,7 +255,7 @@ fn write_bytes_to_guest(caller: &mut Caller<'_, CartridgeState>, bytes: &[u8]) -
         // Fallback: use a scratch area. Not ideal but works for simple cartridges.
         let current_size = memory.data_size(&*caller);
         let needed = current_size + bytes.len();
-        let pages_needed = ((needed + 65535) / 65536) - (current_size / 65536);
+        let pages_needed = needed.div_ceil(65536) - (current_size / 65536);
         if pages_needed > 0 {
             let _ = memory.grow(&mut *caller, pages_needed as u64);
         }

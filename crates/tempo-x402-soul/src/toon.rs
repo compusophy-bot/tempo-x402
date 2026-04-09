@@ -107,7 +107,10 @@ fn array_to_table(arr: &[Value]) -> String {
     // Skip columns that are empty/null in ALL rows
     let keys: Vec<String> = keys
         .into_iter()
-        .filter(|key| arr.iter().any(|item| !is_empty_value(item.get(key).unwrap_or(&Value::Null))))
+        .filter(|key| {
+            arr.iter()
+                .any(|item| !is_empty_value(item.get(key).unwrap_or(&Value::Null)))
+        })
         .collect();
 
     if keys.is_empty() {

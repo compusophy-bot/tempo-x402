@@ -49,7 +49,7 @@ impl Default for BlochState {
     fn default() -> Self {
         Self {
             theta: std::f64::consts::FRAC_PI_2, // balanced (learning)
-            phi: 0.0,                            // self-focused initially
+            phi: 0.0,                           // self-focused initially
             d_theta: 0.0,
             d_phi: 0.0,
         }
@@ -132,7 +132,7 @@ impl BlochState {
         let damping = 0.8;
         // Learning rates for each axis
         let alpha = 0.3; // sensitivity to F trend
-        let beta = 0.2;  // sensitivity to Ψ trend
+        let beta = 0.2; // sensitivity to Ψ trend
 
         // Free Energy drives θ:
         // Increasing F (more surprise) → rotate toward explore (increase θ)
@@ -188,7 +188,11 @@ impl BlochState {
             }
             // Self-repair accelerates when stuck (high explore + low progress)
             "self_repair" => {
-                if explore > 0.7 { 2.0 } else { 1.0 }
+                if explore > 0.7 {
+                    2.0
+                } else {
+                    1.0
+                }
             }
             _ => 1.0,
         }
@@ -297,7 +301,10 @@ mod tests {
         for _ in 0..20 {
             s.evolve(-0.1, 0.0, 1.0); // F trending down
         }
-        assert!(s.theta < std::f64::consts::FRAC_PI_2, "should move toward exploit (lower θ)");
+        assert!(
+            s.theta < std::f64::consts::FRAC_PI_2,
+            "should move toward exploit (lower θ)"
+        );
         assert_eq!(s.regime(), "EXPLOIT");
     }
 
@@ -307,7 +314,10 @@ mod tests {
         for _ in 0..20 {
             s.evolve(0.1, 0.0, 1.0); // F trending up (more surprise)
         }
-        assert!(s.theta > std::f64::consts::FRAC_PI_2, "should move toward explore (higher θ)");
+        assert!(
+            s.theta > std::f64::consts::FRAC_PI_2,
+            "should move toward explore (higher θ)"
+        );
         assert_eq!(s.regime(), "EXPLORE");
     }
 
@@ -322,7 +332,12 @@ mod tests {
 
     #[test]
     fn test_cartesian_roundtrip() {
-        let s = BlochState { theta: 1.2, phi: 2.5, d_theta: 0.0, d_phi: 0.0 };
+        let s = BlochState {
+            theta: 1.2,
+            phi: 2.5,
+            d_theta: 0.0,
+            d_phi: 0.0,
+        };
         let (x, y, z) = s.to_cartesian();
         let s2 = BlochState::from_cartesian(x, y, z);
         assert!((s.theta - s2.theta).abs() < 1e-10);
@@ -332,19 +347,43 @@ mod tests {
     #[test]
     fn test_peer_merge() {
         let mut self_state = BlochState::new(); // balanced
-        let peer_state = BlochState { theta: 0.5, phi: 0.0, d_theta: 0.0, d_phi: 0.0 }; // exploiting
+        let peer_state = BlochState {
+            theta: 0.5,
+            phi: 0.0,
+            d_theta: 0.0,
+            d_phi: 0.0,
+        }; // exploiting
         self_state.merge_peer(&peer_state, 0.8, 0.5); // peer is fitter
-        assert!(self_state.theta < std::f64::consts::FRAC_PI_2, "should shift toward peer's exploit");
+        assert!(
+            self_state.theta < std::f64::consts::FRAC_PI_2,
+            "should shift toward peer's exploit"
+        );
     }
 
     #[test]
     fn test_oscillator_modulation() {
-        let exploring = BlochState { theta: 2.5, phi: 0.0, d_theta: 0.0, d_phi: 0.0 };
-        let exploiting = BlochState { theta: 0.3, phi: 0.0, d_theta: 0.0, d_phi: 0.0 };
+        let exploring = BlochState {
+            theta: 2.5,
+            phi: 0.0,
+            d_theta: 0.0,
+            d_phi: 0.0,
+        };
+        let exploiting = BlochState {
+            theta: 0.3,
+            phi: 0.0,
+            d_theta: 0.0,
+            d_phi: 0.0,
+        };
 
         // Cortex dreaming should be faster when exploring
-        assert!(exploring.oscillator_modulation("cortex_dreaming") > exploiting.oscillator_modulation("cortex_dreaming"));
+        assert!(
+            exploring.oscillator_modulation("cortex_dreaming")
+                > exploiting.oscillator_modulation("cortex_dreaming")
+        );
         // Benchmark should be faster when exploiting
-        assert!(exploiting.oscillator_modulation("benchmark") > exploring.oscillator_modulation("benchmark"));
+        assert!(
+            exploiting.oscillator_modulation("benchmark")
+                > exploring.oscillator_modulation("benchmark")
+        );
     }
 }

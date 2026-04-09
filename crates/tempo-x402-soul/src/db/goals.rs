@@ -18,7 +18,11 @@ impl SoulDatabase {
             .filter_map(|(_, v)| serde_json::from_slice::<Goal>(&v).ok())
             .filter(|g| matches!(g.status, GoalStatus::Active))
             .collect();
-        goals.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.created_at.cmp(&b.created_at)));
+        goals.sort_by(|a, b| {
+            b.priority
+                .cmp(&a.priority)
+                .then(a.created_at.cmp(&b.created_at))
+        });
         Ok(goals)
     }
 

@@ -693,12 +693,30 @@ pub fn benchmark_attempts_to_examples(
             "easy" => features[36] = 1.0,
             "medium" => features[37] = 1.0,
             "hard" => features[38] = 1.0,
-            "tier1" => { features[36] = 1.0; features[43] = 1.0; }
-            "tier2" => { features[36] = 1.0; features[44] = 1.0; }
-            "tier3" => { features[37] = 1.0; features[45] = 1.0; }
-            "tier4" => { features[37] = 1.0; features[46] = 1.0; }
-            "tier5" => { features[38] = 1.0; features[47] = 1.0; }
-            "tier6" => { features[38] = 1.0; features[48] = 1.0; }
+            "tier1" => {
+                features[36] = 1.0;
+                features[43] = 1.0;
+            }
+            "tier2" => {
+                features[36] = 1.0;
+                features[44] = 1.0;
+            }
+            "tier3" => {
+                features[37] = 1.0;
+                features[45] = 1.0;
+            }
+            "tier4" => {
+                features[37] = 1.0;
+                features[46] = 1.0;
+            }
+            "tier5" => {
+                features[38] = 1.0;
+                features[47] = 1.0;
+            }
+            "tier6" => {
+                features[38] = 1.0;
+                features[48] = 1.0;
+            }
             _ => features[36] = 1.0,
         }
 

@@ -91,10 +91,22 @@ pub fn StudioPage() -> impl IntoView {
             if let Ok(data) = api::fetch_json("/x").await {
                 if let Some(eps) = data.get("endpoints").and_then(|v| v.as_array()) {
                     for ep in eps {
-                        let slug = ep.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let desc = ep.get("description").and_then(|v| v.as_str()).map(String::from);
+                        let slug = ep
+                            .get("slug")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let desc = ep
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
                         if !slug.is_empty() {
-                            all_apps.push(AppEntry { slug, description: desc, kind: "script".into(), cartridge_type: String::new() });
+                            all_apps.push(AppEntry {
+                                slug,
+                                description: desc,
+                                kind: "script".into(),
+                                cartridge_type: String::new(),
+                            });
                         }
                     }
                 }
@@ -103,11 +115,27 @@ pub fn StudioPage() -> impl IntoView {
             if let Ok(data) = api::fetch_json("/c").await {
                 if let Some(carts) = data.get("cartridges").and_then(|v| v.as_array()) {
                     for c in carts {
-                        let slug = c.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let desc = c.get("description").and_then(|v| v.as_str()).map(String::from);
-                        let ct = c.get("cartridge_type").and_then(|v| v.as_str()).unwrap_or("backend").to_string();
+                        let slug = c
+                            .get("slug")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let desc = c
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let ct = c
+                            .get("cartridge_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("backend")
+                            .to_string();
                         if !slug.is_empty() {
-                            all_apps.push(AppEntry { slug, description: desc, kind: "cartridge".into(), cartridge_type: ct });
+                            all_apps.push(AppEntry {
+                                slug,
+                                description: desc,
+                                kind: "cartridge".into(),
+                                cartridge_type: ct,
+                            });
                         }
                     }
                 }
@@ -149,7 +177,11 @@ pub fn StudioPage() -> impl IntoView {
         set_input.set(String::new());
 
         set_messages.update(|msgs| {
-            msgs.push(ChatMsg { role: "user".into(), content: msg.clone(), tools: vec![] });
+            msgs.push(ChatMsg {
+                role: "user".into(),
+                content: msg.clone(),
+                tools: vec![],
+            });
         });
         scroll_bottom();
 
@@ -158,32 +190,52 @@ pub fn StudioPage() -> impl IntoView {
         spawn_local(async move {
             match api::send_soul_chat(&msg, sid.as_deref()).await {
                 Ok(resp) => {
-                    let reply = resp.get("reply").and_then(|v| v.as_str()).unwrap_or("(no response)").to_string();
+                    let reply = resp
+                        .get("reply")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("(no response)")
+                        .to_string();
                     if let Some(new_sid) = resp.get("session_id").and_then(|v| v.as_str()) {
                         set_session_id.set(Some(new_sid.to_string()));
                     }
-                    let tools = resp.get("tool_executions")
+                    let tools = resp
+                        .get("tool_executions")
                         .and_then(|v| v.as_array())
                         .cloned()
                         .unwrap_or_default();
                     set_messages.update(|msgs| {
-                        msgs.push(ChatMsg { role: "assistant".into(), content: reply, tools });
+                        msgs.push(ChatMsg {
+                            role: "assistant".into(),
+                            content: reply,
+                            tools,
+                        });
                     });
                     // Refresh apps if tools modified endpoints
-                    let modified = resp.get("tool_executions")
+                    let modified = resp
+                        .get("tool_executions")
                         .and_then(|v| v.as_array())
-                        .map(|execs| execs.iter().any(|e| {
-                            let cmd = e.get("command").and_then(|v| v.as_str()).unwrap_or("");
-                            cmd.contains("create_script") || cmd.contains("delete_endpoint")
-                                || cmd.contains("create_cartridge") || cmd.contains("compile_cartridge")
-                                || cmd.contains("delete_cartridge")
-                        }))
+                        .map(|execs| {
+                            execs.iter().any(|e| {
+                                let cmd = e.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                                cmd.contains("create_script")
+                                    || cmd.contains("delete_endpoint")
+                                    || cmd.contains("create_cartridge")
+                                    || cmd.contains("compile_cartridge")
+                                    || cmd.contains("delete_cartridge")
+                            })
+                        })
                         .unwrap_or(false);
-                    if modified { refresh(); }
+                    if modified {
+                        refresh();
+                    }
                 }
                 Err(e) => {
                     set_messages.update(|msgs| {
-                        msgs.push(ChatMsg { role: "assistant".into(), content: format!("Error: {e}"), tools: vec![] });
+                        msgs.push(ChatMsg {
+                            role: "assistant".into(),
+                            content: format!("Error: {e}"),
+                            tools: vec![],
+                        });
                     });
                 }
             }
@@ -231,8 +283,10 @@ pub fn StudioPage() -> impl IntoView {
             if kind == "cartridge" {
                 let _ = api::delete_cartridge(&slug).await;
             } else {
-                let _ = gloo_net::http::Request::delete(&format!("/admin/endpoints/script-{}", slug))
-                    .send().await;
+                let _ =
+                    gloo_net::http::Request::delete(&format!("/admin/endpoints/script-{}", slug))
+                        .send()
+                        .await;
             }
             refresh();
         });

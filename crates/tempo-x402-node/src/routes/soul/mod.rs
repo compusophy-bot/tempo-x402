@@ -106,6 +106,9 @@ struct SoulStatus {
     /// Unified model: shared encoder with fast/slow heads.
     #[serde(skip_serializing_if = "Option::is_none")]
     unified_model: Option<serde_json::Value>,
+    /// Cognitive cartridges: hot-swappable WASM brain modules.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cognitive_cartridges: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -190,7 +193,11 @@ fn read_cpu_usage() -> f64 {
     // Read /proc/loadavg — 1-min load average
     std::fs::read_to_string("/proc/loadavg")
         .ok()
-        .and_then(|s| s.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()))
+        .and_then(|s| {
+            s.split_whitespace()
+                .next()
+                .and_then(|v| v.parse::<f64>().ok())
+        })
         .map(|load| (load * 100.0 / num_cpus().max(1) as f64).round().min(100.0))
         .unwrap_or(0.0)
 }
@@ -209,11 +216,19 @@ fn read_memory() -> (u64, u64) {
     let mut available_kb = 0u64;
     for line in meminfo.lines() {
         if let Some(val) = line.strip_prefix("MemTotal:") {
-            total_kb = val.trim().split_whitespace().next()
-                .and_then(|v| v.parse().ok()).unwrap_or(0);
+            total_kb = val
+                .trim()
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
         } else if let Some(val) = line.strip_prefix("MemAvailable:") {
-            available_kb = val.trim().split_whitespace().next()
-                .and_then(|v| v.parse().ok()).unwrap_or(0);
+            available_kb = val
+                .trim()
+                .split_whitespace()
+                .next()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
         }
     }
     let used_mb = (total_kb.saturating_sub(available_kb)) / 1024;

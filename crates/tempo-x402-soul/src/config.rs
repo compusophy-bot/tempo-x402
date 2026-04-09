@@ -154,8 +154,7 @@ impl SoulConfig {
         // Default to /data — persistent volume. Disk full was caused by cargo
         // build artifacts (2-4GB target/ dirs), NOT by sled. Model weights are
         // stored in files, not sled. The sled DB itself is small (~10MB).
-        let db_path =
-            std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "/data/soul.db".to_string());
+        let db_path = std::env::var("SOUL_DB_PATH").unwrap_or_else(|_| "/data/soul.db".to_string());
 
         let think_interval_secs: u64 = std::env::var("SOUL_THINK_INTERVAL_SECS")
             .ok()

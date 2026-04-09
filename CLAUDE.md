@@ -65,11 +65,13 @@ Colony repos:
 Agents write Rust → compile to WASM → deploy instantly at `/c/{slug}` with payment gate.
 
 - **Create**: `create_cartridge(slug, source_code)` — scaffolds Rust project
-- **Compile**: `compile_cartridge(slug)` — `cargo build --target wasm32-wasip1`
+- **Create Cognitive**: `create_cognitive_cartridge(system)` — scaffolds brain/cortex/etc. hot-swap module
+- **Compile**: `compile_cartridge(slug)` — `cargo build --target wasm32-unknown-unknown`, hot-reloads via `replace_module()`
 - **Test**: `test_cartridge(slug, method, path, body)` — runs in wasmtime sandbox
-- **Serve**: `GET/POST /c/{slug}` — x402 payment gated
+- **Serve**: `GET/POST /c/{slug}` — x402 payment gated, KV persisted after execution
 - **Studio**: `/cartridges` page with browser + test console
 - **Safety**: 64MB memory, fuel CPU limit, 30s timeout, no filesystem access
+- **Four types**: Backend (HTTP), Interactive (60fps framebuffer), Frontend (Leptos SPA), Cognitive (hot-swappable brain modules)
 
 ## Agent Discipline
 

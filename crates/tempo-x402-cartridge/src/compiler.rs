@@ -502,20 +502,14 @@ pub async fn compile_frontend_cartridge(
     let bindgen_output = tokio::time::timeout(
         std::time::Duration::from_secs(60),
         tokio::process::Command::new(&wasm_bindgen_bin)
-            .args([
-                "--target",
-                "web",
-                "--out-dir",
-            ])
+            .args(["--target", "web", "--out-dir"])
             .arg(pkg_dir.to_string_lossy().as_ref())
             .arg(wasm_path.to_string_lossy().as_ref())
             .output(),
     )
     .await
     .map_err(|_| CartridgeError::CompilationFailed("wasm-bindgen timed out".to_string()))?
-    .map_err(|e| {
-        CartridgeError::CompilationFailed(format!("wasm-bindgen failed to start: {e}"))
-    })?;
+    .map_err(|e| CartridgeError::CompilationFailed(format!("wasm-bindgen failed to start: {e}")))?;
 
     let bindgen_stderr = String::from_utf8_lossy(&bindgen_output.stderr).to_string();
     let bindgen_stdout = String::from_utf8_lossy(&bindgen_output.stdout).to_string();

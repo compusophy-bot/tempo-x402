@@ -215,12 +215,7 @@ pub async fn register(
     // Nodes that weren't created via /clone still need to register as peers.
     // update_child silently does nothing if the instance_id doesn't exist.
     let register_url = url.unwrap_or("");
-    match db::link_peer(
-        &state.gateway.db,
-        instance_id,
-        address,
-        register_url,
-    ) {
+    match db::link_peer(&state.gateway.db, instance_id, address, register_url) {
         Ok(()) => {
             tracing::info!(
                 instance_id = %instance_id,

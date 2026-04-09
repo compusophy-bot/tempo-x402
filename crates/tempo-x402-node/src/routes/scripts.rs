@@ -323,7 +323,7 @@ pub async fn handle_app(
                 match tokio::task::block_in_place(|| {
                     engine.execute(&slug, &request, Default::default(), 30)
                 }) {
-                    Ok(r) => {
+                    Ok((r, _kv)) => {
                         return HttpResponse::Ok().content_type(r.content_type).body(r.body);
                     }
                     Err(e) => {

@@ -84,10 +84,7 @@ impl BpeTokenizer {
         }
 
         // Start with byte-level tokens
-        let mut sequence: Vec<u32> = bytes
-            .iter()
-            .map(|&b| BASE_VOCAB_START + b as u32)
-            .collect();
+        let mut sequence: Vec<u32> = bytes.iter().map(|&b| BASE_VOCAB_START + b as u32).collect();
 
         let target_merges = self.vocab_size.saturating_sub(MERGE_START);
 
@@ -150,10 +147,7 @@ impl BpeTokenizer {
         }
 
         // Start with byte-level tokens
-        let mut tokens: Vec<u32> = bytes
-            .iter()
-            .map(|&b| BASE_VOCAB_START + b as u32)
-            .collect();
+        let mut tokens: Vec<u32> = bytes.iter().map(|&b| BASE_VOCAB_START + b as u32).collect();
 
         // Apply merges in order
         for &(a, b) in &self.merges {
@@ -255,7 +249,10 @@ mod tests {
         tok.train(corpus);
         let after = tok.encode(corpus).len();
         // Training should reduce token count via merges
-        assert!(after <= before, "after={after} should be <= before={before}");
+        assert!(
+            after <= before,
+            "after={after} should be <= before={before}"
+        );
     }
 
     #[test]
@@ -283,7 +280,10 @@ pub fn fibonacci(n: u64) -> u64 {
         tok.train(&repetitive);
         let ratio = tok.compression_ratio(&repetitive);
         // Repetitive text should compress well
-        assert!(ratio > 2.0, "ratio={ratio} should be > 2.0 for repetitive text");
+        assert!(
+            ratio > 2.0,
+            "ratio={ratio} should be > 2.0 for repetitive text"
+        );
     }
 
     #[test]
