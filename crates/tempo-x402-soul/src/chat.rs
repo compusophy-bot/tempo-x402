@@ -84,6 +84,30 @@ pub async fn handle_chat(
     db.insert_thought(&user_thought)?;
     thought_ids.push(user_thought_id);
 
+    // 2b. If this looks like a build request, also inject as a nudge so the
+    // autonomous plan system picks it up with proper multi-step execution
+    // (think → generate code → create cartridge → compile → test).
+    let build_keywords = ["make", "build", "create", "write", "implement", "develop"];
+    let msg_lower = message.to_lowercase();
+    let is_build_request = build_keywords.iter().any(|k| msg_lower.contains(k))
+        && (msg_lower.contains("app")
+            || msg_lower.contains("game")
+            || msg_lower.contains("tool")
+            || msg_lower.contains("cartridge")
+            || msg_lower.contains("calculator")
+            || msg_lower.contains("todo")
+            || msg_lower.contains("snake")
+            || msg_lower.contains("tetris")
+            || msg_lower.contains("drawing"));
+    if is_build_request {
+        let nudge_content = format!(
+            "USER REQUEST: {}. Build this as a WASM cartridge with REAL source code. \
+             Write complete Leptos/Rust implementation, not a template.",
+            message
+        );
+        let _ = db.insert_nudge("user_chat", &nudge_content, 5);
+    }
+
     // 3. Get current snapshot
     let snapshot = observer
         .observe()
@@ -125,12 +149,14 @@ pub async fn handle_chat(
          - Coding is {coding}\n\
          \n\
          CARTRIDGE RULES (FOLLOW EXACTLY):\n\
-         - To build ANY app: create_cartridge(slug, frontend=true) then compile_cartridge(slug)\n\
-         - Do NOT provide source_code — the default template works perfectly\n\
-         - frontend=true creates a Leptos app with full DOM access (wasm32-unknown-unknown)\n\
-         - frontend=false (default) creates a backend-only cartridge (wasm32-wasip1, no UI)\n\
-         - ALWAYS prefer frontend=true for anything the user wants to see or interact with\n\
-         - After compile, the cartridge appears in the Studio sidebar automatically\n\
+         When the user asks you to build something, you MUST write real code:\n\
+         1. Call create_cartridge with source_code containing COMPLETE Leptos Rust code\n\
+         2. For frontend apps: use leptos + wasm_bindgen, export init(selector: &str)\n\
+         3. For interactive apps: use the framebuffer ABI (x402_tick, set_pixel, etc.)\n\
+         4. Then call compile_cartridge to build it\n\
+         5. NEVER create cartridges without source_code — empty = useless template\n\
+         6. Write the FULL implementation: if asked for a todo app, write todo logic;\n\
+            if asked for a game, write game logic. Do NOT use placeholder code.\n\
          \n\
          BEHAVIOR RULES:\n\
          - Stay focused on what the user asked. Do NOT suggest unrelated projects.\n\
