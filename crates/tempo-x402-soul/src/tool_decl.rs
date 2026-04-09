@@ -495,7 +495,13 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     },
                     "source_code": {
                         "type": "string",
-                        "description": "Rust source code for src/lib.rs. Must export x402_handle(request_ptr, request_len). Use x402_response() to send replies. Leave empty for default template."
+                        "description": "Rust source code for src/lib.rs. \
+                        For BACKEND: Must export x402_handle(). Leave empty for default template. \
+                        For FRONTEND: MUST provide complete Leptos app source code implementing \
+                        the requested functionality. Use `use leptos::*;` and `use wasm_bindgen::prelude::*;`. \
+                        Define your component with #[component], then: \
+                        `#[wasm_bindgen] pub fn init(selector: &str) { ... mount_to(el, App); }`. \
+                        DO NOT leave empty for frontend — you will just get a useless counter template."
                     },
                     "description": {
                         "type": "string",
