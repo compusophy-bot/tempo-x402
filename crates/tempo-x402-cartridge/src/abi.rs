@@ -214,6 +214,43 @@ pub fn register_host_functions(linker: &mut Linker<CartridgeState>) -> Result<()
             CartridgeError::Abi(format!("failed to register env::x402_payment_info: {e}"))
         })?;
 
+    // ── env::malloc / env::free — safety net for cartridges that use std::alloc ──
+    // wasm32-unknown-unknown + no_std emits env::malloc/env::free imports when
+    // code calls std::alloc::alloc(). Provide a bump allocator so old cartridges
+    // don't fail at instantiation.
+    linker
+        .func_wrap(
+            "env",
+            "malloc",
+            |mut caller: Caller<'_, CartridgeState>, size: i32| -> i32 {
+                let memory = match caller.get_export("memory") {
+                    Some(wasmtime::Extern::Memory(m)) => m,
+                    _ => return 0,
+                };
+                let current_pages = memory.size(&caller);
+                let current_bytes = current_pages * 65536;
+                // Allocate at the end of current memory, grow if needed
+                let aligned_size = ((size as u64 + 15) / 16) * 16;
+                let alloc_ptr = current_bytes;
+                let needed = alloc_ptr + aligned_size;
+                let needed_pages = (needed + 65535) / 65536;
+                if needed_pages > current_pages {
+                    let grow = needed_pages - current_pages;
+                    if memory.grow(&mut caller, grow).is_err() {
+                        return 0;
+                    }
+                }
+                alloc_ptr as i32
+            },
+        )
+        .map_err(|e| CartridgeError::Abi(format!("failed to register env::malloc: {e}")))?;
+
+    linker
+        .func_wrap("env", "free", |_caller: Caller<'_, CartridgeState>, _ptr: i32| {
+            // No-op — bump allocator, memory freed when Store drops
+        })
+        .map_err(|e| CartridgeError::Abi(format!("failed to register env::free: {e}")))?;
+
     Ok(())
 }
 

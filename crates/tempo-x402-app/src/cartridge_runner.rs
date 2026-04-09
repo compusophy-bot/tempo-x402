@@ -386,12 +386,16 @@ pub async fn load_frontend_cartridge(slug: &str, mount_id: &str) -> Result<(), S
     let js_url = format!("/c/{slug}/pkg/{file_slug}.js");
     let wasm_url = format!("/c/{slug}/pkg/{file_slug}_bg.wasm");
 
-    // Use dynamic import() to load the JS glue module, then init WASM and mount
+    // Use dynamic import() to load the JS glue module, then init WASM and mount.
+    // Some cartridges export `init(selector)` (template pattern), others use
+    // `#[wasm_bindgen(start)]` which auto-runs on load. Handle both.
     let script = format!(
         r#"(async () => {{
             const mod = await import('{js_url}');
             await mod.default('{wasm_url}');
-            mod.init('#{mount_id}');
+            if (typeof mod.init === 'function') {{
+                mod.init('#{mount_id}');
+            }}
         }})()"#
     );
 

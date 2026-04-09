@@ -215,10 +215,11 @@ pub extern "C" fn x402_handle(request_ptr: *const u8, request_len: i32) {
 }
 
 /// Optional: allocator for host-to-guest memory transfers.
+static mut SCRATCH: [u8; 131072] = [0u8; 131072]; // 128KB scratch
+
 #[no_mangle]
 pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
-    let layout = core::alloc::Layout::from_size_align(size as usize, 1).unwrap();
-    unsafe { std::alloc::alloc(layout) }
+    unsafe { SCRATCH.as_mut_ptr() }
 }
 "#;
     template.replace("__SLUG__", slug)
@@ -379,10 +380,11 @@ pub extern "C" fn x402_get_height() -> i32 {
     unsafe { H as i32 }
 }
 
+static mut SCRATCH: [u8; 131072] = [0u8; 131072]; // 128KB scratch
+
 #[no_mangle]
 pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
-    let layout = core::alloc::Layout::from_size_align(size as usize, 1).unwrap();
-    unsafe { std::alloc::alloc(layout) }
+    unsafe { SCRATCH.as_mut_ptr() }
 }
 "##;
     template.replace("__SLUG__", slug)
