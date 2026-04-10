@@ -18,7 +18,7 @@
 
 ---
 
-Rust workspace. 9 crates. ~72K lines. 30M+ neural parameters in a unified encoder-decoder. Bloch sphere cognitive geometry. Hot-swappable WASM cognitive modules. Persistent KV cartridge state. No ML framework. No Python. No GPU.
+Rust workspace. 9 crates. ~116K lines. 30M+ neural parameters in a unified encoder-decoder. Bloch sphere cognitive geometry. Hot-swappable WASM cognitive modules. 188 compile-verified training cartridges. No ML framework. No Python. No GPU.
 
 ## What is this?
 
@@ -167,6 +167,17 @@ export GEMINI_API_KEY="your-key"
 The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chain identity, starts gateway on port 4023, begins cognitive loop.
 
 ## Changelog
+
+### v9.2.0 -- Training Corpus Expansion
+
+188 compile-verified WASM cartridges for codegen model training. 100% compilation rate against wasm32-unknown-unknown target.
+
+- **188 training cartridges**: tier1 (62 static), tier2 (24 routing/parsing), tier3 (25 KV state), tier4 (40 rich apps), tier5 (17 complex multi-feature), frontend (20 Leptos SPA)
+- **New tier4 apps**: grocery list, diary, unit converter, scorekeeper, word counter, bingo, daily planner, address book, music playlist, tip calculator, tic-tac-toe, coin flip, stopwatch, grade tracker, water tracker, dice roller, sleep log, color palette generator, weight log
+- **New tier5 apps**: recipe book with detail view, expense manager with budget tracking, flashcard quiz with spaced repetition stats, workout planner with weekly schedule
+- **New frontend cartridges**: dice roller, quiz app, tip calculator, habit tracker, notepad, unit converter, countdown timer, voting poll, tic-tac-toe -- all Leptos 0.6 CSR
+- **Codegen bulk-loader**: `load_training_corpus()` reads all .rs files from training_data/cartridges/ on first train cycle
+- **Sled startup compaction**: Auto-compacts sled DB if >500MB (export/reimport)
 
 ### v9.1.0 -- Cartridge System Overhaul
 
