@@ -101,219 +101,204 @@ fn parse_u32(s: &str) -> u32 {
     n
 }
 
-struct Question {
-    text: &'static str,
-    options: [&'static str; 4],
-    answer: u32, // 0-3
-}
-
-const QUESTIONS: [Question; 10] = [
-    Question { text: "What is the largest planet in our solar system?", options: ["Mars", "Jupiter", "Saturn", "Neptune"], answer: 1 },
-    Question { text: "Which language is the Linux kernel primarily written in?", options: ["C++", "Rust", "C", "Assembly"], answer: 2 },
-    Question { text: "What year was Bitcoin's whitepaper published?", options: ["2006", "2008", "2010", "2012"], answer: 1 },
-    Question { text: "Which element has the atomic number 79?", options: ["Silver", "Platinum", "Gold", "Copper"], answer: 2 },
-    Question { text: "What does CPU stand for?", options: ["Central Processing Unit", "Central Program Utility", "Computer Processing Unit", "Core Processing Unit"], answer: 0 },
-    Question { text: "Which protocol operates on port 443?", options: ["HTTP", "FTP", "HTTPS", "SSH"], answer: 2 },
-    Question { text: "What is the speed of light in km/s (approx)?", options: ["150,000", "300,000", "500,000", "1,000,000"], answer: 1 },
-    Question { text: "Who created the Rust programming language?", options: ["Guido van Rossum", "Bjarne Stroustrup", "Graydon Hoare", "James Gosling"], answer: 2 },
-    Question { text: "What is the base of the hexadecimal number system?", options: ["8", "10", "12", "16"], answer: 3 },
-    Question { text: "Which data structure uses LIFO ordering?", options: ["Queue", "Stack", "Heap", "Tree"], answer: 1 },
+// Trivia questions: question|optA|optB|optC|optD|correct_idx(0-3)
+static QUESTIONS: &[&str] = &[
+    "What planet is known as the Red Planet?|Venus|Mars|Jupiter|Saturn|1",
+    "What is the largest ocean on Earth?|Atlantic|Indian|Pacific|Arctic|2",
+    "Who painted the Mona Lisa?|Michelangelo|Da Vinci|Raphael|Donatello|1",
+    "What is the chemical symbol for gold?|Ag|Fe|Au|Cu|2",
+    "How many bones are in the adult human body?|186|206|226|246|1",
+    "What year did the Titanic sink?|1910|1912|1914|1916|1",
+    "What is the smallest prime number?|0|1|2|3|2",
+    "Which element has atomic number 1?|Helium|Hydrogen|Lithium|Carbon|1",
+    "What is the capital of Australia?|Sydney|Melbourne|Canberra|Perth|2",
+    "How many continents are there?|5|6|7|8|2",
+    "What language has the most native speakers?|English|Spanish|Mandarin|Hindi|2",
+    "What is the speed of light in km/s?|200000|300000|400000|500000|1",
+    "Who wrote Romeo and Juliet?|Dickens|Shakespeare|Austen|Twain|1",
+    "What is the hardest natural substance?|Ruby|Sapphire|Diamond|Emerald|2",
+    "Which country has the most people?|USA|India|China|Indonesia|1",
+    "What gas do plants absorb?|Oxygen|Nitrogen|CO2|Hydrogen|2",
+    "How many strings does a violin have?|3|4|5|6|1",
+    "What is the boiling point of water in Celsius?|90|95|100|105|2",
+    "Who discovered penicillin?|Pasteur|Fleming|Koch|Jenner|1",
+    "What is the largest mammal?|Elephant|Blue Whale|Giraffe|Hippo|1",
 ];
 
-fn get_leaderboard_count() -> u32 {
-    parse_u32(kv_read("tv_lb_count").unwrap_or("0"))
-}
+fn render_game() {
+    let games_played = parse_u32(kv_read("trivia_games").unwrap_or("0"));
+    let high_score = kv_read("trivia_highscore").unwrap_or("0");
+    let high_name = kv_read("trivia_highname").unwrap_or("Nobody");
 
-fn render_quiz() {
     let mut p = 0;
-    p = buf_write(p, r##"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Trivia Challenge</title>
+    p = buf_write(p, r##"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Trivia Game</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
-.header{background:#1a1d23;padding:20px 30px;text-align:center;border-bottom:2px solid #f6ad55}
-.header h1{color:#f6ad55;font-size:1.8em}
-.header p{color:#a0aec0;margin-top:5px}
-.container{max-width:800px;margin:0 auto;padding:30px 20px}
-.question{background:#1a1d23;border:1px solid #2d3748;border-radius:10px;padding:20px;margin-bottom:15px}
-.question .num{color:#f6ad55;font-weight:700;font-size:0.9em;margin-bottom:8px}
-.question .text{font-size:1.1em;margin-bottom:15px;line-height:1.4}
-.options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.option{background:#2d3748;border:2px solid #4a5568;border-radius:8px;padding:10px 15px;cursor:pointer;transition:all 0.2s}
-.option:hover{border-color:#f6ad55;background:#2d3748}
-.option.selected{border-color:#f6ad55;background:#44337a}
-.option input{display:none}
-.submit-area{text-align:center;margin:25px 0}
-.btn{background:#f6ad55;color:#1a1d23;border:none;padding:12px 35px;border-radius:8px;font-size:1.1em;font-weight:700;cursor:pointer}
-.btn:hover{background:#ed8936}
-.btn-secondary{background:#4a5568;color:#e0e0e0}
-.name-input{background:#2d3748;color:#e0e0e0;border:1px solid #4a5568;padding:10px 15px;border-radius:6px;font-size:1em;margin-right:10px;width:200px}
-.progress{background:#2d3748;height:6px;border-radius:3px;margin:15px 0}
-.progress-bar{background:#f6ad55;height:100%;border-radius:3px;transition:width 0.3s}
-.leaderboard{background:#1a1d23;border-radius:10px;padding:20px;margin-top:30px}
-.leaderboard h2{color:#f6ad55;margin-bottom:15px}
-.lb-row{display:flex;justify-content:space-between;padding:10px 15px;border-bottom:1px solid #2d3748}
-.lb-row:last-child{border-bottom:none}
-.lb-rank{color:#f6e05e;font-weight:700;width:30px}
-.lb-name{flex:1;margin-left:10px}
-.lb-score{color:#48bb78;font-weight:600}
-.result{background:#1a1d23;border-radius:10px;padding:30px;text-align:center;margin:20px 0}
-.result .score{font-size:3em;color:#f6ad55;font-weight:700}
-.result .label{color:#a0aec0;margin-top:5px;font-size:1.1em}
+body{font-family:'Segoe UI',sans-serif;background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);color:#e0e0e0;min-height:100vh;display:flex;justify-content:center;padding:20px}
+.container{max-width:700px;width:100%}
+h1{color:#e94560;text-align:center;font-size:2.2em;margin-bottom:5px}
+.subtitle{color:#8b949e;text-align:center;margin-bottom:25px}
+.stats-bar{display:flex;gap:15px;justify-content:center;margin-bottom:25px}
+.stat-pill{background:rgba(255,255,255,0.1);padding:8px 20px;border-radius:20px;font-size:0.9em}
+.stat-pill strong{color:#e94560}
+.game-area{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;padding:30px}
+.question-num{color:#e94560;font-size:0.9em;margin-bottom:10px;font-weight:600}
+.question{font-size:1.4em;font-weight:600;margin-bottom:25px;line-height:1.4}
+.options{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.option{background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.15);border-radius:10px;padding:15px;cursor:pointer;font-size:1.05em;transition:all 0.3s;text-align:center}
+.option:hover{background:rgba(233,69,96,0.2);border-color:#e94560}
+.option.correct{background:rgba(46,204,113,0.3);border-color:#2ecc71}
+.option.wrong{background:rgba(231,76,60,0.3);border-color:#e74c3c}
+.option.disabled{pointer-events:none;opacity:0.7}
+.progress{height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-bottom:20px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#e94560,#0f3460);transition:width 0.5s;border-radius:3px}
+.score-display{text-align:center;font-size:1.2em;margin:15px 0}
+.score-display strong{color:#e94560;font-size:1.5em}
+.result-area{text-align:center;padding:20px}
+.result-area h2{font-size:2em;margin-bottom:10px}
+.result-area .final-score{font-size:4em;font-weight:bold;color:#e94560}
+.result-area .grade{font-size:1.3em;margin:10px 0;color:#2ecc71}
+.btn{background:#e94560;color:#fff;border:none;padding:12px 30px;border-radius:8px;cursor:pointer;font-size:1.1em;font-weight:600;margin-top:15px}
+.btn:hover{background:#c13552}
+.feedback{text-align:center;margin-top:15px;font-size:1.1em;min-height:30px}
+.leaderboard{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:15px;padding:20px;margin-top:25px}
+.leaderboard h2{color:#e94560;margin-bottom:15px}
+.lb-row{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.05)}
+.lb-row .rank{color:#f0883e;width:30px}
+.lb-row .score{color:#2ecc71;font-weight:bold}
+.name-input{background:rgba(255,255,255,0.1);color:#e0e0e0;border:1px solid rgba(255,255,255,0.2);padding:10px;border-radius:5px;font-size:1em;margin-right:10px}
 </style></head><body>
-<div class="header"><h1>Trivia Challenge</h1><p>10 questions &middot; Test your knowledge</p></div>
 <div class="container">
-<div class="progress"><div class="progress-bar" id="progress" style="width:0%"></div></div>
-<form id="quiz-form">"##);
-
-    let mut qi = 0u32;
-    while qi < 10 {
-        let q = &QUESTIONS[qi as usize];
-        p = buf_write(p, r##"<div class="question"><div class="num">Question "##);
-        p = buf_write(p, num_to_str(qi + 1));
-        p = buf_write(p, r##" of 10</div><div class="text">"##);
-        p = buf_write(p, q.text);
-        p = buf_write(p, r##"</div><div class="options">"##);
-        let mut oi = 0u32;
-        while oi < 4 {
-            p = buf_write(p, r##"<label class="option" onclick="selectOpt(this,'q"##);
-            p = buf_write(p, num_to_str(qi));
-            p = buf_write(p, r##"')"><input type="radio" name="q"##);
-            p = buf_write(p, num_to_str(qi));
-            p = buf_write(p, r##"" value=""##);
-            p = buf_write(p, num_to_str(oi));
-            p = buf_write(p, r##"">"##);
-            p = buf_write(p, q.options[oi as usize]);
-            p = buf_write(p, r##"</label>"##);
-            oi += 1;
-        }
-        p = buf_write(p, r##"</div></div>"##);
-        qi += 1;
-    }
-
-    p = buf_write(p, r##"</form>
-<div class="submit-area">
-<input type="text" class="name-input" id="player-name" placeholder="Your name">
-<button class="btn" onclick="submitQuiz()">Submit Answers</button>
+<h1>Trivia Challenge</h1>
+<p class="subtitle">Test your knowledge - 10 questions per round</p>
+<div class="stats-bar">
+<div class="stat-pill">Games: <strong>"##);
+    p = buf_write(p, num_to_str(games_played));
+    p = buf_write(p, r##"</strong></div>
+<div class="stat-pill">High Score: <strong>"##);
+    p = buf_write(p, high_score);
+    p = buf_write(p, r##"/10</strong> by "##);
+    p = buf_write(p, high_name);
+    p = buf_write(p, r##"</div></div>
+<div class="game-area" id="game-area">
+<div class="progress"><div class="progress-fill" id="progress" style="width:0%"></div></div>
+<div class="question-num" id="q-num">Question 1 of 10</div>
+<div class="question" id="question">Loading...</div>
+<div class="score-display">Score: <strong id="score">0</strong>/10</div>
+<div class="options" id="options"></div>
+<div class="feedback" id="feedback"></div>
 </div>
-<div class="result" id="result" style="display:none">
-<div class="score" id="score-val"></div>
-<div class="label" id="score-label"></div>
-<button class="btn btn-secondary" onclick="location.reload()" style="margin-top:15px">Play Again</button>
-</div>
-<div class="leaderboard"><h2>Leaderboard</h2><div id="lb-list">"##);
+<div class="leaderboard"><h2>Top Scores</h2><div id="lb">"##);
 
-    // Render leaderboard
-    let lb_count = get_leaderboard_count();
-    static mut LB_SCORES: [u32; 50] = [0u32; 50];
-    static mut LB_IDXS: [u32; 50] = [0u32; 50];
-    let mut total = 0u32;
-    let mut li = 0u32;
-    while li < lb_count && (total as usize) < 50 {
-        let mut kbuf = [0u8; 24];
-        let prefix = b"tv_lb_";
-        kbuf[..prefix.len()].copy_from_slice(prefix);
-        let ns = num_to_str(li);
-        let nb = ns.as_bytes();
-        kbuf[prefix.len()..prefix.len()+nb.len()].copy_from_slice(nb);
-        let key = unsafe { core::str::from_utf8_unchecked(&kbuf[..prefix.len()+nb.len()]) };
-        if let Some(data) = kv_read(key) {
-            let db = data.as_bytes();
-            let mut pipe = 0;
-            let mut fi = 0;
-            while fi < db.len() { if db[fi] == b'|' { pipe = fi; break; } fi += 1; }
-            if pipe > 0 {
-                let score_s = unsafe { core::str::from_utf8_unchecked(&db[pipe+1..]) };
-                unsafe {
-                    LB_SCORES[total as usize] = parse_u32(score_s);
-                    LB_IDXS[total as usize] = li;
-                }
-                total += 1;
-            }
-        }
-        li += 1;
-    }
-    // Sort descending
-    if total > 1 {
-        let mut sorted = false;
-        while !sorted {
-            sorted = true;
-            let mut k = 0usize;
-            while k + 1 < total as usize {
-                unsafe {
-                    if LB_SCORES[k] < LB_SCORES[k + 1] {
-                        let ts = LB_SCORES[k]; LB_SCORES[k] = LB_SCORES[k+1]; LB_SCORES[k+1] = ts;
-                        let ti = LB_IDXS[k]; LB_IDXS[k] = LB_IDXS[k+1]; LB_IDXS[k+1] = ti;
-                        sorted = false;
+    let lb = kv_read("trivia_lb").unwrap_or("");
+    if lb.is_empty() {
+        p = buf_write(p, r##"<p style="color:#8b949e;text-align:center">No scores yet.</p>"##);
+    } else {
+        let lbb = lb.as_bytes();
+        let mut es = 0;
+        let mut ei = 0;
+        let mut rank: u32 = 1;
+        while ei <= lbb.len() && rank <= 10 {
+            if ei == lbb.len() || lbb[ei] == b';' {
+                if ei > es {
+                    if let Ok(entry) = core::str::from_utf8(&lbb[es..ei]) {
+                        let eb = entry.as_bytes();
+                        if let Some(cp) = eb.iter().position(|&b| b == b':') {
+                            let name = core::str::from_utf8(&eb[..cp]).unwrap_or("?");
+                            let sc = core::str::from_utf8(&eb[cp+1..]).unwrap_or("0");
+                            p = buf_write(p, r##"<div class="lb-row"><span class="rank">"##);
+                            p = buf_write(p, num_to_str(rank));
+                            p = buf_write(p, r##".</span><span>"##);
+                            p = buf_write(p, name);
+                            p = buf_write(p, r##"</span><span class="score">"##);
+                            p = buf_write(p, sc);
+                            p = buf_write(p, r##"/10</span></div>"##);
+                            rank += 1;
+                        }
                     }
                 }
-                k += 1;
+                es = ei + 1;
             }
+            ei += 1;
         }
-    }
-    let show = if total > 10 { 10 } else { total };
-    let mut ri = 0u32;
-    while ri < show {
-        let idx = unsafe { LB_IDXS[ri as usize] };
-        let mut kbuf2 = [0u8; 24];
-        let prefix2 = b"tv_lb_";
-        kbuf2[..prefix2.len()].copy_from_slice(prefix2);
-        let ns2 = num_to_str(idx);
-        let nb2 = ns2.as_bytes();
-        kbuf2[prefix2.len()..prefix2.len()+nb2.len()].copy_from_slice(nb2);
-        let key2 = unsafe { core::str::from_utf8_unchecked(&kbuf2[..prefix2.len()+nb2.len()]) };
-        if let Some(data) = kv_read(key2) {
-            let db = data.as_bytes();
-            let mut pipe = 0;
-            let mut fi = 0;
-            while fi < db.len() { if db[fi] == b'|' { pipe = fi; break; } fi += 1; }
-            let name = unsafe { core::str::from_utf8_unchecked(&db[..pipe]) };
-            let score_s = unsafe { core::str::from_utf8_unchecked(&db[pipe+1..]) };
-            p = buf_write(p, r##"<div class="lb-row"><span class="lb-rank">"##);
-            p = buf_write(p, num_to_str(ri + 1));
-            p = buf_write(p, r##".</span><span class="lb-name">"##);
-            p = buf_write(p, name);
-            p = buf_write(p, r##"</span><span class="lb-score">"##);
-            p = buf_write(p, score_s);
-            p = buf_write(p, r##"/10</span></div>"##);
-        }
-        ri += 1;
-    }
-    if show == 0 {
-        p = buf_write(p, r##"<div class="lb-row" style="color:#a0aec0">No scores yet. Be the first!</div>"##);
     }
 
     p = buf_write(p, r##"</div></div></div>
 <script>
-var answered=0;
-function selectOpt(el,name){
-  var opts=document.querySelectorAll('input[name="'+name+'"]');
-  for(var i=0;i<opts.length;i++)opts[i].parentElement.classList.remove('selected');
-  el.classList.add('selected');
-  el.querySelector('input').checked=true;
-  answered=0;for(var q=0;q<10;q++){var r=document.querySelector('input[name="q'+q+'"]:checked');if(r)answered++;}
-  document.getElementById('progress').style.width=(answered*10)+'%';
+const questions=["##);
+
+    let mut qi = 0;
+    while qi < QUESTIONS.len() {
+        if qi > 0 { p = buf_write(p, ","); }
+        p = buf_write(p, r##"""##);
+        p = buf_write(p, QUESTIONS[qi]);
+        p = buf_write(p, r##"""##);
+        qi += 1;
+    }
+
+    p = buf_write(p, r##"];
+let gameQs=[];
+let current=0;
+let score=0;
+let answered=false;
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+function startGame(){
+  gameQs=shuffle([...Array(questions.length).keys()]).slice(0,10);
+  current=0;score=0;answered=false;
+  document.getElementById('score').textContent='0';
+  showQuestion();
 }
-function submitQuiz(){
-  var answers='';
-  for(var q=0;q<10;q++){
-    var r=document.querySelector('input[name="q'+q+'"]:checked');
-    answers+=r?r.value:'9';
-    if(q<9)answers+=',';
+
+function showQuestion(){
+  if(current>=10){showResult();return;}
+  answered=false;
+  const q=questions[gameQs[current]];
+  const parts=q.split('|');
+  document.getElementById('q-num').textContent='Question '+(current+1)+' of 10';
+  document.getElementById('question').textContent=parts[0];
+  document.getElementById('progress').style.width=(current*10)+'%';
+  document.getElementById('feedback').textContent='';
+  let html='';
+  for(let i=0;i<4;i++){
+    html+='<div class="option" onclick="answer('+i+','+parts[5]+')">'+parts[i+1]+'</div>';
   }
-  var name=document.getElementById('player-name').value||'Anonymous';
-  fetch('',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'submit',name:name,answers:answers})})
-  .then(function(r){return r.json();})
-  .then(function(d){
-    document.getElementById('quiz-form').style.display='none';
-    document.getElementById('result').style.display='block';
-    document.getElementById('score-val').textContent=d.score+'/10';
-    var pct=d.score*10;
-    var msg=pct>=80?'Excellent!':pct>=60?'Good job!':pct>=40?'Not bad!':'Keep studying!';
-    document.getElementById('score-label').textContent=msg+' ('+pct+'%)';
-    document.getElementById('progress').style.width='100%';
-  });
+  document.getElementById('options').innerHTML=html;
 }
+
+function answer(idx,correct){
+  if(answered)return;
+  answered=true;
+  const opts=document.querySelectorAll('.option');
+  opts.forEach((o,i)=>{
+    o.classList.add('disabled');
+    if(i===correct)o.classList.add('correct');
+    if(i===idx&&i!==correct)o.classList.add('wrong');
+  });
+  if(idx===correct){
+    score++;
+    document.getElementById('score').textContent=score;
+    document.getElementById('feedback').innerHTML='<span style="color:#2ecc71">Correct!</span>';
+  }else{
+    document.getElementById('feedback').innerHTML='<span style="color:#e74c3c">Wrong! The answer was: '+document.querySelectorAll('.option')[correct].textContent+'</span>';
+  }
+  setTimeout(()=>{current++;showQuestion();},1800);
+}
+
+function showResult(){
+  const grade=score>=9?'Genius!':score>=7?'Great job!':score>=5?'Not bad!':score>=3?'Keep trying!':'Better luck next time!';
+  document.getElementById('game-area').innerHTML='<div class="result-area"><h2>Round Complete!</h2><div class="final-score">'+score+'</div><p>out of 10</p><div class="grade">'+grade+'</div><div><input class="name-input" type="text" id="pname" placeholder="Your name" maxlength="20"><button class="btn" onclick="saveAndRestart()">Save Score</button></div><button class="btn" style="background:#333" onclick="location.reload()">Play Again</button></div>';
+}
+
+function saveAndRestart(){
+  const name=document.getElementById('pname').value||'Anonymous';
+  fetch('',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'save',name:name,score:''+score})})
+  .then(()=>location.reload());
+}
+
+startGame();
 </script></body></html>"##);
     respond(200, buf_as_str(p), "text/html");
 }
@@ -327,66 +312,49 @@ pub extern "C" fn x402_handle(method_ptr: *const u8, method_len: i32, path_ptr: 
 
     if method == "POST" {
         let action = find_json_str(body, "action").unwrap_or("");
-        if action == "submit" {
-            let name = find_json_str(body, "name").unwrap_or("Anonymous");
-            let answers_str = find_json_str(body, "answers").unwrap_or("");
-            // Parse answers: "0,1,2,3,..."
-            let ab = answers_str.as_bytes();
-            let mut score = 0u32;
-            let mut qi = 0u32;
-            let mut start = 0;
-            let mut idx = 0;
-            while idx <= ab.len() && qi < 10 {
-                if idx == ab.len() || ab[idx] == b',' {
-                    if idx > start {
-                        let ans_s = unsafe { core::str::from_utf8_unchecked(&ab[start..idx]) };
-                        let ans = parse_u32(ans_s);
-                        if ans == QUESTIONS[qi as usize].answer {
-                            score += 1;
-                        }
-                    }
-                    qi += 1;
-                    start = idx + 1;
-                }
-                idx += 1;
+        if action == "save" {
+            let name = find_json_str(body, "name").unwrap_or("Anon");
+            let score_str = find_json_str(body, "score").unwrap_or("0");
+            let score = parse_u32(score_str);
+
+            let games = parse_u32(kv_read("trivia_games").unwrap_or("0")) + 1;
+            kv_write("trivia_games", num_to_str(games));
+
+            let current_high = parse_u32(kv_read("trivia_highscore").unwrap_or("0"));
+            if score > current_high {
+                kv_write("trivia_highscore", score_str);
+                kv_write("trivia_highname", name);
             }
 
-            // Save to leaderboard
-            let lb_count = get_leaderboard_count();
-            let mut kbuf = [0u8; 24];
-            let prefix = b"tv_lb_";
-            kbuf[..prefix.len()].copy_from_slice(prefix);
-            let cs = num_to_str(lb_count);
-            let cb = cs.as_bytes();
-            kbuf[prefix.len()..prefix.len()+cb.len()].copy_from_slice(cb);
-            let key = unsafe { core::str::from_utf8_unchecked(&kbuf[..prefix.len()+cb.len()]) };
-            // Store "name|score"
-            let mut val = [0u8; 256];
+            let existing = kv_read("trivia_lb").unwrap_or("");
+            let mut entry = [0u8; 64];
             let nb = name.as_bytes();
-            val[..nb.len()].copy_from_slice(nb);
-            val[nb.len()] = b'|';
-            let ss = num_to_str(score);
-            let sb = ss.as_bytes();
-            val[nb.len()+1..nb.len()+1+sb.len()].copy_from_slice(sb);
-            let vstr = unsafe { core::str::from_utf8_unchecked(&val[..nb.len()+1+sb.len()]) };
-            kv_write(key, vstr);
-            kv_write("tv_lb_count", num_to_str(lb_count + 1));
+            let sb = score_str.as_bytes();
+            entry[..nb.len()].copy_from_slice(nb);
+            entry[nb.len()] = b':';
+            entry[nb.len()+1..nb.len()+1+sb.len()].copy_from_slice(sb);
+            let elen = nb.len() + 1 + sb.len();
+            let entry_str = unsafe { core::str::from_utf8_unchecked(&entry[..elen]) };
 
-            // Return score
-            let mut rbuf = [0u8; 32];
-            let pre = b"{\"score\":";
-            rbuf[..pre.len()].copy_from_slice(pre);
-            let scs = num_to_str(score);
-            let scb = scs.as_bytes();
-            rbuf[pre.len()..pre.len()+scb.len()].copy_from_slice(scb);
-            rbuf[pre.len()+scb.len()] = b'}';
-            let rstr = unsafe { core::str::from_utf8_unchecked(&rbuf[..pre.len()+scb.len()+1]) };
-            respond(200, rstr, "application/json");
+            if existing.is_empty() {
+                kv_write("trivia_lb", entry_str);
+            } else {
+                let mut nbuf = [0u8; 4096];
+                nbuf[..elen].copy_from_slice(&entry[..elen]);
+                nbuf[elen] = b';';
+                let eb = existing.as_bytes();
+                let copy_len = eb.len().min(4096 - elen - 1);
+                nbuf[elen+1..elen+1+copy_len].copy_from_slice(&eb[..copy_len]);
+                let nv = unsafe { core::str::from_utf8_unchecked(&nbuf[..elen+1+copy_len]) };
+                kv_write("trivia_lb", nv);
+            }
+
+            respond(200, r##"{"ok":true}"##, "application/json");
         } else {
-            respond(400, r##"{"error":"unknown action"}"##, "application/json");
+            respond(400, r##"{"error":"unknown"}"##, "application/json");
         }
         return;
     }
 
-    render_quiz();
+    render_game();
 }

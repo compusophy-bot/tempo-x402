@@ -21,89 +21,139 @@ fn host_log(level: i32, msg: &str) {
     unsafe { log(level, msg.as_ptr(), msg.len() as i32); }
 }
 
-const PAGE: &str = r##"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Notifications</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:##0f0f23;color:##c9d1d9;font-family:-apple-system,sans-serif;padding:24px}
-h1{font-size:1.5rem;margin-bottom:16px;color:##e6edf3}
-.badge{display:inline-block;background:##da3633;color:white;border-radius:10px;padding:2px 8px;font-size:0.75rem;margin-left:8px}
-.notif{border:1px solid ##30363d;border-radius:8px;padding:16px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
-.notif.info{border-left:3px solid ##58a6ff}
-.notif.warn{border-left:3px solid ##d29922}
-.notif.error{border-left:3px solid ##f85149}
-.notif.success{border-left:3px solid ##3fb950}
-.icon{font-size:1.2rem;flex-shrink:0}
-.body{flex:1}
-.title{font-weight:600;margin-bottom:4px;color:##e6edf3}
-.desc{font-size:0.9rem;color:##8b949e}
-.time{font-size:0.75rem;color:##484f58;margin-top:4px}
-.actions{display:flex;gap:8px;margin-top:8px}
-.btn{padding:4px 12px;border-radius:6px;border:1px solid ##30363d;background:##21262d;color:##c9d1d9;cursor:pointer;font-size:0.8rem}
-.btn:hover{background:##30363d}
-.btn.primary{background:##238636;border-color:##238636;color:white}
-</style>
-</head>
-<body>
-<h1>Notifications <span class="badge">5</span></h1>
-<div class="notif success">
-  <div class="icon">&#10003;</div>
-  <div class="body">
-    <div class="title">Deployment successful</div>
-    <div class="desc">Service borg-0 deployed v9.2.0 to production</div>
-    <div class="time">2 minutes ago</div>
-  </div>
-</div>
-<div class="notif info">
-  <div class="icon">&#8505;</div>
-  <div class="body">
-    <div class="title">New colony member</div>
-    <div class="desc">borg-0-3 has joined the colony and synced brain weights</div>
-    <div class="time">15 minutes ago</div>
-    <div class="actions"><button class="btn primary">View</button><button class="btn">Dismiss</button></div>
-  </div>
-</div>
-<div class="notif warn">
-  <div class="icon">&#9888;</div>
-  <div class="body">
-    <div class="title">High memory usage</div>
-    <div class="desc">borg-0-2 memory at 89% — consider pruning sled database</div>
-    <div class="time">1 hour ago</div>
-    <div class="actions"><button class="btn primary">Investigate</button><button class="btn">Snooze</button></div>
-  </div>
-</div>
-<div class="notif error">
-  <div class="icon">&#10007;</div>
-  <div class="body">
-    <div class="title">Benchmark regression</div>
-    <div class="desc">IQ dropped from 127 to 121 after last commit. Review changes.</div>
-    <div class="time">3 hours ago</div>
-    <div class="actions"><button class="btn primary">Review</button></div>
-  </div>
-</div>
-<div class="notif info">
-  <div class="icon">&#128276;</div>
-  <div class="body">
-    <div class="title">Scheduled maintenance</div>
-    <div class="desc">Railway platform maintenance window: Sunday 02:00-04:00 UTC</div>
-    <div class="time">Yesterday</div>
-  </div>
-</div>
-</body>
-</html>"##;
-
-#[no_mangle]
-pub extern "C" fn x402_handle(request_ptr: *const u8, request_len: i32) {
-    host_log(1, "notification-center cartridge invoked");
-    respond(200, PAGE, "text/html");
-}
-
 static mut SCRATCH: [u8; 131072] = [0u8; 131072];
 
 #[no_mangle]
 pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
     unsafe { SCRATCH.as_mut_ptr() }
+}
+
+const BODY: &str = r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notifications</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1e293b; padding: 40px 20px; display: flex; justify-content: center; }
+  .panel { width: 100%; max-width: 480px; background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; }
+  .panel-header { padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; }
+  .panel-header h2 { font-size: 1.15rem; font-weight: 700; }
+  .badge { background: #ef4444; color: #fff; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
+  .mark-all { font-size: 0.82rem; color: #3b82f6; font-weight: 600; background: none; border: none; cursor: pointer; }
+  .mark-all:hover { text-decoration: underline; }
+  .tabs { display: flex; border-bottom: 1px solid #f1f5f9; }
+  .tab { flex: 1; padding: 12px; text-align: center; font-size: 0.82rem; font-weight: 600; color: #94a3b8; cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+  .tab:hover { color: #64748b; }
+  .notifications { max-height: 520px; overflow-y: auto; }
+  .notif { display: flex; gap: 14px; padding: 16px 24px; border-bottom: 1px solid #f8fafc; transition: background 0.15s; cursor: pointer; position: relative; }
+  .notif:hover { background: #f8fafc; }
+  .notif.unread { background: #f0f7ff; }
+  .notif.unread::before { content: ''; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; }
+  .notif-icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
+  .notif-icon.info { background: #dbeafe; }
+  .notif-icon.warn { background: #fef3c7; }
+  .notif-icon.error { background: #fee2e2; }
+  .notif-icon.success { background: #dcfce7; }
+  .notif-icon.system { background: #f1f5f9; }
+  .notif-body { flex: 1; min-width: 0; }
+  .notif-title { font-size: 0.88rem; font-weight: 600; margin-bottom: 2px; }
+  .notif-text { font-size: 0.82rem; color: #64748b; line-height: 1.4; }
+  .notif-time { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+  .notif-dismiss { align-self: flex-start; background: none; border: none; color: #cbd5e1; font-size: 1rem; cursor: pointer; padding: 4px; border-radius: 4px; }
+  .notif-dismiss:hover { color: #94a3b8; }
+  .panel-footer { padding: 16px 24px; text-align: center; border-top: 1px solid #f1f5f9; }
+  .view-all { font-size: 0.85rem; color: #3b82f6; font-weight: 600; background: none; border: none; cursor: pointer; }
+  .view-all:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Notifications <span class="badge">5</span></h2>
+      <button class="mark-all">Mark all read</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active">All</button>
+      <button class="tab">Unread</button>
+      <button class="tab">Mentions</button>
+    </div>
+    <div class="notifications">
+      <div class="notif unread">
+        <div class="notif-icon error">&#x26A0;</div>
+        <div class="notif-body">
+          <div class="notif-title">Deployment Failed</div>
+          <div class="notif-text">Build 847 failed on staging: cargo build exited with code 101. Missing dependency in Cargo.toml.</div>
+          <div class="notif-time">2 minutes ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif unread">
+        <div class="notif-icon warn">&#x1F514;</div>
+        <div class="notif-body">
+          <div class="notif-title">High Memory Usage</div>
+          <div class="notif-text">Node borg-0 is at 87% memory utilization. Consider scaling up or optimizing queries.</div>
+          <div class="notif-time">15 minutes ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif unread">
+        <div class="notif-icon info">&#x1F4AC;</div>
+        <div class="notif-body">
+          <div class="notif-title">New Comment on PR 142</div>
+          <div class="notif-text">@alex: Looks good, but extract the retry logic into a shared util module.</div>
+          <div class="notif-time">32 minutes ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif unread">
+        <div class="notif-icon success">&#x2713;</div>
+        <div class="notif-body">
+          <div class="notif-title">Benchmark Complete</div>
+          <div class="notif-text">IQ delta: +3 points. 47/201 problems solved. New best on regex-engine tier.</div>
+          <div class="notif-time">1 hour ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif unread">
+        <div class="notif-icon system">&#x2699;</div>
+        <div class="notif-body">
+          <div class="notif-title">Scheduled Maintenance</div>
+          <div class="notif-text">Database maintenance window: Apr 12, 02:00-04:00 UTC. Expect brief read-only periods.</div>
+          <div class="notif-time">2 hours ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif">
+        <div class="notif-icon info">&#x1F517;</div>
+        <div class="notif-body">
+          <div class="notif-title">Clone Registered</div>
+          <div class="notif-text">borg-0-3 has joined the colony. Stem cell differentiation initiated.</div>
+          <div class="notif-time">5 hours ago</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+      <div class="notif">
+        <div class="notif-icon success">&#x1F389;</div>
+        <div class="notif-body">
+          <div class="notif-title">v9.1.7 Published</div>
+          <div class="notif-text">All 7 crates published to crates.io. Workers compute own ELO from benchmarks.</div>
+          <div class="notif-time">Yesterday</div>
+        </div>
+        <button class="notif-dismiss">&times;</button>
+      </div>
+    </div>
+    <div class="panel-footer">
+      <button class="view-all">View all notifications</button>
+    </div>
+  </div>
+</body>
+</html>"##;
+
+#[no_mangle]
+pub extern "C" fn x402_handle() {
+    host_log(1, "notification_center: serving notifications");
+    respond(200, BODY, "text/html; charset=utf-8");
 }
