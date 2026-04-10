@@ -101,8 +101,10 @@ pub async fn handle_chat(
             || msg_lower.contains("drawing"));
     if is_build_request {
         let nudge_content = format!(
-            "USER REQUEST: {}. Build this as a WASM cartridge with REAL source code. \
-             Write complete Leptos/Rust implementation, not a template.",
+            "USER REQUEST: {}. Build this as a BACKEND WASM cartridge. \
+             Write the source_code as #[no_std] Rust using the x402 host ABI. \
+             Return a full HTML page with inline CSS and JavaScript for the UI. \
+             Do NOT use frontend=true or Leptos. No external dependencies.",
             message
         );
         let _ = db.insert_nudge("user_chat", &nudge_content, 5);
@@ -150,13 +152,16 @@ pub async fn handle_chat(
          \n\
          CARTRIDGE RULES (FOLLOW EXACTLY):\n\
          When the user asks you to build something, you MUST write real code:\n\
-         1. Call create_cartridge with source_code containing COMPLETE Leptos Rust code\n\
-         2. For frontend apps: use leptos + wasm_bindgen, export init(selector: &str)\n\
-         3. For interactive apps: use the framebuffer ABI (x402_tick, set_pixel, etc.)\n\
-         4. Then call compile_cartridge to build it\n\
-         5. NEVER create cartridges without source_code — empty = useless template\n\
-         6. Write the FULL implementation: if asked for a todo app, write todo logic;\n\
-            if asked for a game, write game logic. Do NOT use placeholder code.\n\
+         1. ALWAYS create BACKEND cartridges (the default). NEVER set frontend=true.\n\
+         2. Write source_code as #[no_std] Rust using the x402 host ABI (x402_handle).\n\
+         3. For apps with UI: return a FULL HTML page with inline <style> and <script>.\n\
+            Build interactive UIs with vanilla JavaScript in the HTML response.\n\
+            Use kv_get/kv_set for persistent state across requests.\n\
+         4. For pixel games: set interactive=true for the framebuffer ABI.\n\
+         5. Then call compile_cartridge to build it.\n\
+         6. NEVER create cartridges without source_code — empty = useless template.\n\
+         7. Write the FULL implementation with real logic, not placeholders.\n\
+         8. NO external dependencies. No serde, no leptos, no wasm-bindgen.\n\
          \n\
          BEHAVIOR RULES:\n\
          - Stay focused on what the user asked. Do NOT suggest unrelated projects.\n\
