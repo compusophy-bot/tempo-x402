@@ -167,12 +167,20 @@ impl SoulDatabase {
     ///
     /// Path is treated as a directory for sled. If it ends in `.db` (legacy),
     /// the `.db` suffix is replaced with `.sled`.
+    ///
+    /// On startup, if the sled directory exceeds `SLED_COMPACT_THRESHOLD_MB`
+    /// (default 500 MB), an export→delete→reimport compaction is performed
+    /// to reclaim dead blob space that sled never frees on its own.
     pub fn new(path: &str) -> Result<Self, SoulError> {
         let sled_path = if path.ends_with(".db") {
             path.replace(".db", ".sled")
         } else {
             path.to_string()
         };
+
+        // Compact on startup if bloated (sled never reclaims deleted blob space)
+        Self::compact_if_needed(&sled_path)?;
+
         let db = sled::open(&sled_path)?;
 
         Ok(Self {
@@ -194,4 +202,97 @@ impl SoulDatabase {
             db,
         })
     }
+
+    /// Compact the sled database if its on-disk size exceeds the threshold.
+    ///
+    /// Sled 0.34 never reclaims space from deleted keys — blob files grow
+    /// monotonically. This performs a full export→delete→reimport cycle to
+    /// rebuild the database with only live data, typically recovering 90%+
+    /// of disk space.
+    fn compact_if_needed(sled_path: &str) -> Result<(), SoulError> {
+        let path = std::path::Path::new(sled_path);
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let dir_size_mb = dir_size_bytes(path) / (1024 * 1024);
+        let threshold_mb: u64 = std::env::var("SLED_COMPACT_THRESHOLD_MB")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(500);
+
+        if dir_size_mb < threshold_mb {
+            return Ok(());
+        }
+
+        tracing::warn!(
+            size_mb = dir_size_mb,
+            threshold_mb,
+            "Sled database bloated — compacting via export/reimport"
+        );
+
+        // 1. Open the old database and export all live data
+        let old_db = sled::open(sled_path)?;
+
+        let export: Vec<(Vec<u8>, Vec<u8>, Vec<Vec<Vec<u8>>>)> = old_db
+            .export()
+            .into_iter()
+            .map(|(col_type, col_name, iter)| {
+                let data: Vec<Vec<Vec<u8>>> = iter.collect();
+                (col_type, col_name, data)
+            })
+            .collect();
+
+        let total_entries: usize = export.iter().map(|(_, _, d)| d.len()).sum();
+
+        // 2. Drop the old database to release file locks
+        drop(old_db);
+
+        // 3. Delete the bloated directory
+        std::fs::remove_dir_all(sled_path)?;
+
+        // 4. Open a fresh database and import
+        let new_db = sled::open(sled_path)?;
+
+        new_db.import(
+            export
+                .into_iter()
+                .map(|(ct, cn, data)| (ct, cn, data.into_iter()))
+                .collect(),
+        );
+
+        new_db.flush()?;
+
+        let new_size_mb = dir_size_bytes(path) / (1024 * 1024);
+        tracing::warn!(
+            old_size_mb = dir_size_mb,
+            new_size_mb,
+            entries = total_entries,
+            "Sled compaction complete"
+        );
+
+        // 5. Drop the new DB so `new()` can reopen it normally
+        drop(new_db);
+
+        Ok(())
+    }
+}
+
+/// Recursively sum file sizes in a directory.
+fn dir_size_bytes(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let ft = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+            if ft.is_file() {
+                total += entry.metadata().map(|m| m.len()).unwrap_or(0);
+            } else if ft.is_dir() {
+                total += dir_size_bytes(&entry.path());
+            }
+        }
+    }
+    total
 }
