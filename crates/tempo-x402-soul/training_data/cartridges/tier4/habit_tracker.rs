@@ -97,8 +97,28 @@ fn parse_usize(s: &str) -> usize {
     n
 }
 
-// KV format for habits: "name|streak|done_today\n" per line
-// done_today: "1" or "0", streak is cumulative
+// Secondary buffer for building modified KV values
+static mut TMP: [u8; 16384] = [0u8; 16384];
+fn tmp_write(pos: usize, s: &str) -> usize {
+    let b = s.as_bytes();
+    let end = (pos + b.len()).min(unsafe { TMP.len() });
+    unsafe { TMP[pos..end].copy_from_slice(&b[..end - pos]); }
+    end
+}
+fn tmp_write_usize(pos: usize, mut n: usize) -> usize {
+    if n == 0 { return tmp_write(pos, "0"); }
+    static mut TD: [u8; 20] = [0u8; 20];
+    let mut i = 0;
+    while n > 0 { unsafe { TD[i] = b'0' + (n % 10) as u8; } n /= 10; i += 1; }
+    let mut p = pos;
+    while i > 0 { i -= 1; let d = unsafe { TD[i] }; let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(&d, 1)) }; p = tmp_write(p, s); }
+    p
+}
+fn tmp_as_str(len: usize) -> &'static str {
+    unsafe { core::str::from_utf8_unchecked(&TMP[..len]) }
+}
+
+// KV format: "name|streak|done\n" per habit. done=1/0, streak=cumulative days.
 
 #[no_mangle]
 pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_ptr: *const u8, path_len: i32, body_ptr: *const u8, body_len: i32) {
@@ -111,11 +131,11 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
             let name = find_json_str(body, "name").unwrap_or("");
             if name.len() > 0 {
                 let existing = kv_read("habits").unwrap_or("");
-                let mut p = 0usize;
-                p = buf_write(p, existing);
-                p = buf_write(p, name);
-                p = buf_write(p, "|0|0\n");
-                kv_write("habits", buf_as_str(p));
+                let mut tp = 0usize;
+                tp = tmp_write(tp, existing);
+                tp = tmp_write(tp, name);
+                tp = tmp_write(tp, "|0|0\n");
+                kv_write("habits", tmp_as_str(tp));
             }
             respond(200, "{\"ok\":true}", "application/json");
             return;
@@ -124,18 +144,15 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
             let idx = parse_usize(find_json_str(body, "index").unwrap_or("0"));
             let existing = kv_read("habits").unwrap_or("");
             let eb = existing.as_bytes();
-            let mut p = 0usize;
+            let mut tp = 0usize;
             let mut pos = 0usize;
             let mut line_num = 0usize;
-            static mut TMP: [u8; 16384] = [0u8; 16384];
-            let mut tp = 0usize;
             while pos < eb.len() {
                 let start = pos;
                 while pos < eb.len() && eb[pos] != b'\n' { pos += 1; }
                 let line = &eb[start..pos];
                 if pos < eb.len() { pos += 1; }
-                if line.len() == 0 { line_num += 1; continue; }
-                // Parse name|streak|done
+                if line.len() < 3 { line_num += 1; continue; }
                 let mut sep1 = 0usize;
                 let mut sep2 = 0usize;
                 let mut sc = 0;
@@ -147,31 +164,27 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
                     let done_s = unsafe { core::str::from_utf8_unchecked(&line[sep2+1..]) };
                     let streak = parse_usize(streak_s);
                     let done = done_s == "1";
-                    unsafe {
-                        if line_num == idx {
-                            let new_done = !done;
-                            let new_streak = if new_done { streak + 1 } else { if streak > 0 { streak - 1 } else { 0 } };
-                            // Write: name|new_streak|new_done
-                            let nb = lname.as_bytes();
-                            TMP[tp..tp+nb.len()].copy_from_slice(nb);
-                            tp += nb.len();
-                            TMP[tp] = b'|'; tp += 1;
-                            // write streak number
-                            tp = write_to_tmp(tp, new_streak);
-                            TMP[tp] = b'|'; tp += 1;
-                            TMP[tp] = if new_done { b'1' } else { b'0' }; tp += 1;
-                            TMP[tp] = b'\n'; tp += 1;
-                        } else {
-                            TMP[tp..tp+line.len()].copy_from_slice(line);
-                            tp += line.len();
-                            TMP[tp] = b'\n'; tp += 1;
-                        }
+                    if line_num == idx {
+                        let new_done = !done;
+                        let new_streak = if new_done { streak + 1 } else { if streak > 0 { streak - 1 } else { 0 } };
+                        tp = tmp_write(tp, lname);
+                        tp = tmp_write(tp, "|");
+                        tp = tmp_write_usize(tp, new_streak);
+                        tp = tmp_write(tp, "|");
+                        tp = tmp_write(tp, if new_done { "1" } else { "0" });
+                        tp = tmp_write(tp, "\n");
+                    } else {
+                        tp = tmp_write(tp, lname);
+                        tp = tmp_write(tp, "|");
+                        tp = tmp_write(tp, streak_s);
+                        tp = tmp_write(tp, "|");
+                        tp = tmp_write(tp, done_s);
+                        tp = tmp_write(tp, "\n");
                     }
                 }
                 line_num += 1;
             }
-            let new_val = unsafe { core::str::from_utf8_unchecked(&TMP[..tp]) };
-            kv_write("habits", new_val);
+            kv_write("habits", tmp_as_str(tp));
             respond(200, "{\"ok\":true}", "application/json");
             return;
         }
@@ -179,7 +192,6 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
             let idx = parse_usize(find_json_str(body, "index").unwrap_or("0"));
             let existing = kv_read("habits").unwrap_or("");
             let eb = existing.as_bytes();
-            static mut TMP2: [u8; 16384] = [0u8; 16384];
             let mut tp = 0usize;
             let mut pos = 0usize;
             let mut line_num = 0usize;
@@ -188,22 +200,21 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
                 while pos < eb.len() && eb[pos] != b'\n' { pos += 1; }
                 let line = &eb[start..pos];
                 if pos < eb.len() { pos += 1; }
-                if line.len() == 0 { line_num += 1; continue; }
+                if line.len() < 3 { line_num += 1; continue; }
                 if line_num != idx {
-                    unsafe { TMP2[tp..tp+line.len()].copy_from_slice(line); tp += line.len(); TMP2[tp] = b'\n'; tp += 1; }
+                    let ls = unsafe { core::str::from_utf8_unchecked(line) };
+                    tp = tmp_write(tp, ls);
+                    tp = tmp_write(tp, "\n");
                 }
                 line_num += 1;
             }
-            let new_val = unsafe { core::str::from_utf8_unchecked(&TMP2[..tp]) };
-            kv_write("habits", new_val);
+            kv_write("habits", tmp_as_str(tp));
             respond(200, "{\"ok\":true}", "application/json");
             return;
         }
         if action == "reset" {
-            // Reset all done_today to 0 (new day)
             let existing = kv_read("habits").unwrap_or("");
             let eb = existing.as_bytes();
-            static mut TMP3: [u8; 16384] = [0u8; 16384];
             let mut tp = 0usize;
             let mut pos = 0usize;
             while pos < eb.len() {
@@ -211,24 +222,19 @@ pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_pt
                 while pos < eb.len() && eb[pos] != b'\n' { pos += 1; }
                 let line = &eb[start..pos];
                 if pos < eb.len() { pos += 1; }
-                if line.len() == 0 { continue; }
+                if line.len() < 3 { continue; }
                 let mut sep1 = 0usize;
                 let mut sep2 = 0usize;
                 let mut sc = 0;
                 let mut si = 0;
                 while si < line.len() { if line[si] == b'|' { if sc == 0 { sep1 = si; } else { sep2 = si; } sc += 1; } si += 1; }
                 if sc >= 2 {
-                    unsafe {
-                        TMP3[tp..tp+sep2].copy_from_slice(&line[..sep2]);
-                        tp += sep2;
-                        TMP3[tp] = b'|'; tp += 1;
-                        TMP3[tp] = b'0'; tp += 1;
-                        TMP3[tp] = b'\n'; tp += 1;
-                    }
+                    let part = unsafe { core::str::from_utf8_unchecked(&line[..sep2]) };
+                    tp = tmp_write(tp, part);
+                    tp = tmp_write(tp, "|0\n");
                 }
             }
-            let new_val = unsafe { core::str::from_utf8_unchecked(&TMP3[..tp]) };
-            kv_write("habits", new_val);
+            kv_write("habits", tmp_as_str(tp));
             respond(200, "{\"ok\":true}", "application/json");
             return;
         }
@@ -273,12 +279,12 @@ h1{color:#58a6ff;margin:20px 0;font-size:2em}
 <div class="add-row"><input type="text" id="inp" placeholder="New habit..." onkeydown="if(event.key==='Enter')addHabit()"><button onclick="addHabit()">Add Habit</button></div>
 "##);
 
-    // Parse and count
     let hb = habits.as_bytes();
     let mut pos = 0usize;
     let mut total = 0usize;
     let mut done_count = 0usize;
     let mut max_streak = 0usize;
+
     // First pass: count
     let mut tpos = 0usize;
     while tpos < hb.len() {
@@ -293,16 +299,16 @@ h1{color:#58a6ff;margin:20px 0;font-size:2em}
             total += 1;
             let streak_s = unsafe { core::str::from_utf8_unchecked(&line[sep1+1..sep2]) };
             let done_s = unsafe { core::str::from_utf8_unchecked(&line[sep2+1..]) };
-            let streak = parse_usize(streak_s);
             if done_s == "1" { done_count += 1; }
-            if streak > max_streak { max_streak = streak; }
+            let st = parse_usize(streak_s);
+            if st > max_streak { max_streak = st; }
         }
     }
 
     if total > 0 {
         p = buf_write(p, r##"<div class="toolbar"><span>"##);
         p = write_usize(p, total);
-        p = buf_write(p, r##" habits</span><button class="reset-btn" onclick="resetDay()">New Day (Reset Checks)</button></div>"##);
+        p = buf_write(p, r##" habits</span><button class="reset-btn" onclick="resetDay()">New Day (Reset)</button></div>"##);
     }
 
     // Second pass: render
@@ -342,7 +348,7 @@ h1{color:#58a6ff;margin:20px 0;font-size:2em}
     }
 
     if total == 0 {
-        p = buf_write(p, r##"<div class="empty">No habits yet. Start building good habits today!</div>"##);
+        p = buf_write(p, r##"<div class="empty">No habits yet. Start building good habits!</div>"##);
     } else {
         p = buf_write(p, r##"<div class="summary"><span class="big">"##);
         p = write_usize(p, done_count);
@@ -363,16 +369,4 @@ function resetDay(){fetch(B,{method:'POST',headers:{'Content-Type':'application/
 </script></body></html>"##);
 
     respond(200, buf_as_str(p), "text/html");
-}
-
-fn write_to_tmp(mut tp: usize, mut n: usize) -> usize {
-    if n == 0 { unsafe { SCRATCH[tp] = b'0'; } return tp + 1; }
-    static mut TD: [u8; 20] = [0u8; 20];
-    let mut i = 0;
-    while n > 0 { unsafe { TD[i] = b'0' + (n % 10) as u8; } n /= 10; i += 1; }
-    while i > 0 { i -= 1; unsafe { let mut tmp3: *mut u8 = core::ptr::null_mut(); // use TMP directly
-        // We need to write to the TMP buffer, but it's in the caller. Use a different approach.
-    } }
-    // Simpler: write digits to TMP via index
-    tp
 }

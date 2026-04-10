@@ -14,9 +14,7 @@ extern "C" {
 }
 
 fn respond(status: i32, body: &str, content_type: &str) {
-    unsafe {
-        response(status, body.as_ptr(), body.len() as i32, content_type.as_ptr(), content_type.len() as i32);
-    }
+    unsafe { response(status, body.as_ptr(), body.len() as i32, content_type.as_ptr(), content_type.len() as i32); }
 }
 
 fn host_log(level: i32, msg: &str) {
@@ -24,23 +22,20 @@ fn host_log(level: i32, msg: &str) {
 }
 
 fn find_json_str<'a>(json: &'a str, key: &str) -> Option<&'a str> {
-    let key_bytes = key.as_bytes();
-    let json_bytes = json.as_bytes();
+    let kb = key.as_bytes();
+    let jb = json.as_bytes();
     let mut i = 0;
-    while i + key_bytes.len() + 3 < json_bytes.len() {
-        if json_bytes[i] == b'"' {
-            let start = i + 1;
-            if start + key_bytes.len() < json_bytes.len()
-                && &json_bytes[start..start + key_bytes.len()] == key_bytes
-                && json_bytes[start + key_bytes.len()] == b'"'
-            {
-                let mut j = start + key_bytes.len() + 1;
-                while j < json_bytes.len() && (json_bytes[j] == b':' || json_bytes[j] == b' ') { j += 1; }
-                if j < json_bytes.len() && json_bytes[j] == b'"' {
-                    let val_start = j + 1;
-                    let mut val_end = val_start;
-                    while val_end < json_bytes.len() && json_bytes[val_end] != b'"' { val_end += 1; }
-                    return core::str::from_utf8(&json_bytes[val_start..val_end]).ok();
+    while i + kb.len() + 3 < jb.len() {
+        if jb[i] == b'"' {
+            let s = i + 1;
+            if s + kb.len() < jb.len() && &jb[s..s + kb.len()] == kb && jb[s + kb.len()] == b'"' {
+                let mut j = s + kb.len() + 1;
+                while j < jb.len() && (jb[j] == b':' || jb[j] == b' ') { j += 1; }
+                if j < jb.len() && jb[j] == b'"' {
+                    let vs = j + 1;
+                    let mut ve = vs;
+                    while ve < jb.len() && jb[ve] != b'"' { ve += 1; }
+                    return core::str::from_utf8(&jb[vs..ve]).ok();
                 }
             }
         }
@@ -51,167 +46,210 @@ fn find_json_str<'a>(json: &'a str, key: &str) -> Option<&'a str> {
 
 fn kv_read(key: &str) -> Option<&'static str> {
     unsafe {
-        let result = kv_get(key.as_ptr(), key.len() as i32);
-        if result < 0 { return None; }
-        let ptr = (result >> 32) as *const u8;
-        let len = (result & 0xFFFFFFFF) as usize;
-        let bytes = core::slice::from_raw_parts(ptr, len);
-        core::str::from_utf8(bytes).ok()
+        let r = kv_get(key.as_ptr(), key.len() as i32);
+        if r < 0 { return None; }
+        let ptr = (r >> 32) as *const u8;
+        let len = (r & 0xFFFFFFFF) as usize;
+        core::str::from_utf8(core::slice::from_raw_parts(ptr, len)).ok()
     }
 }
 
 fn kv_write(key: &str, value: &str) {
-    unsafe {
-        kv_set(key.as_ptr(), key.len() as i32, value.as_ptr(), value.len() as i32);
-    }
+    unsafe { kv_set(key.as_ptr(), key.len() as i32, value.as_ptr(), value.len() as i32); }
+}
+
+static mut SCRATCH: [u8; 131072] = [0u8; 131072];
+
+#[no_mangle]
+pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
+    unsafe { SCRATCH.as_mut_ptr() }
 }
 
 static mut BUF: [u8; 65536] = [0u8; 65536];
-
-struct BufWriter {
-    pos: usize,
+fn buf_write(pos: usize, s: &str) -> usize {
+    let b = s.as_bytes();
+    let end = (pos + b.len()).min(unsafe { BUF.len() });
+    unsafe { BUF[pos..end].copy_from_slice(&b[..end - pos]); }
+    end
+}
+fn buf_as_str(len: usize) -> &'static str {
+    unsafe { core::str::from_utf8_unchecked(&BUF[..len]) }
 }
 
-impl BufWriter {
-    fn new() -> Self { Self { pos: 0 } }
+fn write_usize(pos: usize, mut n: usize) -> usize {
+    if n == 0 { return buf_write(pos, "0"); }
+    static mut DIGITS: [u8; 20] = [0u8; 20];
+    let mut i = 0;
+    while n > 0 { unsafe { DIGITS[i] = b'0' + (n % 10) as u8; } n /= 10; i += 1; }
+    let mut p = pos;
+    while i > 0 { i -= 1; let d = unsafe { DIGITS[i] }; let s = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(&d, 1)) }; p = buf_write(p, s); }
+    p
+}
 
-    fn push_str(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        unsafe {
-            let end = (self.pos + bytes.len()).min(BUF.len());
-            let copy_len = end - self.pos;
-            BUF[self.pos..end].copy_from_slice(&bytes[..copy_len]);
-            self.pos = end;
-        }
-    }
-
-    fn push_num(&mut self, mut n: u32) {
-        if n == 0 { self.push_str("0"); return; }
-        let mut digits = [0u8; 10];
-        let mut i = 0;
-        while n > 0 { digits[i] = b'0' + (n % 10) as u8; n /= 10; i += 1; }
-        while i > 0 { i -= 1; unsafe { if self.pos < BUF.len() { BUF[self.pos] = digits[i]; self.pos += 1; } } }
-    }
-
-    fn as_str(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(&BUF[..self.pos]) }
-    }
+fn parse_usize(s: &str) -> usize {
+    let mut n = 0usize;
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() { if b[i] >= b'0' && b[i] <= b'9' { n = n * 10 + (b[i] - b'0') as usize; } i += 1; }
+    n
 }
 
 #[no_mangle]
-pub extern "C" fn handle(method_ptr: *const u8, method_len: i32, _path_ptr: *const u8, _path_len: i32, body_ptr: *const u8, body_len: i32) {
+pub extern "C" fn handle_request(method_ptr: *const u8, method_len: i32, path_ptr: *const u8, path_len: i32, body_ptr: *const u8, body_len: i32) {
     let method = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(method_ptr, method_len as usize)) };
     let body = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(body_ptr, body_len as usize)) };
 
-    if method.as_bytes()[0] == b'P' {
-        if let Some(action) = find_json_str(body, "action") {
-            if action.as_bytes() == b"save" {
-                if let Some(color) = find_json_str(body, "color") {
-                    let existing = kv_read("fav_colors").unwrap_or("");
-                    let mut w = BufWriter::new();
-                    if existing.len() > 0 {
-                        w.push_str(existing);
-                        w.push_str(",");
+    if method == "POST" {
+        let action = find_json_str(body, "action").unwrap_or("save");
+        let color = find_json_str(body, "color").unwrap_or("");
+        let idx_str = find_json_str(body, "index").unwrap_or("0");
+
+        if action == "save" && color.len() > 0 {
+            let existing = kv_read("fav_colors").unwrap_or("");
+            let mut bp = 0usize;
+            bp = buf_write(bp, existing);
+            bp = buf_write(bp, color);
+            bp = buf_write(bp, "\n");
+            kv_write("fav_colors", buf_as_str(bp));
+        } else if action == "delete" {
+            let target = parse_usize(idx_str);
+            let existing = kv_read("fav_colors").unwrap_or("");
+            let eb = existing.as_bytes();
+            static mut DEL: [u8; 4096] = [0u8; 4096];
+            let mut np = 0usize;
+            let mut epos = 0;
+            let mut count = 0usize;
+            while epos < eb.len() {
+                let mut eend = epos;
+                while eend < eb.len() && eb[eend] != b'\n' { eend += 1; }
+                if eend > epos {
+                    if count != target {
+                        let line = &eb[epos..eend];
+                        unsafe { DEL[np..np+line.len()].copy_from_slice(line); np += line.len(); DEL[np] = b'\n'; np += 1; }
                     }
-                    w.push_str(color);
-                    kv_write("fav_colors", w.as_str());
-                    respond(200, "{\"ok\":true}", "application/json");
-                } else {
-                    respond(400, "{\"error\":\"missing color\"}", "application/json");
+                    count += 1;
                 }
-            } else if action.as_bytes() == b"clear" {
-                kv_write("fav_colors", "");
-                respond(200, "{\"ok\":true}", "application/json");
-            } else {
-                respond(400, "{\"error\":\"unknown action\"}", "application/json");
+                epos = eend + 1;
             }
-        } else {
-            respond(400, "{\"error\":\"missing action\"}", "application/json");
-        }
-        return;
-    }
-
-    let favs = kv_read("fav_colors").unwrap_or("");
-    let mut w = BufWriter::new();
-    w.push_str("<!DOCTYPE html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Color Picker</title><style>");
-    w.push_str("*{margin:0;padding:0;box-sizing:border-box}");
-    w.push_str("body{background:#111;color:#eee;font-family:'Segoe UI',sans-serif;min-height:100vh;display:flex;justify-content:center;padding:40px 20px}");
-    w.push_str(".container{max-width:600px;width:100%}");
-    w.push_str("h1{text-align:center;font-size:2em;margin-bottom:32px;background:linear-gradient(90deg,#f87171,#fb923c,#facc15,#4ade80,#38bdf8,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}");
-    w.push_str(".picker-area{display:flex;flex-direction:column;align-items:center;gap:24px;margin-bottom:32px}");
-    w.push_str(".preview{width:200px;height:200px;border-radius:20px;border:4px solid #333;transition:background 0.2s;box-shadow:0 0 40px rgba(255,255,255,0.1)}");
-    w.push_str(".controls{width:100%;max-width:400px}");
-    w.push_str(".slider-group{margin-bottom:16px}");
-    w.push_str(".slider-label{display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px;color:#aaa}");
-    w.push_str("input[type=range]{width:100%;height:8px;-webkit-appearance:none;background:#333;border-radius:4px;outline:none}");
-    w.push_str("input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;cursor:pointer}");
-    w.push_str(".r-slider::-webkit-slider-thumb{background:#ef4444}");
-    w.push_str(".g-slider::-webkit-slider-thumb{background:#22c55e}");
-    w.push_str(".b-slider::-webkit-slider-thumb{background:#3b82f6}");
-    w.push_str(".color-input{display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:16px}");
-    w.push_str(".hex-display{background:#222;border:2px solid #444;border-radius:8px;padding:10px 20px;font-size:20px;font-family:monospace;color:#fff;text-align:center;min-width:120px}");
-    w.push_str(".native-picker{width:60px;height:40px;border:none;border-radius:8px;cursor:pointer;background:transparent}");
-    w.push_str(".btn-row{display:flex;gap:10px;justify-content:center}");
-    w.push_str(".save-btn{padding:10px 24px;background:#22c55e;color:#000;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}");
-    w.push_str(".copy-btn{padding:10px 24px;background:#3b82f6;color:#fff;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px}");
-    w.push_str(".clear-btn{padding:10px 24px;background:#333;color:#aaa;border:none;border-radius:8px;cursor:pointer;font-size:14px}");
-    w.push_str(".favorites{margin-top:32px}");
-    w.push_str(".favorites h3{color:#888;font-size:14px;text-transform:uppercase;letter-spacing:2px;margin-bottom:12px}");
-    w.push_str(".fav-grid{display:flex;flex-wrap:wrap;gap:8px}");
-    w.push_str(".fav-swatch{width:48px;height:48px;border-radius:10px;cursor:pointer;border:2px solid transparent;transition:all 0.2s}");
-    w.push_str(".fav-swatch:hover{border-color:#fff;transform:scale(1.1)}");
-    w.push_str(".rgb-display{text-align:center;color:#888;font-size:14px;font-family:monospace;margin-bottom:16px}");
-    w.push_str("</style></head><body><div class='container'>");
-    w.push_str("<h1>Color Picker</h1>");
-    w.push_str("<div class='picker-area'>");
-    w.push_str("<div class='preview' id='preview' style='background:#ff6600'></div>");
-    w.push_str("<div class='color-input'><input type='color' class='native-picker' id='nativePicker' value='#ff6600' onchange='fromNative(this.value)'><div class='hex-display' id='hexDisplay'>#FF6600</div></div>");
-    w.push_str("<div class='rgb-display' id='rgbDisplay'>rgb(255, 102, 0)</div>");
-    w.push_str("<div class='controls'>");
-    w.push_str("<div class='slider-group'><div class='slider-label'><span>Red</span><span id='rVal'>255</span></div><input type='range' class='r-slider' id='rSlider' min='0' max='255' value='255' oninput='updateColor()'></div>");
-    w.push_str("<div class='slider-group'><div class='slider-label'><span>Green</span><span id='gVal'>102</span></div><input type='range' class='g-slider' id='gSlider' min='0' max='255' value='102' oninput='updateColor()'></div>");
-    w.push_str("<div class='slider-group'><div class='slider-label'><span>Blue</span><span id='bVal'>0</span></div><input type='range' class='b-slider' id='bSlider' min='0' max='255' value='0' oninput='updateColor()'></div>");
-    w.push_str("</div>");
-    w.push_str("<div class='btn-row'><button class='save-btn' onclick='saveColor()'>Save Favorite</button><button class='copy-btn' onclick='copyHex()'>Copy Hex</button><button class='clear-btn' onclick='clearFavs()'>Clear All</button></div>");
-    w.push_str("</div>");
-
-    // Render saved favorites
-    w.push_str("<div class='favorites'><h3>Saved Colors</h3><div class='fav-grid' id='favGrid'>");
-    if favs.len() > 0 {
-        let bytes = favs.as_bytes();
-        let mut p = 0;
-        while p <= bytes.len() {
-            let start = p;
-            while p < bytes.len() && bytes[p] != b',' { p += 1; }
-            let color = unsafe { core::str::from_utf8_unchecked(&bytes[start..p]) };
-            if p < bytes.len() { p += 1; }
-            if color.len() > 0 {
-                w.push_str("<div class='fav-swatch' style='background:");
-                w.push_str(color);
-                w.push_str("' onclick=\"loadColor('");
-                w.push_str(color);
-                w.push_str("')\" title='");
-                w.push_str(color);
-                w.push_str("'></div>");
-            }
+            kv_write("fav_colors", unsafe { core::str::from_utf8_unchecked(&DEL[..np]) });
         }
     }
-    w.push_str("</div></div></div>");
 
-    w.push_str("<script>");
-    w.push_str("const BASE=location.pathname;");
-    w.push_str("function toHex(n){const h='0123456789ABCDEF';return h[n>>4]+h[n&15];}");
-    w.push_str("function updateColor(){const r=+document.getElementById('rSlider').value;const g=+document.getElementById('gSlider').value;const b=+document.getElementById('bSlider').value;");
-    w.push_str("document.getElementById('rVal').textContent=r;document.getElementById('gVal').textContent=g;document.getElementById('bVal').textContent=b;");
-    w.push_str("const hex='#'+toHex(r)+toHex(g)+toHex(b);document.getElementById('preview').style.background=hex;document.getElementById('hexDisplay').textContent=hex;");
-    w.push_str("document.getElementById('rgbDisplay').textContent='rgb('+r+', '+g+', '+b+')';document.getElementById('nativePicker').value=hex.toLowerCase();}");
-    w.push_str("function fromNative(hex){const r=parseInt(hex.substr(1,2),16);const g=parseInt(hex.substr(3,2),16);const b=parseInt(hex.substr(5,2),16);");
-    w.push_str("document.getElementById('rSlider').value=r;document.getElementById('gSlider').value=g;document.getElementById('bSlider').value=b;updateColor();}");
-    w.push_str("function loadColor(hex){fromNative(hex);}");
-    w.push_str("async function saveColor(){const hex=document.getElementById('hexDisplay').textContent;await fetch(BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',color:hex})});location.reload();}");
-    w.push_str("function copyHex(){const hex=document.getElementById('hexDisplay').textContent;navigator.clipboard.writeText(hex);document.getElementById('hexDisplay').style.color='#22c55e';setTimeout(()=>document.getElementById('hexDisplay').style.color='#fff',1000);}");
-    w.push_str("async function clearFavs(){await fetch(BASE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'clear'})});location.reload();}");
-    w.push_str("</script></body></html>");
+    let favorites = kv_read("fav_colors").unwrap_or("");
 
-    respond(200, w.as_str(), "text/html");
+    let mut p = 0usize;
+    p = buf_write(p, r##"<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Color Picker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#18181b;color:#e4e4e7;font-family:'Segoe UI',sans-serif;min-height:100vh;padding:20px;display:flex;flex-direction:column;align-items:center}
+h1{margin:20px 0;font-size:2em}
+.container{width:100%;max-width:550px}
+.picker-card{background:#27272a;border-radius:20px;padding:30px;margin-bottom:20px;text-align:center;border:1px solid #3f3f46}
+.preview{width:200px;height:200px;border-radius:50%;margin:0 auto 20px;border:4px solid #3f3f46;transition:background 0.3s}
+.color-input{width:80px;height:50px;border:none;border-radius:10px;cursor:pointer;background:transparent}
+.hex-display{font-size:2em;font-family:monospace;font-weight:bold;margin:15px 0;letter-spacing:2px}
+.rgb-display{color:#a1a1aa;margin-bottom:15px}
+.sliders{margin:20px 0}
+.slider-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.slider-row label{width:20px;font-weight:bold;font-size:1.1em}
+.slider-row label.r{color:#ef4444}
+.slider-row label.g{color:#22c55e}
+.slider-row label.b{color:#3b82f6}
+.slider-row input[type=range]{flex:1;height:8px;-webkit-appearance:none;background:#3f3f46;border-radius:4px;outline:none}
+.slider-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;cursor:pointer}
+.slider-row .val{width:40px;text-align:right;font-family:monospace}
+.btn-row{display:flex;gap:10px;justify-content:center}
+.btn{padding:12px 24px;border:none;border-radius:10px;cursor:pointer;font-weight:bold;font-size:1em}
+.btn-save{background:#8b5cf6;color:#fff}
+.btn-save:hover{background:#7c3aed}
+.btn-copy{background:#3f3f46;color:#e4e4e7}
+.btn-copy:hover{background:#52525b}
+.favorites{background:#27272a;border-radius:20px;padding:20px;border:1px solid #3f3f46}
+.favorites h2{margin-bottom:15px;color:#a78bfa}
+.fav-grid{display:flex;flex-wrap:wrap;gap:10px}
+.fav-item{position:relative;width:60px;height:60px;border-radius:12px;cursor:pointer;border:2px solid #3f3f46;transition:transform 0.2s}
+.fav-item:hover{transform:scale(1.1)}
+.fav-item .fav-hex{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:0.65em;color:#a1a1aa;white-space:nowrap;font-family:monospace}
+.fav-item .fav-del{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#ef4444;color:#fff;border:none;font-size:0.7em;cursor:pointer;display:none;line-height:18px;text-align:center}
+.fav-item:hover .fav-del{display:block}
+.empty-fav{color:#71717a;padding:20px;text-align:center;width:100%}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin:15px 0;justify-content:center}
+.preset{width:36px;height:36px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:border-color 0.2s}
+.preset:hover{border-color:#fff}
+</style></head><body>
+<h1>&#127912; Color Picker</h1>
+<div class="container">
+<div class="picker-card">
+<div class="preview" id="preview" style="background:#8b5cf6"></div>
+<div class="hex-display" id="hexDisplay">#8B5CF6</div>
+<div class="rgb-display" id="rgbDisplay">rgb(139, 92, 246)</div>
+<input type="color" class="color-input" id="colorInput" value="#8b5cf6" onchange="fromPicker(this.value)">
+<div class="sliders">
+<div class="slider-row"><label class="r">R</label><input type="range" min="0" max="255" value="139" id="rSlider" oninput="fromSliders()"><span class="val" id="rVal">139</span></div>
+<div class="slider-row"><label class="g">G</label><input type="range" min="0" max="255" value="92" id="gSlider" oninput="fromSliders()"><span class="val" id="gVal">92</span></div>
+<div class="slider-row"><label class="b">B</label><input type="range" min="0" max="255" value="246" id="bSlider" oninput="fromSliders()"><span class="val" id="bVal">246</span></div>
+</div>
+<div class="presets">
+<div class="preset" style="background:#ef4444" onclick="fromPicker('#ef4444')"></div>
+<div class="preset" style="background:#f97316" onclick="fromPicker('#f97316')"></div>
+<div class="preset" style="background:#eab308" onclick="fromPicker('#eab308')"></div>
+<div class="preset" style="background:#22c55e" onclick="fromPicker('#22c55e')"></div>
+<div class="preset" style="background:#06b6d4" onclick="fromPicker('#06b6d4')"></div>
+<div class="preset" style="background:#3b82f6" onclick="fromPicker('#3b82f6')"></div>
+<div class="preset" style="background:#8b5cf6" onclick="fromPicker('#8b5cf6')"></div>
+<div class="preset" style="background:#ec4899" onclick="fromPicker('#ec4899')"></div>
+<div class="preset" style="background:#ffffff" onclick="fromPicker('#ffffff')"></div>
+<div class="preset" style="background:#000000;border-color:#3f3f46" onclick="fromPicker('#000000')"></div>
+</div>
+<div class="btn-row">
+<button class="btn btn-save" onclick="saveColor()">Save to Favorites</button>
+<button class="btn btn-copy" onclick="copyHex()">Copy Hex</button>
+</div>
+</div>
+<div class="favorites"><h2>&#11088; Saved Colors</h2><div class="fav-grid" id="favGrid">"##);
+
+    // Render favorites
+    let fb = favorites.as_bytes();
+    let mut fpos = 0;
+    let mut fidx = 0usize;
+    let mut has_favs = false;
+
+    while fpos < fb.len() {
+        let mut fend = fpos;
+        while fend < fb.len() && fb[fend] != b'\n' { fend += 1; }
+        if fend > fpos {
+            has_favs = true;
+            let color = unsafe { core::str::from_utf8_unchecked(&fb[fpos..fend]) };
+            p = buf_write(p, r##"<div class="fav-item" style="background:"##);
+            p = buf_write(p, color);
+            p = buf_write(p, r##"" onclick="fromPicker('"##);
+            p = buf_write(p, color);
+            p = buf_write(p, r##"')"><span class="fav-hex">"##);
+            p = buf_write(p, color);
+            p = buf_write(p, r##"</span><button class="fav-del" onclick="event.stopPropagation();delFav("##);
+            p = write_usize(p, fidx);
+            p = buf_write(p, r##")">x</button></div>"##);
+            fidx += 1;
+        }
+        fpos = fend + 1;
+    }
+
+    if !has_favs {
+        p = buf_write(p, r##"<div class="empty-fav">No saved colors yet</div>"##);
+    }
+
+    p = buf_write(p, r##"</div></div></div>
+<script>
+var curHex='#8b5cf6';
+function hexToRgb(h){var r=parseInt(h.substr(1,2),16),g=parseInt(h.substr(3,2),16),b=parseInt(h.substr(5,2),16);return{r:r,g:g,b:b}}
+function rgbToHex(r,g,b){return'#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}
+function updateUI(hex){curHex=hex;var c=hexToRgb(hex);document.getElementById('preview').style.background=hex;document.getElementById('hexDisplay').textContent=hex.toUpperCase();document.getElementById('rgbDisplay').textContent='rgb('+c.r+', '+c.g+', '+c.b+')';document.getElementById('rSlider').value=c.r;document.getElementById('gSlider').value=c.g;document.getElementById('bSlider').value=c.b;document.getElementById('rVal').textContent=c.r;document.getElementById('gVal').textContent=c.g;document.getElementById('bVal').textContent=c.b;document.getElementById('colorInput').value=hex}
+function fromPicker(v){updateUI(v)}
+function fromSliders(){var r=+document.getElementById('rSlider').value;var g=+document.getElementById('gSlider').value;var b=+document.getElementById('bSlider').value;updateUI(rgbToHex(r,g,b))}
+function saveColor(){fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save',color:curHex})}).then(function(){location.reload()})}
+function delFav(i){fetch(location.pathname,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'delete',index:String(i)})}).then(function(){location.reload()})}
+function copyHex(){navigator.clipboard.writeText(curHex).then(function(){document.getElementById('hexDisplay').textContent='Copied!';setTimeout(function(){document.getElementById('hexDisplay').textContent=curHex.toUpperCase()},1000)})}
+</script></body></html>"##);
+
+    respond(200, buf_as_str(p), "text/html");
 }
