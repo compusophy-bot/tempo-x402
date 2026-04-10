@@ -611,7 +611,9 @@ crate-type = ["cdylib"]
 [dependencies]
 leptos = {{ version = "0.6", features = ["csr"] }}
 wasm-bindgen = "=0.2.108"
-web-sys = {{ version = "0.3", features = ["Document", "Element", "HtmlElement", "Window"] }}
+web-sys = {{ version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlInputElement", "Window", "Event", "EventTarget", "KeyboardEvent", "MouseEvent", "Storage"] }}
+serde = {{ version = "1", features = ["derive"] }}
+serde_json = "1"
 console_error_panic_hook = "0.1"
 
 [profile.release]

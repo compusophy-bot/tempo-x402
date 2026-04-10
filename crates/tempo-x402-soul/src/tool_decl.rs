@@ -479,31 +479,32 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
             name: "create_cartridge".to_string(),
             description: "Create a WASM cartridge — a Rust program that compiles to WASM and serves at /c/{slug}. \
                          THREE TYPES: \
-                         (1) BACKEND (DEFAULT): exports x402_handle(), returns HTTP responses. No dependencies. \
-                         Can return full HTML pages with inline CSS and JavaScript for rich interactive UIs. \
-                         Use KV store for state. ALWAYS USE THIS for apps, tools, dashboards, todo lists, \
-                         calculators, forms — anything the user asks for. Build the entire UI as an HTML \
-                         string with inline <style> and <script> tags. This is the most reliable type. \
-                         (2) INTERACTIVE: exports x402_tick/x402_get_framebuffer — renders pixels to a \
-                         320x240 RGBA framebuffer at 60fps. Set interactive=true. Use for pixel-art games. \
-                         (3) FRONTEND: DO NOT USE unless explicitly requested. Requires Leptos + wasm-bindgen \
-                         expertise. Extremely fragile compilation. Almost always fails. Use backend instead."
+                         (1) BACKEND (DEFAULT): #[no_std] Rust using x402 host ABI. No external dependencies. \
+                         Returns HTTP responses (HTML, JSON, XML, etc). Can build rich UIs as HTML strings \
+                         with inline CSS/JS. Uses kv_get/kv_set for state. Most reliable — always compiles. \
+                         (2) INTERACTIVE: 60fps framebuffer games. Set interactive=true. \
+                         (3) FRONTEND: Full Leptos app with DOM access. Set frontend=true. \
+                         Uses leptos + wasm-bindgen + web-sys + serde. Compiles via wasm-bindgen. \
+                         For frontend: provide source_code with a #[component] fn App() and \
+                         #[wasm_bindgen] pub fn init(selector: &str) that calls mount_to(el, App). \
+                         Available deps: leptos 0.6 (csr), wasm-bindgen 0.2.108, web-sys, serde, \
+                         console_error_panic_hook. Do NOT add other deps."
                 .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "URL slug for the cartridge (alphanumeric + hyphens, e.g. 'calculator', 'todo-api')"
+                        "description": "URL slug for the cartridge (alphanumeric + hyphens, e.g. 'calculator', 'todo-app')"
                     },
                     "source_code": {
                         "type": "string",
                         "description": "Rust source code for src/lib.rs. \
-                        Must use the x402 host ABI: #[link(wasm_import_module = \"x402\")] extern \"C\" functions. \
-                        NO external dependencies — no serde, no leptos, no wasm-bindgen. \
-                        Build UI by returning an HTML string with inline CSS/JS from x402_handle(). \
-                        Use the kv_get/kv_set host functions for persistent state. \
-                        Leave empty to get the default template."
+                        For BACKEND: Use #[no_std] with x402 host ABI. No external crates. \
+                        For FRONTEND: Use leptos + wasm-bindgen. Available crates: leptos 0.6, \
+                        wasm-bindgen 0.2.108, web-sys, serde + serde(derive), console_error_panic_hook. \
+                        MUST export: #[wasm_bindgen] pub fn init(selector: &str) { mount_to(el, App); }. \
+                        Leave empty for default template."
                     },
                     "description": {
                         "type": "string",
@@ -511,11 +512,11 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     },
                     "interactive": {
                         "type": "boolean",
-                        "description": "If true, creates an interactive framebuffer cartridge (60fps canvas with keyboard input). Use for pixel-based games only."
+                        "description": "If true, creates an interactive framebuffer cartridge (60fps canvas)."
                     },
                     "frontend": {
                         "type": "boolean",
-                        "description": "DO NOT SET THIS TO TRUE. Frontend cartridges require exact Leptos/wasm-bindgen code and almost always fail to compile. Use the default backend type instead — it can return full HTML pages with interactive JavaScript."
+                        "description": "If true, creates a FRONTEND Leptos app. Available deps: leptos 0.6, wasm-bindgen 0.2.108, web-sys, serde, console_error_panic_hook. Must export init(selector)."
                     }
                 },
                 "required": ["slug"]

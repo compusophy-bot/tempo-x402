@@ -266,9 +266,13 @@ pub fn save_model(db: &SoulDatabase, model: &x402_model::codegen::CodeGenModel) 
 }
 
 /// Train the code generation model on ALL available Rust code:
-/// 1. Benchmark solutions (verified, high quality — weighted 3x)
-/// 2. Workspace .rs files (massive corpus — real-world patterns)
+/// 1. Cartridge training corpus (filesystem — loaded once)
+/// 2. Benchmark solutions (verified, high quality — weighted 3x)
+/// 3. Workspace .rs files (massive corpus — real-world patterns)
 pub fn train_model(db: &SoulDatabase) {
+    // Load cartridge training corpus from disk (idempotent — skips if already loaded)
+    load_training_corpus(db);
+
     let tok = load_tokenizer(db);
     if tok.merges.is_empty() {
         tracing::debug!("codegen: model skip — BPE not trained yet (0 merges)");
@@ -599,6 +603,105 @@ pub fn record_training_example_with_context(
             "codegen: recorded training example"
         );
     }
+}
+
+/// Load cartridge training corpus from the filesystem.
+///
+/// Reads `.rs` files from `{workspace}/crates/tempo-x402-soul/training_data/cartridges/`
+/// (organized by tier). Each file becomes a training example with the tier directory
+/// as context. Only loads files not already in the solutions set (by source key).
+///
+/// Called once on startup or first training cycle. The examples supplement
+/// benchmark solutions — the model learns both algorithmic problem-solving
+/// AND practical cartridge patterns.
+pub fn load_training_corpus(db: &SoulDatabase) {
+    let workspace_root =
+        std::env::var("SOUL_WORKSPACE_ROOT").unwrap_or_else(|_| "/tmp/workspace".to_string());
+    let corpus_dir = format!(
+        "{}/crates/tempo-x402-soul/training_data/cartridges",
+        workspace_root
+    );
+
+    let corpus_path = std::path::Path::new(&corpus_dir);
+    if !corpus_path.exists() {
+        tracing::debug!("codegen: no training corpus at {}", corpus_dir);
+        return;
+    }
+
+    // Check if we already loaded this corpus (avoid reloading every cycle)
+    let loaded_marker = db
+        .get_state("codegen_corpus_loaded")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    // Count files to detect changes
+    let mut file_count = 0u32;
+    let tiers = ["tier1", "tier2", "tier3", "tier4", "tier5", "frontend"];
+    for tier in &tiers {
+        let tier_dir = corpus_path.join(tier);
+        if let Ok(entries) = std::fs::read_dir(&tier_dir) {
+            for entry in entries.flatten() {
+                if entry.path().extension().map(|e| e == "rs").unwrap_or(false) {
+                    file_count += 1;
+                }
+            }
+        }
+    }
+
+    let marker = format!("{}", file_count);
+    if loaded_marker == marker {
+        return; // Already loaded, same count
+    }
+
+    tracing::info!(
+        files = file_count,
+        dir = %corpus_dir,
+        "codegen: loading cartridge training corpus"
+    );
+
+    let mut loaded = 0u32;
+    for tier in &tiers {
+        let tier_dir = corpus_path.join(tier);
+        let Ok(entries) = std::fs::read_dir(&tier_dir) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "rs").unwrap_or(false) {
+                let slug = path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let source = format!("cartridge/{}/{}", tier, slug);
+
+                if let Ok(code) = std::fs::read_to_string(&path) {
+                    if code.len() >= 50 {
+                        // Build context from tier + slug: tells the model what kind of
+                        // cartridge this is (the encoder input for conditioning)
+                        let context = format!(
+                            "// x402 WASM cartridge: {}\n// Tier: {}\n// Type: backend (#[no_std], x402 ABI)\n",
+                            slug.replace('_', " "),
+                            tier
+                        );
+                        record_training_example_with_context(
+                            db,
+                            &code,
+                            &source,
+                            Some(&context),
+                        );
+                        loaded += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Mark as loaded
+    let _ = db.set_state("codegen_corpus_loaded", &marker);
+    tracing::info!(loaded, "codegen: cartridge training corpus loaded");
 }
 
 /// Get status for observability — wired into /soul/status.

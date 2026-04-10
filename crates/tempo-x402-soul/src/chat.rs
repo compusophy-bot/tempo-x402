@@ -101,10 +101,10 @@ pub async fn handle_chat(
             || msg_lower.contains("drawing"));
     if is_build_request {
         let nudge_content = format!(
-            "USER REQUEST: {}. Build this as a BACKEND WASM cartridge. \
-             Write the source_code as #[no_std] Rust using the x402 host ABI. \
-             Return a full HTML page with inline CSS and JavaScript for the UI. \
-             Do NOT use frontend=true or Leptos. No external dependencies.",
+            "USER REQUEST: {}. Build this as a WASM cartridge with REAL source code. \
+             Choose backend (x402 ABI, returns HTML) or frontend (Leptos app). \
+             For frontend: use only leptos, wasm-bindgen, web-sys, serde, console_error_panic_hook. \
+             Export init(selector) with mount_to(el, App). No other deps.",
             message
         );
         let _ = db.insert_nudge("user_chat", &nudge_content, 5);
@@ -152,16 +152,16 @@ pub async fn handle_chat(
          \n\
          CARTRIDGE RULES (FOLLOW EXACTLY):\n\
          When the user asks you to build something, you MUST write real code:\n\
-         1. ALWAYS create BACKEND cartridges (the default). NEVER set frontend=true.\n\
-         2. Write source_code as #[no_std] Rust using the x402 host ABI (x402_handle).\n\
-         3. For apps with UI: return a FULL HTML page with inline <style> and <script>.\n\
-            Build interactive UIs with vanilla JavaScript in the HTML response.\n\
-            Use kv_get/kv_set for persistent state across requests.\n\
+         1. Choose the right type: backend (#[no_std] x402 ABI) or frontend (Leptos app).\n\
+         2. For BACKEND: write #[no_std] Rust. Return HTML with inline CSS/JS from x402_handle().\n\
+            No external deps. Use kv_get/kv_set for state. This always compiles.\n\
+         3. For FRONTEND (set frontend=true): write a Leptos app. Available crates:\n\
+            leptos 0.6 (csr), wasm-bindgen 0.2.108, web-sys, serde + serde(derive),\n\
+            serde_json, console_error_panic_hook. NO OTHER DEPS. Export init(selector).\n\
          4. For pixel games: set interactive=true for the framebuffer ABI.\n\
          5. Then call compile_cartridge to build it.\n\
          6. NEVER create cartridges without source_code — empty = useless template.\n\
          7. Write the FULL implementation with real logic, not placeholders.\n\
-         8. NO external dependencies. No serde, no leptos, no wasm-bindgen.\n\
          \n\
          BEHAVIOR RULES:\n\
          - Stay focused on what the user asked. Do NOT suggest unrelated projects.\n\
