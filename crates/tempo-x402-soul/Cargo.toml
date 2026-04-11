@@ -1,6 +1,6 @@
 [package]
 name = "tempo-x402-soul"
-version = "9.2.0"
+version = "9.2.1"
 edition = "2021"
 description = "Agentic soul for x402 nodes: observe-think-record loop powered by Gemini"
 license = "MIT"
@@ -13,7 +13,7 @@ categories = ["web-programming", "cryptography::cryptocurrencies"]
 x402 = { workspace = true }
 x402-identity = { workspace = true }
 x402-cartridge = { workspace = true }
-x402-model = { path = "../tempo-x402-model", version = "9.2.0", package = "tempo-x402-model" }
+x402-model = { path = "../tempo-x402-model", version = "9.2.1", package = "tempo-x402-model" }
 alloy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
