@@ -67,6 +67,8 @@ pub fn StudioPage() -> impl IntoView {
     let (session_id, set_session_id) = create_signal(None::<String>);
     let (soul_status, set_soul_status) = create_signal(None::<serde_json::Value>);
     let (sys_metrics, set_sys_metrics) = create_signal(None::<serde_json::Value>);
+    // Track which frontend cartridge slug has been initialized to prevent double-mount
+    let (frontend_initialized, set_frontend_initialized) = create_signal(Option::<String>::None);
     let (file_tree, set_file_tree) = create_signal(Vec::<FileEntry>::new());
     let (current_path, set_current_path) = create_signal("crates".to_string());
     let (files_expanded, set_files_expanded) = create_signal(false);
@@ -354,6 +356,8 @@ pub fn StudioPage() -> impl IntoView {
                                                     on:click=move |_| {
                                                         set_sidebar_open.set(false);
                                                         if ct_for_click == "frontend" {
+                                                            // Reset init tracker so new cartridge can mount fresh
+                                                            set_frontend_initialized.set(None);
                                                             set_center.set(CenterView::FrontendPreview(slug_click.clone()));
                                                         } else if kind_for_click == "cartridge" {
                                                             set_center.set(CenterView::CartridgePreview(slug_click.clone()));
@@ -631,13 +635,20 @@ pub fn StudioPage() -> impl IntoView {
                                 let mount_id = format!("cartridge-mount-{slug}");
                                 let mount_id_for_load = mount_id.clone();
                                 let slug_for_load = slug.clone();
+                                let slug_check = slug.clone();
                                 let (load_error, set_load_error) = create_signal(Option::<String>::None);
                                 let (loading, set_loading) = create_signal(true);
 
-                                // Load the frontend cartridge once — use create_effect to
-                                // avoid re-loading on every reactive re-render
+                                // Load the frontend cartridge ONCE — guard against double-mount
+                                // which causes events to fire twice (the root cause of "1" → "11" bug).
                                 create_effect(move |ran| {
-                                    if ran.is_some() { return; } // only run once
+                                    if ran.is_some() { return; }
+                                    // Skip if this slug was already initialized
+                                    if frontend_initialized.get().as_deref() == Some(slug_check.as_str()) {
+                                        set_loading.set(false);
+                                        return;
+                                    }
+                                    set_frontend_initialized.set(Some(slug_for_load.clone()));
                                     let slug = slug_for_load.clone();
                                     let mount = mount_id_for_load.clone();
                                     spawn_local(async move {
