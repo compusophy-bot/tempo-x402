@@ -187,7 +187,9 @@ impl ToolExecutor {
                             "Frontend cartridge '{slug}' compiled successfully!\n\
                              Package: {}\n\
                              Build time: {duration_ms}ms\n\
-                             The cartridge is ready at /c/{slug} (frontend type — mounts into Studio DOM).",
+                             The cartridge is ready at /c/{slug} (frontend type — mounts into Studio DOM).\n\
+                             NOTE: Frontend cartridges cannot be tested server-side. \
+                             Verify by visiting /c/{slug} in a browser or asking the user to check the Studio.",
                             pkg_dir.display()
                         ),
                         stderr: String::new(),
@@ -239,7 +241,8 @@ impl ToolExecutor {
                          Hash: {hash}\n\
                          Build time: {duration_ms}ms\n\
                          {load_status}\n\
-                         The cartridge is ready to serve at /c/{slug}",
+                         The cartridge is ready to serve at /c/{slug}\n\
+                         NEXT: call test_cartridge('{slug}') to verify it works correctly.",
                         wasm_path.display(),
                         size
                     ),

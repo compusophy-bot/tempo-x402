@@ -478,17 +478,21 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         tools.push(FunctionDeclaration {
             name: "create_cartridge".to_string(),
             description: "Create a WASM cartridge — a Rust program that compiles to WASM and serves at /c/{slug}. \
+                         IMPORTANT: Write COMPLETE, WORKING code — not stubs or placeholders. Every function must \
+                         actually work. If building a calculator, the eval logic must actually parse and compute \
+                         expressions. If building a todo app, CRUD must actually work with kv_get/kv_set. \
+                         Write 100-300 lines of real, functional code. \
                          THREE TYPES: \
-                         (1) BACKEND (DEFAULT): #[no_std] Rust using x402 host ABI. No external dependencies. \
-                         Returns HTTP responses (HTML, JSON, XML, etc). Can build rich UIs as HTML strings \
-                         with inline CSS/JS. Uses kv_get/kv_set for state. Most reliable — always compiles. \
+                         (1) BACKEND (DEFAULT, RECOMMENDED): #[no_std] Rust using x402 host ABI. No external deps. \
+                         Returns HTTP responses (HTML, JSON, etc). Build rich UIs as HTML strings with inline CSS/JS. \
+                         Uses kv_get/kv_set for persistent state. BufWriter pattern for building responses. \
+                         Client-side JS for interactivity. Most reliable — always compiles, no dep downloads. \
                          (2) INTERACTIVE: 60fps framebuffer games. Set interactive=true. \
-                         (3) FRONTEND: Full Leptos app with DOM access. Set frontend=true. \
-                         Uses leptos + wasm-bindgen + web-sys + serde. Compiles via wasm-bindgen. \
-                         For frontend: provide source_code with a #[component] fn App() and \
-                         #[wasm_bindgen] pub fn init(selector: &str) that calls mount_to(el, App). \
-                         Available deps: leptos 0.6 (csr), wasm-bindgen 0.2.108, web-sys, serde, \
-                         console_error_panic_hook. Do NOT add other deps."
+                         (3) FRONTEND: Full Leptos app with DOM access. Set frontend=true. Slower to compile \
+                         (downloads deps on first build). \
+                         AFTER create_cartridge, ALWAYS call compile_cartridge. \
+                         AFTER compile succeeds, ALWAYS call test_cartridge with sample inputs to verify it works. \
+                         If test shows errors or wrong output, fix the code with edit_file and recompile."
                 .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -499,11 +503,13 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
                     },
                     "source_code": {
                         "type": "string",
-                        "description": "Rust source code for src/lib.rs. \
-                        For BACKEND: Use #[no_std] with x402 host ABI. No external crates. \
-                        For FRONTEND: Use leptos + wasm-bindgen. Available crates: leptos 0.6, \
-                        wasm-bindgen 0.2.108, web-sys, serde + serde(derive), console_error_panic_hook. \
-                        MUST export: #[wasm_bindgen] pub fn init(selector: &str) { mount_to(el, App); }. \
+                        "description": "COMPLETE Rust source code for src/lib.rs. Write 100-300 lines. \
+                        NO stubs, NO placeholders, NO 'TODO' — every function must actually work. \
+                        For BACKEND: #[no_std], x402 host ABI (response, log, kv_get, kv_set, payment_info). \
+                        Use BufWriter to build HTML responses. Use find_json_str() to parse JSON bodies. \
+                        Use kv_read/kv_write for persistent state. Include full CSS in HTML responses. \
+                        For FRONTEND: leptos 0.6, wasm-bindgen 0.2.108, web-sys, serde, console_error_panic_hook. \
+                        MUST export: #[wasm_bindgen] pub fn init(selector: &str) using mount_to(el.unchecked_into(), App). \
                         Leave empty for default template."
                     },
                     "description": {
@@ -526,9 +532,11 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         tools.push(FunctionDeclaration {
             name: "compile_cartridge".to_string(),
             description: "Compile a cartridge from Rust source to WASM binary. \
-                         Auto-detects type: backend/interactive → wasm32-wasip1, \
+                         Auto-detects type: backend → wasm32-unknown-unknown, \
                          frontend (Leptos) → wasm32-unknown-unknown + wasm-bindgen. \
-                         Study compile errors carefully — they teach Rust patterns."
+                         First frontend compile may take 3-8 minutes (downloading deps). Subsequent builds are fast. \
+                         If compilation fails, read the error carefully, fix with edit_file, then recompile. \
+                         AFTER successful compile, ALWAYS test_cartridge to verify it actually works."
                 .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
@@ -545,7 +553,11 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         tools.push(FunctionDeclaration {
             name: "test_cartridge".to_string(),
             description: "Test a compiled WASM cartridge by executing it with sample HTTP input. \
-                         Returns the cartridge's response (status, body, content-type)."
+                         Returns the cartridge's response (status, body, content-type). \
+                         ALWAYS test after compile to verify the cartridge works correctly. \
+                         For backend cartridges: test GET / for the main page, POST with sample JSON for actions. \
+                         If the response shows errors or wrong behavior, fix with edit_file and recompile. \
+                         Iterate until the cartridge works correctly — do not ship broken code."
                 .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
