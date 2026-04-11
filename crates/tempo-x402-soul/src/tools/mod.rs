@@ -523,6 +523,14 @@ impl ToolExecutor {
                 self.test_cartridge(slug, method, path, body).await
             }
             "list_cartridges" => self.list_cartridges().await,
+            "visual_test_cartridge" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                let expected = args.get("expected_behavior").and_then(|v| v.as_str());
+                self.visual_test_cartridge(slug, expected).await
+            }
             "create_cognitive_cartridge" => {
                 let system = args
                     .get("system")

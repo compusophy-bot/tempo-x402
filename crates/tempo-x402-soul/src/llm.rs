@@ -49,6 +49,17 @@ struct Part {
     /// when sending function call history to avoid 400 errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     thought_signature: Option<String>,
+    /// Inline binary data (images, audio) for multimodal input.
+    /// Used to send screenshots to Gemini Vision for visual analysis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inline_data: Option<InlineDataPart>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct InlineDataPart {
+    mime_type: String,
+    data: String, // base64-encoded
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -119,6 +130,8 @@ pub enum ConversationPart {
     Text(String),
     FunctionCall(FunctionCall),
     FunctionResponse(FunctionResponse),
+    /// Inline image data for multimodal LLM input (e.g., screenshots).
+    InlineData { mime_type: String, data: String },
 }
 
 impl LlmClient {
@@ -150,6 +163,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }],
             system_instruction: Some(Content {
@@ -159,6 +173,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }),
             tools: None,
@@ -191,6 +206,7 @@ impl LlmClient {
                             function_call: None,
                             function_response: None,
                             thought_signature: None,
+                            inline_data: None,
                         },
                         ConversationPart::FunctionCall(fc) => {
                             // thought_signature must be at the Part level, NOT inside
@@ -202,6 +218,7 @@ impl LlmClient {
                                 function_call: Some(fc_clean),
                                 function_response: None,
                                 thought_signature: sig,
+                                inline_data: None,
                             }
                         }
                         ConversationPart::FunctionResponse(fr) => Part {
@@ -209,6 +226,17 @@ impl LlmClient {
                             function_call: None,
                             function_response: Some(fr.clone()),
                             thought_signature: None,
+                            inline_data: None,
+                        },
+                        ConversationPart::InlineData { mime_type, data } => Part {
+                            text: None,
+                            function_call: None,
+                            function_response: None,
+                            thought_signature: None,
+                            inline_data: Some(InlineDataPart {
+                                mime_type: mime_type.clone(),
+                                data: data.clone(),
+                            }),
                         },
                     })
                     .collect(),
@@ -232,6 +260,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }),
             tools,
@@ -255,6 +284,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }],
             system_instruction: Some(Content {
@@ -264,6 +294,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }),
             tools: None,
@@ -298,6 +329,7 @@ impl LlmClient {
                             function_call: None,
                             function_response: None,
                             thought_signature: None,
+                            inline_data: None,
                         },
                         ConversationPart::FunctionCall(fc) => {
                             let mut clean_fc = fc.clone();
@@ -307,6 +339,7 @@ impl LlmClient {
                                 function_call: Some(clean_fc),
                                 function_response: None,
                                 thought_signature: fc.thought_signature.clone(),
+                                inline_data: None,
                             }
                         }
                         ConversationPart::FunctionResponse(fr) => Part {
@@ -314,6 +347,17 @@ impl LlmClient {
                             function_call: None,
                             function_response: Some(fr.clone()),
                             thought_signature: None,
+                            inline_data: None,
+                        },
+                        ConversationPart::InlineData { mime_type, data } => Part {
+                            text: None,
+                            function_call: None,
+                            function_response: None,
+                            thought_signature: None,
+                            inline_data: Some(InlineDataPart {
+                                mime_type: mime_type.clone(),
+                                data: data.clone(),
+                            }),
                         },
                     })
                     .collect(),
@@ -337,6 +381,7 @@ impl LlmClient {
                     function_call: None,
                     function_response: None,
                     thought_signature: None,
+                    inline_data: None,
                 }],
             }),
             tools: tool_decls,

@@ -593,6 +593,31 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
         });
 
         tools.push(FunctionDeclaration {
+            name: "visual_test_cartridge".to_string(),
+            description: "Visually test a cartridge by opening it in a browser, taking a screenshot, \
+                         and analyzing the rendering. The screenshot is sent to your vision input so \
+                         you can SEE what the cartridge looks like. Use after compile_cartridge to verify \
+                         the cartridge renders correctly and is functional. \
+                         If the screenshot shows errors, broken layouts, or wrong behavior, \
+                         fix with edit_file and recompile, then visual_test again."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "The cartridge slug to visually test"
+                    },
+                    "expected_behavior": {
+                        "type": "string",
+                        "description": "What the cartridge should look like or do (helps analyze the screenshot)"
+                    }
+                },
+                "required": ["slug"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
             name: "create_cognitive_cartridge".to_string(),
             description: "Create a cognitive cartridge — a hot-swappable WASM module for a cognitive system \
                          (brain, cortex, genesis, hivemind, synthesis, unified). \

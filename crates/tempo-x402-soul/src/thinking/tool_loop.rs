@@ -126,13 +126,27 @@ pub(crate) async fn run_tool_loop_with_model(
                     parts: vec![ConversationPart::FunctionCall(fc.clone())],
                 });
 
+                // Extract screenshot base64 before serializing (would bloat JSON)
+                let screenshot_base64 = extract_screenshot_base64(&tool_result.stdout);
                 let response_value = serde_json::to_value(&tool_result).unwrap_or_default();
+
+                let mut parts = vec![ConversationPart::FunctionResponse(FunctionResponse {
+                    name: fc.name,
+                    response: response_value,
+                })];
+
+                // If tool returned a screenshot, inject it as inline image data
+                // so the LLM can "see" it via Gemini Vision multimodal input.
+                if let Some(base64_png) = screenshot_base64 {
+                    parts.push(ConversationPart::InlineData {
+                        mime_type: "image/png".to_string(),
+                        data: base64_png,
+                    });
+                }
+
                 conversation.push(ConversationMessage {
                     role: "user".to_string(),
-                    parts: vec![ConversationPart::FunctionResponse(FunctionResponse {
-                        name: fc.name,
-                        response: response_value,
-                    })],
+                    parts,
                 });
 
                 tool_calls_made += 1;
@@ -185,4 +199,19 @@ fn summarize_tool_call(name: &str, args: &serde_json::Value) -> String {
         }
         _ => format!("{name}: {args}"),
     }
+}
+
+/// Extract base64 PNG screenshot data from tool output.
+/// The visual_test_cartridge tool embeds it with marker: `SCREENSHOT_BASE64:...`
+/// Returns the base64 data and strips it from the output to avoid bloating the JSON response.
+fn extract_screenshot_base64(stdout: &str) -> Option<String> {
+    const MARKER: &str = "SCREENSHOT_BASE64:";
+    if let Some(pos) = stdout.find(MARKER) {
+        let data = &stdout[pos + MARKER.len()..];
+        let trimmed = data.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 }

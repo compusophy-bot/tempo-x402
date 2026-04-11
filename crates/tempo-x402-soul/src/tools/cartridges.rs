@@ -428,4 +428,96 @@ impl ToolExecutor {
             })
         }
     }
+
+    /// Visually test a cartridge by opening it in a browser and taking a screenshot.
+    /// Returns the screenshot as base64 PNG (injected into LLM conversation as image).
+    pub(super) async fn visual_test_cartridge(
+        &self,
+        slug: &str,
+        expected_behavior: Option<&str>,
+    ) -> Result<ToolResult, String> {
+        let base_url = self
+            .gateway_url
+            .as_deref()
+            .unwrap_or("http://localhost:4023");
+        let url = format!("{}/c/{}", base_url, slug);
+
+        // Ensure we have a virtual display
+        crate::computer_use::ensure_display().await;
+
+        let screenshot_dir =
+            std::path::PathBuf::from(std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into()));
+        let executor = crate::computer_use::ComputerExecutor::new(screenshot_dir);
+
+        if !executor.is_available() {
+            return Ok(ToolResult {
+                stdout: format!(
+                    "Visual testing unavailable (no display). Cartridge at: {url}\n\
+                     Ask the user to check it manually in the Studio."
+                ),
+                stderr: String::new(),
+                exit_code: 0,
+                duration_ms: 0,
+            });
+        }
+
+        let start = std::time::Instant::now();
+
+        // Open URL, wait for render, screenshot
+        let sequence = crate::computer_use::browse_url_sequence(&url);
+        let results = executor.execute_sequence(&sequence).await;
+
+        // Find the screenshot in results
+        let mut screenshot_base64 = String::new();
+        let mut screenshot_desc = String::new();
+        for result in &results {
+            if let Some(ref ss) = result.screenshot {
+                screenshot_base64 = ss.base64_png.clone();
+                screenshot_desc = crate::computer_use::screenshot_for_llm(ss);
+            }
+        }
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        if screenshot_base64.is_empty() {
+            let errors: Vec<String> = results
+                .iter()
+                .filter_map(|r| r.error.as_ref().map(|e| e.to_string()))
+                .collect();
+            return Ok(ToolResult {
+                stdout: format!(
+                    "Visual test failed — could not capture screenshot of {url}\n\
+                     Errors: {}",
+                    if errors.is_empty() {
+                        "unknown".to_string()
+                    } else {
+                        errors.join("; ")
+                    }
+                ),
+                stderr: String::new(),
+                exit_code: 1,
+                duration_ms,
+            });
+        }
+
+        // Build the result. The tool loop will detect SCREENSHOT_BASE64: marker
+        // and inject it as InlineData into the LLM conversation.
+        let expected_note = expected_behavior
+            .map(|b| format!("\nExpected behavior: {b}"))
+            .unwrap_or_default();
+
+        Ok(ToolResult {
+            stdout: format!(
+                "Visual test of /c/{slug}:\n\
+                 {screenshot_desc}{expected_note}\n\
+                 Analyze the screenshot. Does the cartridge look correct and functional?\n\
+                 If there are visual problems, broken layouts, or error messages visible,\n\
+                 describe them and fix with edit_file + recompile.\n\
+                 SCREENSHOT_BASE64:{screenshot_base64}"
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms,
+        })
+    }
 }
