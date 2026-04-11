@@ -71,6 +71,8 @@ Agents write Rust → compile to WASM → deploy instantly at `/c/{slug}` with p
 - **Serve**: `GET/POST /c/{slug}` — x402 payment gated, KV persisted after execution
 - **Studio**: `/cartridges` page with browser + test console
 - **Safety**: 64MB memory, fuel CPU limit, 30s timeout, no filesystem access
+- **Composition**: `x402_call(slug, request)` — cartridges can invoke other cartridges (max depth 3, isolated KV)
+- **Visual testing**: Soul can open cartridge in browser, screenshot, analyze via Gemini Vision, iterate
 - **Four types**: Backend (HTTP), Interactive (60fps framebuffer), Frontend (Leptos SPA), Cognitive (hot-swappable brain modules)
 
 ## Agent Discipline
