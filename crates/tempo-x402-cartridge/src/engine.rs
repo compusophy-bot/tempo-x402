@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use dashmap::DashMap;
@@ -13,6 +14,9 @@ use wasmtime::{Engine, Linker, Module, Store};
 use crate::abi;
 use crate::error::CartridgeError;
 use crate::manifest::{CartridgeRequest, CartridgeResult, PaymentContext};
+
+/// Maximum nesting depth for cartridge-calls-cartridge.
+const MAX_CALL_DEPTH: u32 = 3;
 
 /// Per-request state passed into WASM host functions.
 pub struct CartridgeState {
@@ -24,6 +28,8 @@ pub struct CartridgeState {
     pub response_status: u16,
     pub response_body: String,
     pub response_content_type: String,
+    /// Current nesting depth for x402_call (0 = top-level request).
+    pub call_depth: u32,
 }
 
 impl Default for CartridgeState {
@@ -34,6 +40,7 @@ impl Default for CartridgeState {
             response_status: 200,
             response_body: String::new(),
             response_content_type: "application/json".to_string(),
+            call_depth: 0,
         }
     }
 }
@@ -110,6 +117,37 @@ impl CartridgeEngine {
         kv_preload: HashMap<String, String>,
         timeout_secs: u64,
     ) -> Result<(CartridgeResult, HashMap<String, String>), CartridgeError> {
+        self.execute_with_depth(slug, request, kv_preload, timeout_secs, 0, None)
+    }
+
+    /// Execute a cartridge with nested call support.
+    /// `engine_arc` enables x402_call — child cartridges can invoke other cartridges.
+    pub fn execute_with_composition(
+        self: &Arc<Self>,
+        slug: &str,
+        request: &CartridgeRequest,
+        kv_preload: HashMap<String, String>,
+        timeout_secs: u64,
+    ) -> Result<(CartridgeResult, HashMap<String, String>), CartridgeError> {
+        self.execute_with_depth(slug, request, kv_preload, timeout_secs, 0, Some(Arc::clone(self)))
+    }
+
+    /// Execute with call depth tracking and optional engine for nested x402_call.
+    pub fn execute_with_depth(
+        &self,
+        slug: &str,
+        request: &CartridgeRequest,
+        kv_preload: HashMap<String, String>,
+        timeout_secs: u64,
+        call_depth: u32,
+        engine_arc: Option<Arc<CartridgeEngine>>,
+    ) -> Result<(CartridgeResult, HashMap<String, String>), CartridgeError> {
+        if call_depth > MAX_CALL_DEPTH {
+            return Err(CartridgeError::ExecutionFailed(format!(
+                "max nesting depth ({MAX_CALL_DEPTH}) exceeded"
+            )));
+        }
+
         let module = self
             .modules
             .get(slug)
@@ -121,6 +159,7 @@ impl CartridgeEngine {
         let state = CartridgeState {
             kv_store: kv_preload,
             payment: request.payment.clone(),
+            call_depth,
             ..Default::default()
         };
 
@@ -129,9 +168,9 @@ impl CartridgeEngine {
             .set_fuel(MAX_FUEL)
             .map_err(|e| CartridgeError::ExecutionFailed(format!("fuel setup: {e}")))?;
 
-        // Create linker and register host functions
+        // Create linker and register host functions (including x402_call if engine available)
         let mut linker = Linker::new(&self.engine);
-        abi::register_host_functions(&mut linker)?;
+        abi::register_host_functions(&mut linker, engine_arc)?;
 
         // Instantiate
         let instance = linker

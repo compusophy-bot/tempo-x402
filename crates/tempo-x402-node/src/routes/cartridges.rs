@@ -192,7 +192,7 @@ pub async fn handle_cartridge(
 
     // Execute in blocking thread pool (wasmtime is synchronous)
     let slug_clone = slug.clone();
-    let result = web::block(move || engine.execute(&slug_clone, &cartridge_request, kv, 30))
+    let result = web::block(move || engine.execute_with_composition(&slug_clone, &cartridge_request, kv, 30))
         .await
         .unwrap_or_else(|e| {
             Err(x402_cartridge::CartridgeError::ExecutionFailed(format!(

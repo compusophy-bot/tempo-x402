@@ -189,6 +189,8 @@ extern "C" {
     fn kv_get(key_ptr: *const u8, key_len: i32) -> i64;
     fn kv_set(key_ptr: *const u8, key_len: i32, val_ptr: *const u8, val_len: i32) -> i32;
     fn payment_info() -> i64;
+    /// Call another cartridge by slug. Returns packed (ptr << 32 | len) with JSON response, or 0 on error.
+    fn call(slug_ptr: *const u8, slug_len: i32, req_ptr: *const u8, req_len: i32) -> i64;
 }
 
 /// Helper: send a response back to the host.

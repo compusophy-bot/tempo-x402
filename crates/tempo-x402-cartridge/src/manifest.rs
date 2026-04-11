@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 /// ABI version. Increment when host function signatures change.
-pub const ABI_VERSION: u32 = 1;
+/// v2: added x402_call for cartridge-calls-cartridge composition.
+pub const ABI_VERSION: u32 = 2;
 
 /// The kind of cartridge — determines compilation target and runtime.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

@@ -4,13 +4,21 @@
 //! linear memory. This is deliberately simple so Flash Lite can generate
 //! correct cartridge code.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use wasmtime::{Caller, Linker};
 
-use crate::engine::CartridgeState;
+use crate::engine::{CartridgeEngine, CartridgeState};
 use crate::error::CartridgeError;
+use crate::manifest::CartridgeRequest;
 
 /// Register all host functions on the linker.
-pub fn register_host_functions(linker: &mut Linker<CartridgeState>) -> Result<(), CartridgeError> {
+/// If `engine` is provided, x402_call is registered enabling cartridge-calls-cartridge.
+pub fn register_host_functions(
+    linker: &mut Linker<CartridgeState>,
+    engine: Option<Arc<CartridgeEngine>>,
+) -> Result<(), CartridgeError> {
     // x402_log(level: i32, msg_ptr: i32, msg_len: i32)
     linker
         .func_wrap(
@@ -113,6 +121,119 @@ pub fn register_host_functions(linker: &mut Linker<CartridgeState>) -> Result<()
             },
         )
         .map_err(|e| CartridgeError::Abi(format!("failed to register response: {e}")))?;
+
+    // ── x402_call: cartridge-calls-cartridge (composition primitive) ──
+    // Only registered when engine Arc is available (top-level execute_with_composition).
+    if let Some(engine_arc) = engine {
+        let engine_for_x402 = Arc::clone(&engine_arc);
+        linker
+            .func_wrap(
+                "x402",
+                "call",
+                move |mut caller: Caller<'_, CartridgeState>,
+                      slug_ptr: i32,
+                      slug_len: i32,
+                      req_ptr: i32,
+                      req_len: i32|
+                      -> i64 {
+                    let slug = match read_string(&mut caller, slug_ptr, slug_len) {
+                        Some(s) => s,
+                        None => return 0,
+                    };
+                    let req_json = match read_string(&mut caller, req_ptr, req_len) {
+                        Some(s) => s,
+                        None => return 0,
+                    };
+
+                    let depth = caller.data().call_depth;
+
+                    // Parse request JSON or construct a simple GET
+                    let request = serde_json::from_str::<CartridgeRequest>(&req_json)
+                        .unwrap_or_else(|_| CartridgeRequest {
+                            method: "GET".to_string(),
+                            path: "/".to_string(),
+                            body: req_json,
+                            headers: HashMap::new(),
+                            payment: None,
+                        });
+
+                    // Execute child cartridge with isolated KV, incremented depth
+                    let child_timeout = 10u64; // max 10s per child call
+                    match engine_for_x402.execute_with_depth(
+                        &slug,
+                        &request,
+                        HashMap::new(),
+                        child_timeout,
+                        depth + 1,
+                        Some(Arc::clone(&engine_for_x402)),
+                    ) {
+                        Ok((result, _kv)) => {
+                            let response_json =
+                                serde_json::to_string(&result).unwrap_or_default();
+                            write_bytes_to_guest(&mut caller, response_json.as_bytes())
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                slug = slug,
+                                depth = depth + 1,
+                                error = %e,
+                                "x402_call failed"
+                            );
+                            0
+                        }
+                    }
+                },
+            )
+            .map_err(|e| CartridgeError::Abi(format!("failed to register call: {e}")))?;
+
+        // env namespace alias
+        let engine_for_env = engine_arc;
+        linker
+            .func_wrap(
+                "env",
+                "x402_call",
+                move |mut caller: Caller<'_, CartridgeState>,
+                      slug_ptr: i32,
+                      slug_len: i32,
+                      req_ptr: i32,
+                      req_len: i32|
+                      -> i64 {
+                    let slug = match read_string(&mut caller, slug_ptr, slug_len) {
+                        Some(s) => s,
+                        None => return 0,
+                    };
+                    let req_json = match read_string(&mut caller, req_ptr, req_len) {
+                        Some(s) => s,
+                        None => return 0,
+                    };
+                    let depth = caller.data().call_depth;
+                    let request = serde_json::from_str::<CartridgeRequest>(&req_json)
+                        .unwrap_or_else(|_| CartridgeRequest {
+                            method: "GET".to_string(),
+                            path: "/".to_string(),
+                            body: req_json,
+                            headers: HashMap::new(),
+                            payment: None,
+                        });
+                    match engine_for_env.execute_with_depth(
+                        &slug,
+                        &request,
+                        HashMap::new(),
+                        10,
+                        depth + 1,
+                        Some(Arc::clone(&engine_for_env)),
+                    ) {
+                        Ok((result, _kv)) => {
+                            let response_json =
+                                serde_json::to_string(&result).unwrap_or_default();
+                            write_bytes_to_guest(&mut caller, response_json.as_bytes())
+                        }
+                        Err(_) => 0,
+                    }
+                },
+            )
+            .map_err(|e| CartridgeError::Abi(format!("failed to register env::x402_call: {e}")))?;
+    }
 
     // ── Backward-compat aliases: "env" namespace with x402_ prefix ──
     // Cartridges compiled without #[link(wasm_import_module = "x402")]
