@@ -389,9 +389,9 @@ pub fn train_model(db: &SoulDatabase) {
             toks
         });
 
-        // Repeat training on high-weight examples (verified solutions get 3x passes)
-        // But only 1 repeat for enc-dec (was 3x — too expensive)
-        let effective_weight = (*weight).min(1);
+        // Repeat training on high-weight examples (verified solutions get 2x passes).
+        // Multi-token loss makes each pass ~64x more informative, so 2x is plenty.
+        let effective_weight = (*weight).min(2);
         for _ in 0..effective_weight {
             // 64 tokens for enc-dec (was 128 for decoder-only).
             // Encoder-decoder does 2 forward passes + cross-attention backprop,
@@ -401,11 +401,13 @@ pub fn train_model(db: &SoulDatabase) {
                 let end = (start + window_size).min(target_tokens.len());
                 let target_window = &target_tokens[start..end];
                 let step = model.train_steps as f32;
-                let lr = if step < 200.0 {
-                    0.0005 + (0.003 - 0.0005) * (step / 200.0)
+                // Multi-token loss gives ~dec_len× more gradient per step,
+                // so use a lower peak LR and longer warmup to stay stable.
+                let lr = if step < 500.0 {
+                    0.0003 + (0.002 - 0.0003) * (step / 500.0)
                 } else {
-                    let decay = ((step - 200.0) * std::f32::consts::PI / 10000.0).cos();
-                    0.0005 + (0.003 - 0.0005) * 0.5 * (1.0 + decay)
+                    let decay = ((step - 500.0) * std::f32::consts::PI / 10000.0).cos();
+                    0.0003 + (0.002 - 0.0003) * 0.5 * (1.0 + decay)
                 };
 
                 let loss = if let Some(ctx) = &context_tokens {

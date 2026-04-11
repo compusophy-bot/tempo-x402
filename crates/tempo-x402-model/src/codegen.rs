@@ -612,7 +612,8 @@ impl CodeGenModel {
 
     /// Train on a (context, target) pair. Context = test code, target = solution code.
     /// This is the primary training method for the encoder-decoder.
-    /// Returns loss (cross-entropy on last target token).
+    /// Teacher forcing: computes loss on ALL decoder positions, not just the last.
+    /// Returns average loss (cross-entropy across all positions).
     pub fn train_enc_dec(&mut self, context: &[u32], target: &[u32], learning_rate: f32) -> f32 {
         if target.len() < 2 {
             return 0.0;
@@ -622,10 +623,9 @@ impl CodeGenModel {
         let n_heads = SMALL_N_HEADS;
         let d_head = SMALL_D_HEAD;
         let ff = SMALL_D_FF;
-        let dec_input = &target[..target.len() - 1];
-        let dec_target = target[target.len() - 1];
+        // Teacher forcing: input = target[0..n-1], labels = target[1..n]
+        let dec_len = (target.len() - 1).min(self.max_seq);
         let enc_len = context.len().min(self.max_seq);
-        let dec_len = dec_input.len().min(self.max_seq);
 
         // === ENCODER FORWARD — save activations ===
 
@@ -650,7 +650,7 @@ impl CodeGenModel {
         // === DECODER FORWARD — save activations ===
 
         let mut dec_hidden = vec![0.0f32; dec_len * d];
-        for (pos, &tok) in dec_input.iter().take(dec_len).enumerate() {
+        for (pos, &tok) in target[..dec_len].iter().enumerate() {
             let tok_idx = tok as usize % self.vocab_size;
             for j in 0..d {
                 dec_hidden[pos * d + j] =
@@ -667,49 +667,52 @@ impl CodeGenModel {
             dec_layer_inputs.push(dec_hidden.clone());
         }
 
-        // === OUTPUT PROJECTION ===
+        // === OUTPUT PROJECTION — ALL positions (teacher forcing) ===
 
-        let last_pos = dec_len - 1;
-        let last_hidden = &dec_hidden[last_pos * d..(last_pos + 1) * d];
-        let logits: Vec<f32> = (0..self.vocab_size)
-            .into_par_iter()
-            .map(|v_idx| {
+        let mut total_loss = 0.0f32;
+        let mut d_dec_output = vec![0.0f32; dec_len * d];
+        let lr = learning_rate;
+
+        for pos in 0..dec_len {
+            let hidden_pos = &dec_hidden[pos * d..(pos + 1) * d];
+            let label = target[pos + 1] as usize % self.vocab_size;
+
+            // Compute logits at this position
+            let mut logits = vec![0.0f32; self.vocab_size];
+            for v_idx in 0..self.vocab_size {
                 let mut dot = self.output_bias[v_idx];
                 let off = v_idx * d;
                 for j in 0..d {
-                    dot += last_hidden[j] * self.embeddings[off + j];
+                    dot += hidden_pos[j] * self.embeddings[off + j];
                 }
-                dot
-            })
-            .collect();
+                logits[v_idx] = dot;
+            }
 
-        // Loss
-        let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        let exp_sum: f32 = logits.iter().map(|l| (l - max_logit).exp()).sum();
-        let log_sum_exp = max_logit + exp_sum.ln();
-        let target_idx = dec_target as usize % self.vocab_size;
-        let loss = log_sum_exp - logits[target_idx];
+            // Cross-entropy loss
+            let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let exp_sum: f32 = logits.iter().map(|l| (l - max_logit).exp()).sum();
+            let log_sum_exp = max_logit + exp_sum.ln();
+            let loss = log_sum_exp - logits[label];
+            total_loss += loss;
 
-        let softmax: Vec<f32> = logits.iter().map(|l| (l - log_sum_exp).exp()).collect();
-        let mut d_logits = softmax;
-        d_logits[target_idx] -= 1.0;
+            // Gradient: softmax - one_hot(label), scaled by 1/dec_len
+            let scale = 1.0 / dec_len as f32;
+            let mut d_logits = vec![0.0f32; self.vocab_size];
+            for v_idx in 0..self.vocab_size {
+                d_logits[v_idx] = (logits[v_idx] - log_sum_exp).exp() * scale;
+            }
+            d_logits[label] -= scale;
 
-        // === BACKPROP ===
+            // Update output bias
+            for v_idx in 0..self.vocab_size {
+                if d_logits[v_idx].abs() < 1e-7 {
+                    continue;
+                }
+                self.output_bias[v_idx] -= lr * clip_grad(d_logits[v_idx]);
+            }
 
-        let lr = learning_rate;
-
-        // 1. Output bias
-        self.output_bias
-            .par_iter_mut()
-            .zip(d_logits.par_iter())
-            .for_each(|(b, &g)| {
-                *b -= lr * clip_grad(g);
-            });
-
-        // 2. Embedding gradient from output projection
-        let d_hidden_last: Vec<f32> = (0..d)
-            .into_par_iter()
-            .map(|j| {
+            // Gradient into hidden state at this position
+            for j in 0..d {
                 let mut sum = 0.0f32;
                 for v_idx in 0..self.vocab_size {
                     if d_logits[v_idx].abs() < 1e-7 {
@@ -717,26 +720,23 @@ impl CodeGenModel {
                     }
                     sum += d_logits[v_idx] * self.embeddings[v_idx * d + j];
                 }
-                sum
-            })
-            .collect();
-
-        // Update embeddings from output projection
-        for v_idx in 0..self.vocab_size {
-            if d_logits[v_idx].abs() < 1e-7 {
-                continue;
+                d_dec_output[pos * d + j] = sum;
             }
-            let g = d_logits[v_idx];
-            let emb_off = v_idx * d;
-            for j in 0..d {
-                self.embeddings[emb_off + j] -= lr * clip_grad(g * last_hidden[j]);
+
+            // Update embeddings from output projection at this position
+            for v_idx in 0..self.vocab_size {
+                if d_logits[v_idx].abs() < 1e-7 {
+                    continue;
+                }
+                let g = d_logits[v_idx];
+                let emb_off = v_idx * d;
+                for j in 0..d {
+                    self.embeddings[emb_off + j] -= lr * clip_grad(g * hidden_pos[j]);
+                }
             }
         }
 
-        let mut d_dec_output = vec![0.0f32; dec_len * d];
-        for j in 0..d {
-            d_dec_output[last_pos * d + j] = d_hidden_last[j];
-        }
+        let avg_loss = total_loss / dec_len as f32;
 
         // 3. Backprop through decoder layers in REVERSE order
         let mut d_encoder = vec![0.0f32; enc_len * d]; // accumulate gradients for encoder
@@ -885,11 +885,9 @@ impl CodeGenModel {
                                 for kk in 0..d {
                                     self.decoder_layers[l_idx].cross_wv[w_idx + kk] -=
                                         lr_cross * clip_grad(g * enc_inp[kk]);
-                                    // Propagate gradient to encoder output
-                                    d_encoder[enc_pos * d + kk] += lr_cross
-                                        * clip_grad(
-                                            g * self.decoder_layers[l_idx].cross_wv[w_idx + kk],
-                                        );
+                                    // Propagate gradient to encoder output (no lr — just gradient)
+                                    d_encoder[enc_pos * d + kk] +=
+                                        g * self.decoder_layers[l_idx].cross_wv[w_idx + kk];
                                 }
                             }
                         }
@@ -1131,7 +1129,7 @@ impl CodeGenModel {
         }
 
         // 5. Input embedding gradient (decoder side)
-        for (pos, &tok) in dec_input.iter().take(dec_len).enumerate() {
+        for (pos, &tok) in target[..dec_len].iter().enumerate() {
             let tok_idx = tok as usize % self.vocab_size;
             let emb_off = tok_idx * d;
             for j in 0..d {
@@ -1155,9 +1153,9 @@ impl CodeGenModel {
         }
 
         self.train_steps += 1;
-        self.running_loss = 0.95 * self.running_loss + 0.05 * loss;
+        self.running_loss = 0.95 * self.running_loss + 0.05 * avg_loss;
 
-        loss
+        avg_loss
     }
 
     /// Train on a single example (input tokens → predict next token).
@@ -1193,10 +1191,12 @@ impl Default for CodeGenModel {
 // ── Utilities ──────────────────────────────────────────────────────
 
 /// Simple layer normalization (mean=0, var=1, then scale).
-/// Clip gradient to [-0.5, 0.5] to prevent explosions.
+/// Clip gradient to [-1.0, 1.0] to prevent explosions.
+/// Relaxed from [-0.5, 0.5] — multi-token loss averages over positions,
+/// so per-position gradients are already smaller.
 #[inline]
 fn clip_grad(g: f32) -> f32 {
-    g.clamp(-0.5, 0.5)
+    g.clamp(-1.0, 1.0)
 }
 
 fn layer_norm(input: &[f32], scale: &[f32], seq_len: usize, d: usize) -> Vec<f32> {
