@@ -168,6 +168,17 @@ The node auto-bootstraps: generates wallet, requests faucet funds, mints on-chai
 
 ## Changelog
 
+### v9.3.0 -- Composable Cartridge Intelligence
+
+Cartridges compose, the soul sees what it builds, the codegen model actually learns, and can now write cartridges locally without API calls.
+
+- **Visual testing loop**: Soul opens cartridges in a browser, screenshots via Xvfb/scrot, analyzes rendering via Gemini Vision, iterates on visual quality (not just compilation)
+- **x402_call composition**: Cartridges can invoke other cartridges via `x402_call(slug, request)` host function. Max depth 3, isolated KV per child, 10s timeout. ABI v2.
+- **Multi-token teacher forcing**: Codegen model now trains on ALL decoder positions (was only last token — 98% wasted compute). ~64x more gradient signal per step.
+- **3 codegen training bugs fixed**: solution weight cap killed 3x weighting, cross-attention gradient scaled to near-zero, gradient clipping too aggressive
+- **Local-first cartridge generation**: New `generate_cartridge_code` tool — local 15M param model writes cartridge source, validates structure, cargo checks, falls back to Gemini on failure
+- **LR schedule tuned**: Lower peak (0.002), longer warmup (500 steps) for multi-token loss stability
+
 ### v9.2.0 -- Training Corpus Expansion
 
 188 compile-verified WASM cartridges for codegen model training. 100% compilation rate against wasm32-unknown-unknown target.
