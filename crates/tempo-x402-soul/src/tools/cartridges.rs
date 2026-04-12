@@ -374,6 +374,156 @@ impl ToolExecutor {
         })
     }
 
+    /// Generate cartridge source code using the LOCAL codegen model.
+    /// Tries the model first; if it produces code that compiles, returns it.
+    /// If the model isn't ready or code doesn't compile, returns a failure
+    /// so the soul falls back to Gemini naturally.
+    pub(super) async fn generate_cartridge_code(
+        &self,
+        slug: &str,
+        description: &str,
+        frontend: bool,
+    ) -> Result<ToolResult, String> {
+        let db = self.db.as_ref().ok_or("no database available")?;
+
+        // Build context prompt for the encoder (what the cartridge should do)
+        let tier = if description.len() < 100 { "tier1" } else { "tier3" };
+        let kind = if frontend { "frontend (Leptos SPA)" } else { "backend (#[no_std], x402 ABI)" };
+        let context = format!(
+            "// x402 WASM cartridge: {}\n// Tier: {}\n// Type: {}\n// Description: {}\n",
+            slug.replace('_', " "),
+            tier,
+            kind,
+            description
+        );
+
+        // Try the local codegen model
+        let start = std::time::Instant::now();
+        let generated = crate::codegen::generate(db, &context, 512);
+
+        let Some(code) = generated else {
+            return Ok(ToolResult {
+                stdout: "Local codegen model not ready (needs more training). \
+                         Use create_cartridge with source_code written by LLM instead."
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 1,
+                duration_ms: start.elapsed().as_millis() as u64,
+            });
+        };
+
+        // Validate: does the generated code have the required x402 structure?
+        let has_handle = code.contains("x402_handle");
+        let has_no_std = code.contains("no_std");
+        let has_response = code.contains("response(") || code.contains("respond(");
+
+        if !has_handle || !has_no_std || !has_response {
+            let missing: Vec<&str> = [
+                (!has_handle).then_some("x402_handle"),
+                (!has_no_std).then_some("#![no_std]"),
+                (!has_response).then_some("response call"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+
+            // Record as negative example (generated but structurally invalid)
+            crate::codegen::record_training_example_with_context(
+                db,
+                &code,
+                &format!("failed/{slug}"),
+                Some(&context),
+            );
+
+            return Ok(ToolResult {
+                stdout: format!(
+                    "Local model generated code but missing required structure: {}.\n\
+                     Use create_cartridge with source_code written by LLM instead.\n\
+                     (Model will learn from this failure.)",
+                    missing.join(", ")
+                ),
+                stderr: String::new(),
+                exit_code: 1,
+                duration_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+
+        // Try to compile it — write to temp dir, cargo check
+        let cartridge_dir = format!("/data/cartridges/{slug}");
+        let src_dir = format!("{cartridge_dir}/src");
+        let bin_dir = format!("{cartridge_dir}/bin");
+
+        std::fs::create_dir_all(format!("{src_dir}/src"))
+            .map_err(|e| format!("failed to create source dir: {e}"))?;
+        std::fs::create_dir_all(&bin_dir)
+            .map_err(|e| format!("failed to create bin dir: {e}"))?;
+
+        let cargo_toml = x402_cartridge::compiler::default_cargo_toml(slug);
+        std::fs::write(format!("{src_dir}/Cargo.toml"), &cargo_toml)
+            .map_err(|e| format!("failed to write Cargo.toml: {e}"))?;
+        std::fs::write(format!("{src_dir}/src/lib.rs"), &code)
+            .map_err(|e| format!("failed to write lib.rs: {e}"))?;
+
+        // Quick cargo check to see if it compiles
+        let check = tokio::process::Command::new("cargo")
+            .args(["check", "--target", "wasm32-wasip1", "--manifest-path"])
+            .arg(format!("{src_dir}/Cargo.toml"))
+            .output()
+            .await;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        match check {
+            Ok(output) if output.status.success() => {
+                // Record as positive training example
+                crate::codegen::record_training_example_with_context(
+                    db,
+                    &code,
+                    &format!("generated/{slug}"),
+                    Some(&context),
+                );
+
+                Ok(ToolResult {
+                    stdout: format!(
+                        "LOCAL MODEL generated compilable cartridge '{slug}'!\n\
+                         Source: {src_dir}/src/lib.rs\n\
+                         Code passes cargo check.\n\
+                         Duration: {duration_ms}ms (no Gemini API call needed)\n\
+                         Next: call compile_cartridge('{slug}') to build the WASM binary."
+                    ),
+                    stderr: String::new(),
+                    exit_code: 0,
+                    duration_ms,
+                })
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let errors = stderr.lines().take(20).collect::<Vec<_>>().join("\n");
+
+                Ok(ToolResult {
+                    stdout: format!(
+                        "Local model generated code but it doesn't compile:\n{errors}\n\n\
+                         The generated code is at {src_dir}/src/lib.rs — you can fix it with \
+                         edit_file, or use create_cartridge with LLM-written source_code instead.\n\
+                         (Model will learn from this failure.)"
+                    ),
+                    stderr: String::new(),
+                    exit_code: 1,
+                    duration_ms,
+                })
+            }
+            Err(e) => Ok(ToolResult {
+                stdout: format!(
+                    "Local model generated code but cargo check failed to run: {e}\n\
+                     Use create_cartridge with source_code written by LLM instead."
+                ),
+                stderr: String::new(),
+                exit_code: 1,
+                duration_ms,
+            }),
+        }
+    }
+
     /// List all cartridges on disk.
     pub(super) async fn list_cartridges(&self) -> Result<ToolResult, String> {
         let cartridge_dir = "/data/cartridges";

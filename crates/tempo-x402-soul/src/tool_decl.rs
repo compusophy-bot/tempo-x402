@@ -476,6 +476,35 @@ pub fn available_tools_with_git(coding_enabled: bool) -> Vec<FunctionDeclaration
 
         // WASM Cartridge tools — write Rust programs, compile to WASM, test instantly
         tools.push(FunctionDeclaration {
+            name: "generate_cartridge_code".to_string(),
+            description: "Generate cartridge source code using the LOCAL codegen model (no Gemini API call). \
+                         Try this FIRST before writing cartridge code yourself. The model was trained on 188 \
+                         verified cartridge examples. If it succeeds, you get compilable code instantly. \
+                         If it fails (model not ready, or code doesn't compile), fall back to writing \
+                         the code yourself and using create_cartridge with source_code. \
+                         On success, the cartridge is created and ready to compile."
+                .to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "slug": {
+                        "type": "string",
+                        "description": "URL slug for the cartridge (alphanumeric + hyphens)"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "What the cartridge should do — be specific about features, UI, state, etc."
+                    },
+                    "frontend": {
+                        "type": "boolean",
+                        "description": "If true, generate a frontend Leptos app instead of a backend cartridge."
+                    }
+                },
+                "required": ["slug", "description"]
+            }),
+        });
+
+        tools.push(FunctionDeclaration {
             name: "create_cartridge".to_string(),
             description: "Create a WASM cartridge — a Rust program that compiles to WASM and serves at /c/{slug}. \
                          IMPORTANT: Write COMPLETE, WORKING code — not stubs or placeholders. Every function must \

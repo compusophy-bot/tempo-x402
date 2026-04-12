@@ -487,6 +487,22 @@ impl ToolExecutor {
                 self.test_script_endpoint(slug, input).await
             }
             // ── WASM Cartridge tools ──
+            "generate_cartridge_code" => {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'slug' argument".to_string())?;
+                let description = args
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "missing 'description' argument".to_string())?;
+                let frontend = args
+                    .get("frontend")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                self.generate_cartridge_code(slug, description, frontend)
+                    .await
+            }
             "create_cartridge" => {
                 let slug = args
                     .get("slug")
