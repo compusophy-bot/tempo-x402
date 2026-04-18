@@ -42,6 +42,8 @@ pub enum Capability {
     CodeSearch,
     /// Plan completes end-to-end.
     PlanComplete,
+    /// Performance profiling capability.
+    PerformanceProfile,
 }
 
 impl Capability {
@@ -60,6 +62,7 @@ impl Capability {
             Self::CodeGen => "code_gen",
             Self::CodeSearch => "code_search",
             Self::PlanComplete => "plan_complete",
+            Self::PerformanceProfile => "performance_profile",
         }
     }
 
@@ -78,6 +81,7 @@ impl Capability {
             Self::CodeGen => "Code Generation",
             Self::CodeSearch => "Code Search",
             Self::PlanComplete => "Plan Completion",
+            Self::PerformanceProfile => "Performance Profiling",
         }
     }
 
