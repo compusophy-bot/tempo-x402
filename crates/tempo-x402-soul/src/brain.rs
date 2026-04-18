@@ -1369,6 +1369,7 @@ fn capability_to_idx(cap: &Capability) -> usize {
         Capability::PlanComplete => 10,
         Capability::PerformanceProfile => 11,
         // Map new capabilities to related existing indices to avoid brain resize
+        Capability::TestBenchRegression => 3, // Maps to TestPass slot
         Capability::PeerReview => 5,   // maps to PeerCall slot
         Capability::CodeAccepted => 7, // maps to GitOps slot
     }

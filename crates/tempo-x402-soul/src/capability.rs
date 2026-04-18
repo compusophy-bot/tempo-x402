@@ -44,6 +44,8 @@ pub enum Capability {
     PlanComplete,
     /// Performance profiling capability.
     PerformanceProfile,
+    /// Regression testing benchmark performance.
+    TestBenchRegression,
 }
 
 impl Capability {
@@ -63,6 +65,7 @@ impl Capability {
             Self::CodeSearch => "code_search",
             Self::PlanComplete => "plan_complete",
             Self::PerformanceProfile => "performance_profile",
+            Self::TestBenchRegression => "test_bench_regression",
         }
     }
 
@@ -82,6 +85,7 @@ impl Capability {
             Self::CodeSearch => "Code Search",
             Self::PlanComplete => "Plan Completion",
             Self::PerformanceProfile => "Performance Profiling",
+            Self::TestBenchRegression => "Benchmark Regression",
         }
     }
 
