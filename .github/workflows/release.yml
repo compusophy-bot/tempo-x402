@@ -1,0 +1,275 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  # Test gate: must pass before building release artifacts
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - name: Run tests
+        env:
+          EVM_PRIVATE_KEY: ${{ secrets.EVM_PRIVATE_KEY }}
+          EVM_ADDRESS: ${{ secrets.EVM_ADDRESS }}
+          FACILITATOR_URL: ${{ secrets.FACILITATOR_URL }}
+          FACILITATOR_PRIVATE_KEY: ${{ secrets.FACILITATOR_PRIVATE_KEY }}
+          FACILITATOR_ADDRESS: ${{ secrets.FACILITATOR_ADDRESS }}
+        run: cargo test --workspace
+      - name: Run clippy
+        run: cargo clippy --workspace -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # Docs validation: version consistency check
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate version consistency
+        run: |
+          # Extract tag version (strip 'v' prefix)
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+
+          # Get version from core crate (source of truth)
+          CORE_VERSION=$(grep -m1 '^version = ' crates/tempo-x402/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+
+          # Check tag matches core version
+          if [ "$TAG_VERSION" != "$CORE_VERSION" ]; then
+            echo "❌ Tag version ($TAG_VERSION) != crates/tempo-x402 version ($CORE_VERSION)"
+            echo "Fix: Update crate versions to $TAG_VERSION before tagging"
+            exit 1
+          fi
+          echo "✓ Tag matches core version: $CORE_VERSION"
+
+          # Check all crates match
+          for crate in tempo-x402-gateway tempo-x402-identity tempo-x402-soul tempo-x402-node tempo-x402-app tempo-x402-security-audit; do
+            CRATE_VERSION=$(grep -m1 '^version = ' "crates/$crate/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+            if [ "$CRATE_VERSION" != "$CORE_VERSION" ]; then
+              echo "❌ crates/$crate version ($CRATE_VERSION) != core ($CORE_VERSION)"
+              exit 1
+            fi
+            echo "✓ crates/$crate version matches"
+          done
+
+          # Check llms.txt (version is 2 lines after ## Version due to blank line)
+          LLMS_VERSION=$(grep -A2 "^## Version" llms.txt | tail -1 | tr -d '[:space:]')
+          if [ "$LLMS_VERSION" != "$CORE_VERSION" ]; then
+            echo "❌ llms.txt version ($LLMS_VERSION) != core ($CORE_VERSION)"
+            echo "Fix: Run ./scripts/bump-version.sh $CORE_VERSION"
+            exit 1
+          fi
+          echo "✓ llms.txt version matches"
+
+          echo ""
+          echo "All versions consistent: $CORE_VERSION"
+
+  # Security gate: must pass before building release artifacts
+  security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Dependency vulnerability scan
+        run: cargo audit || (sleep 15 && cargo audit)
+      - name: Security invariant tests
+        run: cargo test -p tempo-x402-security-audit
+      - name: Generate security report
+        run: |
+          echo "## Security Audit Report" > security-report.md
+          echo "**Version:** ${GITHUB_REF#refs/tags/}" >> security-report.md
+          echo "**Date:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> security-report.md
+          echo "" >> security-report.md
+          echo "### Dependency Audit" >> security-report.md
+          cargo audit 2>&1 | tail -5 >> security-report.md
+          echo "" >> security-report.md
+          echo "### Security Invariant Tests" >> security-report.md
+          cargo test -p tempo-x402-security-audit -- --format=terse 2>&1 | tail -20 >> security-report.md
+          echo "" >> security-report.md
+          echo "**Status: PASSED**" >> security-report.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-report
+          path: security-report.md
+
+  # Docker image publishing to GHCR
+  docker:
+    needs: [test, docs, security-gate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
+        with:
+          images: ghcr.io/compusophy/tempo-x402
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build:
+    needs: [test, docs, security-gate]
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package binaries
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          mkdir -p dist
+          for bin in x402-approve x402-client x402-facilitator x402-gateway x402-node; do
+            src="target/${{ matrix.target }}/release/${bin}"
+            if [ -f "$src" ]; then
+              cp "$src" "dist/${bin}-${tag}-${{ matrix.target }}"
+            fi
+          done
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS-${{ matrix.target }}.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Merge checksums
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm -f SHA256SUMS-*.txt
+
+      - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  # Publish to crates.io in dependency order
+  publish:
+    needs: [test, docs, security-gate]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publish_crate() {
+            local crate="$1"
+            echo "📦 Publishing $crate..."
+            if cargo publish -p "$crate" --no-verify 2>&1 | tee /tmp/publish.log; then
+              echo "✓ Published $crate"
+              echo "Waiting for crates.io index to update..."
+              sleep 30
+            elif grep -q "already exists" /tmp/publish.log; then
+              echo "⏭ $crate already published, skipping"
+              sleep 5
+            else
+              echo "❌ Failed to publish $crate"
+              cat /tmp/publish.log
+              return 1
+            fi
+          }
+
+          # Layer 1: core (no workspace deps)
+          publish_crate tempo-x402
+
+          # Layer 2: depend on x402 only
+          publish_crate tempo-x402-identity
+          publish_crate tempo-x402-soul
+
+          # Layer 3: depend on x402
+          publish_crate tempo-x402-gateway
+
+          # Layer 4: depends on everything
+          publish_crate tempo-x402-node
+
+          echo ""
+          echo "All crates published successfully."

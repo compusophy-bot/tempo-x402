@@ -1,0 +1,64 @@
+[package]
+name = "tempo-x402"
+version = "9.3.0"
+edition = "2021"
+license = "MIT"
+description = "x402 payment protocol library for Tempo blockchain (EIP-712, TIP-20, wallet, client)"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "payment", "eip712", "tempo", "tip20"]
+categories = ["cryptography", "web-programming"]
+
+[lib]
+name = "x402"
+path = "src/lib.rs"
+
+[[bin]]
+name = "x402-approve"
+path = "src/approve.rs"
+required-features = ["full"]
+
+[[bin]]
+name = "x402-client"
+path = "src/bin/x402-client.rs"
+required-features = ["full"]
+
+[features]
+default = ["full"]
+demo = []
+wasm = []
+full = [
+    "dep:tokio",
+    "dep:rusqlite",
+    "dep:reqwest",
+    "dep:dashmap",
+    "dep:tracing-subscriber",
+    "dep:dotenvy",
+]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+alloy = { workspace = true }
+base64 = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+subtle = { workspace = true }
+tracing = { workspace = true }
+rand = "0.10"
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+# full-only deps (not needed for WASM wallet signing)
+dashmap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+dotenvy = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3"
+serde_json = { workspace = true }
+base64 = { workspace = true }

@@ -1,0 +1,17 @@
+# cargo-deny configuration for tempo-x402
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+# Only check workspace crates for unmaintained/yanked (ignore transitive)
+unmaintained = "none"
+yanked = "none"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

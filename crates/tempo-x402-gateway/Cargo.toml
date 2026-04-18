@@ -1,0 +1,47 @@
+[package]
+name = "tempo-x402-gateway"
+version = "9.3.0"
+edition = "2021"
+description = "x402 API gateway: proxy with per-request payment rails + embedded facilitator"
+license = "MIT"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "tempo", "payments", "api-gateway", "proxy"]
+categories = ["web-programming", "cryptography::cryptocurrencies"]
+
+[lib]
+name = "x402_gateway"
+path = "src/lib.rs"
+
+[[bin]]
+name = "x402-gateway"
+path = "src/main.rs"
+
+[[bin]]
+name = "x402-facilitator"
+path = "src/bin/x402-facilitator.rs"
+
+[dependencies]
+x402 = { workspace = true }
+actix-web = { workspace = true }
+actix-cors = { workspace = true }
+actix-files = { workspace = true }
+actix-governor = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+alloy = { workspace = true }
+base64 = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+prometheus = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+bytes = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+sha2 = { workspace = true }
+tokio-stream = { workspace = true }

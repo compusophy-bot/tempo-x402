@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - run: cargo build --workspace
+      - name: Run tests
+        env:
+          EVM_PRIVATE_KEY: ${{ secrets.EVM_PRIVATE_KEY }}
+          EVM_ADDRESS: ${{ secrets.EVM_ADDRESS }}
+          FACILITATOR_URL: ${{ secrets.FACILITATOR_URL }}
+          FACILITATOR_PRIVATE_KEY: ${{ secrets.FACILITATOR_PRIVATE_KEY }}
+          FACILITATOR_ADDRESS: ${{ secrets.FACILITATOR_ADDRESS }}
+        run: cargo test --workspace
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - run: cargo clippy --workspace -- -D warnings
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit || (sleep 15 && cargo audit)
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+
+      # Security invariant tests
+      - name: Run security invariant tests
+        run: cargo test -p tempo-x402-security-audit
+
+      # Check for unsafe code
+      - name: Check for unsafe code
+        run: |
+          UNSAFE_FOUND=$(grep -rn "unsafe " crates/*/src/*.rs 2>/dev/null | grep -v "// SAFETY:" || true)
+          if [ -n "$UNSAFE_FOUND" ]; then
+            echo "::warning::Unsafe code detected — review required"
+            echo "$UNSAFE_FOUND"
+          fi
+
+      # Secret scanning
+      - name: Scan for hardcoded secrets
+        run: |
+          FOUND=$(grep -rn '0x[a-fA-F0-9]\{64\}' crates/*/src/*.rs 2>/dev/null \
+            | grep -v 'DEMO_PRIVATE_KEY' \
+            | grep -v 'SECP256K1_N_DIV_2' \
+            | grep -v 'BYTECODE' \
+            | grep -v 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' \
+            | grep -v '#\[cfg(test)\]' \
+            | grep -v '// test' \
+            | grep -v 'mod tests' || true)
+          if [ -n "$FOUND" ]; then
+            echo "::error::Potential hardcoded secret detected"
+            echo "$FOUND"
+            exit 1
+          fi
+
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Check docs match Cargo.toml version
+        run: |
+          VERSION=$(grep '^version' crates/tempo-x402/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "Cargo.toml version: $VERSION"
+
+          # README must reference the crate names
+          grep -q 'tempo-x402' README.md || { echo "README.md missing tempo-x402 reference"; exit 1; }
+
+          # llms.txt must exist and reference the current version
+          test -f llms.txt || { echo "llms.txt not found"; exit 1; }
+          grep -q "$VERSION" llms.txt || { echo "llms.txt version mismatch (expected $VERSION)"; exit 1; }
+          grep -q 'tempo-x402' llms.txt || { echo "llms.txt missing tempo-x402 reference"; exit 1; }
+
+          echo "Docs freshness check passed"

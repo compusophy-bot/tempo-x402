@@ -1,0 +1,63 @@
+[package]
+name = "tempo-x402-app"
+version = "9.3.0"
+edition = "2021"
+description = "x402 kitchen sink web app - demo all payment features"
+license = "MIT"
+repository = "https://github.com/compusophy/tempo-x402"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+leptos = { version = "0.6", features = ["csr"] }
+leptos_meta = { version = "0.6", features = ["csr"] }
+leptos_router = { version = "0.6", features = ["csr"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "HtmlAnchorElement",
+    "HtmlInputElement",
+    "Headers",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Storage",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "FileReader",
+    "File",
+    "FileList",
+    "Clipboard",
+    "Navigator",
+    "Crypto",
+    "SubtleCrypto",
+    "CryptoKey",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
+    "KeyboardEvent",
+    "EventSource",
+    "MessageEvent",
+    "EventTarget",
+] }
+x402 = { path = "../tempo-x402", package = "tempo-x402", default-features = false, features = ["wasm", "demo"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+gloo-net = "0.6"
+gloo-timers = { version = "0.3", features = ["futures"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+console_error_panic_hook = "0.1"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

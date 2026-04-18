@@ -1,0 +1,15 @@
+target/
+.git/
+.github/
+.claude/
+.cargo/
+.env
+.env.*
+*.md
+nul
+railway_schema.json
+
+# Database files — never include in Docker images
+*.db
+*.sqlite
+*.sqlite3

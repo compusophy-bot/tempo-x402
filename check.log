@@ -1,0 +1,154 @@
+    Checking tempo-x402-soul v9.3.0 (/tmp/workspace/crates/tempo-x402-soul)
+error[E0425]: cannot find function `load_synthesis` in module `synthesis`
+  --> crates/tempo-x402-soul/src/autonomy.rs:81:28
+   |
+81 |     let synth = synthesis::load_synthesis(&db);
+   |                            ^^^^^^^^^^^^^^ not found in `synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `synthesis`
+   --> crates/tempo-x402-soul/src/autonomy.rs:373:28
+    |
+373 |     let synth = synthesis::load_synthesis(db);
+    |                            ^^^^^^^^^^^^^^ not found in `synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/evaluation.rs:529:39
+    |
+529 |         let synth = crate::synthesis::load_synthesis(
+    |                                       ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `synthesis`
+   --> crates/tempo-x402-soul/src/free_energy.rs:175:28
+    |
+175 |     let synth = synthesis::load_synthesis(db);
+    |                            ^^^^^^^^^^^^^^ not found in `synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/temporal.rs:210:35
+    |
+210 |     let synth = crate::synthesis::load_synthesis(db);
+    |                                   ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/goals.rs:173:39
+    |
+173 |         let synth = crate::synthesis::load_synthesis(&self.db);
+    |                                       ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0433]: failed to resolve: use of undeclared type `SafeDb`
+  --> crates/tempo-x402-soul/src/thinking/plan_cycle.rs:74:30
+   |
+74 | ...                   &SafeDb::new(self.db.clone()),
+   |                        ^^^^^^ use of undeclared type `SafeDb`
+   |
+help: consider importing this struct
+   |
+ 2 + use crate::synthesis::SafeDb;
+   |
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/plan_cycle.rs:570:59
+    |
+570 |                         let mut synth = crate::synthesis::load_synthesis(&self.db);
+    |                                                           ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `save_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/plan_cycle.rs:580:43
+    |
+580 |                         crate::synthesis::save_synthesis(&self.db, &synth);
+    |                                           ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/plan_cycle.rs:698:63
+    |
+698 | ...                   let mut synth = crate::synthesis::load_synthesis(&self.db);
+    |                                                         ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `save_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/plan_cycle.rs:708:47
+    |
+708 | ...                   crate::synthesis::save_synthesis(&self.db, &synth);
+    |                                         ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/planning.rs:139:43
+    |
+139 |         let mut synth = crate::synthesis::load_synthesis(&self.db);
+    |                                           ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `save_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/planning.rs:189:27
+    |
+189 |         crate::synthesis::save_synthesis(&self.db, &synth);
+    |                           ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `load_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/mod.rs:727:51
+    |
+727 |                 let mut synth = crate::synthesis::load_synthesis(&self.db);
+    |                                                   ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+error[E0425]: cannot find function `save_synthesis` in module `crate::synthesis`
+   --> crates/tempo-x402-soul/src/thinking/mod.rs:732:35
+    |
+732 |                 crate::synthesis::save_synthesis(&self.db, &synth);
+    |                                   ^^^^^^^^^^^^^^ not found in `crate::synthesis`
+
+warning: unused import: `crate::brain::BrainPrediction`
+  --> crates/tempo-x402-soul/src/synthesis.rs:43:5
+   |
+43 | use crate::brain::BrainPrediction;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::cortex::Cortex`
+  --> crates/tempo-x402-soul/src/synthesis.rs:44:5
+   |
+44 | use crate::cortex::Cortex;
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::genesis::GenePool`
+  --> crates/tempo-x402-soul/src/synthesis.rs:46:5
+   |
+46 | use crate::genesis::GenePool;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::hivemind::Hivemind`
+  --> crates/tempo-x402-soul/src/synthesis.rs:47:5
+   |
+47 | use crate::hivemind::Hivemind;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `PlanStep` and `Plan`
+  --> crates/tempo-x402-soul/src/synthesis.rs:48:19
+   |
+48 | use crate::plan::{Plan, PlanStep};
+   |                   ^^^^  ^^^^^^^^
+
+error[E0282]: type annotations needed
+   --> crates/tempo-x402-soul/src/thinking/goals.rs:187:18
+    |
+187 |         .filter(|s| !s.is_empty())
+    |                  ^   - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+187 |         .filter(|s: /* Type */| !s.is_empty())
+    |                   ++++++++++++
+
+error[E0282]: type annotations needed
+   --> crates/tempo-x402-soul/src/thinking/planning.rs:244:18
+    |
+244 |         .filter(|s| !s.is_empty())
+    |                  ^   - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+244 |         .filter(|s: /* Type */| !s.is_empty())
+    |                   ++++++++++++
+
+Some errors have detailed explanations: E0282, E0425, E0433.
+For more information about an error, try `rustc --explain E0282`.
+warning: `tempo-x402-soul` (lib) generated 5 warnings
+error: could not compile `tempo-x402-soul` (lib) due to 17 previous errors; 5 warnings emitted

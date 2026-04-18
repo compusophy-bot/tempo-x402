@@ -1,0 +1,44 @@
+[package]
+name = "tempo-x402-node"
+version = "9.3.0"
+edition = "2021"
+description = "Self-deploying x402 node: gateway + identity bootstrap + clone orchestration"
+license = "MIT"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "tempo", "node", "self-replicating", "autonomous"]
+categories = ["web-programming", "cryptography::cryptocurrencies"]
+
+[[bin]]
+name = "x402-node"
+path = "src/main.rs"
+
+[features]
+default = ["soul", "agent", "erc8004"]
+soul = ["dep:x402-soul"]
+agent = []
+erc8004 = ["x402-identity/erc8004"]
+
+[dependencies]
+x402 = { workspace = true }
+x402-gateway = { workspace = true }
+x402-identity = { workspace = true }
+x402-soul = { workspace = true, optional = true }
+x402-cartridge = { workspace = true }
+actix-web = { workspace = true }
+actix-files = { workspace = true }
+actix-governor = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = "0.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+alloy = { workspace = true }
+dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+prometheus = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }

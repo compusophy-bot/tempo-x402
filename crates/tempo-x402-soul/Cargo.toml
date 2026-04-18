@@ -1,0 +1,30 @@
+[package]
+name = "tempo-x402-soul"
+version = "9.3.0"
+edition = "2021"
+description = "Agentic soul for x402 nodes: observe-think-record loop powered by Gemini"
+license = "MIT"
+repository = "https://github.com/compusophy/tempo-x402"
+readme = "../../README.md"
+keywords = ["x402", "tempo", "soul", "agent", "ai"]
+categories = ["web-programming", "cryptography::cryptocurrencies"]
+
+[dependencies]
+x402 = { workspace = true }
+x402-identity = { workspace = true }
+x402-cartridge = { workspace = true }
+x402-model = { path = "../tempo-x402-model", version = "9.3.0", package = "tempo-x402-model" }
+alloy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+sled = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
