@@ -6,6 +6,8 @@
 use crate::git::GitContext;
 use crate::guard;
 
+use std::time::{Duration, Instant};
+
 /// Result of a coding commit attempt.
 #[derive(Debug)]
 pub struct CommitResult {
@@ -16,6 +18,17 @@ pub struct CommitResult {
     pub cargo_test_passed: bool,
     /// Cargo error output (stderr) when check or test fails — for learning.
     pub error_output: Option<String>,
+}
+
+/// Measures the execution time of a closure in milliseconds.
+pub fn test_bench_performance<F, T>(f: F) -> (T, Duration)
+where
+    F: FnOnce() -> T,
+{
+    let start = Instant::now();
+    let result = f();
+    let duration = start.elapsed();
+    (result, duration)
 }
 
 /// Maximum cumulative deletions per file over a rolling window.
