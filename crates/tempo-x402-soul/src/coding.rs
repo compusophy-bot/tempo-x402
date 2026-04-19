@@ -116,10 +116,8 @@ pub fn check_commit_readiness(db: &crate::db::SoulDatabase) -> Result<(), String
     // Benchmark hasn't run yet — tell the agent to wait
     let wait_secs = elapsed;
     Err(format!(
-        "Commit gate: waiting for benchmark to measure impact of last commit \
-         ({wait_secs}s ago). The benchmark runs every ~15 cycles. \
-         Study your code, read files, think about improvements while you wait. \
-         Do NOT commit again until you know if your last change helped."
+        "Commit gate: still waiting for benchmark results after {} seconds. Last commit at: {}. Current benchmark at: {}.",
+        wait_secs, commit_at, last_benchmark_at
     ))
 }
 
