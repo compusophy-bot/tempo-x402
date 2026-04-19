@@ -1053,8 +1053,10 @@ mod tests {
     use super::*;
 
     fn make_db() -> SoulDatabase {
-        // Use a unique path for each test to allow parallel execution.
-        let path = format!("/tmp/tempo-db-{}.sled", Uuid::new_v4());
+        // Use a unique, non-colliding path for each test.
+        // The previous implementation used /tmp which could have race conditions.
+        // We now use a test-specific directory in the target workspace.
+        let path = format!("./target/test-db-{}-{:?}", Uuid::new_v4(), std::thread::current().id());
         SoulDatabase::new(&path).expect("Failed to create in-memory database for testing")
     }
 
