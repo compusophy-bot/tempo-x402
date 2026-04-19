@@ -1053,9 +1053,9 @@ mod tests {
     use super::*;
 
     fn make_db() -> SoulDatabase {
-        // Use a unique name for each test to avoid lock contention
-        let name = format!(":memory:{}:db", Uuid::new_v4());
-        SoulDatabase::new(&name).expect("Failed to create in-memory database for testing")
+        // Use a unique path for each test to allow parallel execution.
+        let path = format!("/tmp/tempo-db-{}.sled", Uuid::new_v4());
+        SoulDatabase::new(&path).expect("Failed to create in-memory database for testing")
     }
 
     #[test]
