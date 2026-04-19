@@ -2,6 +2,15 @@
 
 use super::*;
 
+pub(super) async fn soul_status_fast(state: web::Data<NodeState>) -> HttpResponse {
+    let now = chrono::Utc::now().timestamp();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "online",
+        "timestamp": now,
+        "dormant": state.soul_dormant,
+    }))
+}
+
 pub(super) async fn soul_status(state: web::Data<NodeState>) -> HttpResponse {
     let soul_db = match &state.soul_db {
         Some(db) => db,

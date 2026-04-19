@@ -75,6 +75,7 @@ pub struct GoalEntry {
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/soul/status", web::get().to(status::soul_status))
+        .route("/soul/status/fast", web::get().to(status::soul_status_fast))
         .route("/soul/chat", web::post().to(chat::soul_chat))
         .route("/soul/chat/stream", web::post().to(chat::soul_chat_stream))
         .route("/soul/chat/sessions", web::get().to(chat::chat_sessions))
