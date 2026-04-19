@@ -103,6 +103,41 @@ pub fn benchmark_report(runs: &[BenchmarkRun], problems: &[BenchmarkProblem]) ->
     }
 }
 
+/// Categorizes failures into logic vs syntax errors.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FailureClassification {
+    pub logic_errors: usize,
+    pub syntax_errors: usize,
+    pub total: usize,
+}
+
+/// Analyzes recent benchmark runs to classify failure types.
+pub fn self_benchmark_check(runs: &[BenchmarkRun]) -> FailureClassification {
+    let mut logic_errors = 0;
+    let mut syntax_errors = 0;
+    let mut total = 0;
+
+    for run in runs {
+        if !run.passed {
+            total += 1;
+            let err = run.error_output.to_lowercase();
+            // Simple heuristic: compiler/syntax errors often contain specific patterns
+            if err.contains("error:") || err.contains("compilation failed") || err.contains("syntax") || err.contains("expected") {
+                syntax_errors += 1;
+            } else {
+                // Otherwise assume logic (test assertions failing)
+                logic_errors += 1;
+            }
+        }
+    }
+
+    FailureClassification {
+        logic_errors,
+        syntax_errors,
+        total,
+    }
+}
+
 /// Aggregated benchmark scores over time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkScore {
