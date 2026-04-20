@@ -51,6 +51,27 @@ pub extern "C" fn x402_alloc(size: i32) -> *mut u8 {
 }
 
 impl ToolExecutor {
+    /// Returns a summary of the agent's internal state.
+    pub async fn self_cycle_summary(&self) -> Result<ToolResult, String> {
+        let db = self.db.as_ref().ok_or("database not initialized")?;
+        
+        // Access a valid sled tree, e.g., 'state'.
+        let brain_data = db.state.get("brain_weights").map_err(|e| e.to_string())?;
+
+        let summary = serde_json::json!({
+            "status": "operational",
+            "brain_state": brain_data.is_some(),
+            "msg": "self-cycle summary complete"
+        });
+
+        Ok(ToolResult {
+            stdout: summary.to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 0,
+        })
+    }
+
     /// Create a new cartridge project with source code.
     pub(super) async fn create_cartridge(
         &self,
@@ -67,6 +88,7 @@ impl ToolExecutor {
         {
             return Err("invalid slug: must be alphanumeric with hyphens/underscores".to_string());
         }
+
 
         let cartridge_dir = format!("/data/cartridges/{slug}");
         let src_dir = format!("{cartridge_dir}/src");
