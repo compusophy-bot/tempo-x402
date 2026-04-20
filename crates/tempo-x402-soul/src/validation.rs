@@ -14,10 +14,10 @@
 //! 4. **Explainable rejections** — Every rejection includes a human-readable reason
 //!    that feeds back into the LLM's next attempt.
 
+use uuid::Uuid;
 use crate::db::SoulDatabase;
 use crate::feedback::PlanOutcome;
 use crate::plan::PlanStep;
-use uuid::Uuid;
 
 /// Result of plan validation.
 #[derive(Debug)]
