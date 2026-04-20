@@ -1,6 +1,15 @@
 //! Shell command execution tool.
 use super::*;
 
+pub(super) fn truncate_output(bytes: &[u8]) -> String {
+    let s = String::from_utf8_lossy(bytes);
+    if s.len() > MAX_OUTPUT_BYTES {
+        format!("{}... [truncated]", &s[..MAX_OUTPUT_BYTES])
+    } else {
+        s.to_string()
+    }
+}
+
 impl ToolExecutor {
     pub(super) async fn execute_shell(
         &self,
@@ -9,8 +18,11 @@ impl ToolExecutor {
     ) -> Result<ToolResult, String> {
         let start = std::time::Instant::now();
 
+        // Enforce maximum timeout to prevent long-running processes
+        let timeout = std::cmp::min(timeout_secs, SHELL_TIMEOUT_CAP);
+
         let result = tokio::time::timeout(
-            std::time::Duration::from_secs(timeout_secs),
+            std::time::Duration::from_secs(timeout),
             tokio::process::Command::new("bash")
                 .arg("-c")
                 .arg(command)
@@ -37,10 +49,19 @@ impl ToolExecutor {
             Ok(Err(e)) => Err(format!("command failed to execute: {e}")),
             Err(_) => Ok(ToolResult {
                 stdout: String::new(),
-                stderr: format!("command timed out after {timeout_secs}s"),
+                stderr: format!("command timed out after {timeout}s"),
                 exit_code: -1,
                 duration_ms,
             }),
         }
+    }
+
+    /// Executes a shell command securely for benchmarking and introspection.
+    pub async fn execute_secure_shell(
+        &self,
+        command: &str,
+        timeout_secs: u64,
+    ) -> Result<ToolResult, String> {
+        self.execute_shell(command, timeout_secs).await
     }
 }
