@@ -99,9 +99,27 @@ pub struct WeightDelta {
     pub source_id: String,
 }
 
+/// Performance report for introspective metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PerformanceReport {
+    pub timestamp: i64,
+    pub train_steps: u64,
+    pub running_loss: f32,
+    pub model_version: String,
+}
+
 // ── Brain implementation ─────────────────────────────────────────────
 
 impl Brain {
+    pub fn get_performance_report(&self) -> PerformanceReport {
+        PerformanceReport {
+            timestamp: chrono::Utc::now().timestamp(),
+            train_steps: self.train_steps,
+            running_loss: self.running_loss,
+            model_version: "v3.0.0".to_string(),
+        }
+    }
+
     /// Create a new brain with Xavier-initialized weights.
     pub fn new() -> Self {
         Self {
