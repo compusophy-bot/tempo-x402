@@ -68,9 +68,11 @@ pub fn benchmark_report(runs: &[BenchmarkRun], problems: &[BenchmarkProblem]) ->
     let mut total_by_tier: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut common_errors = std::collections::HashMap::new();
 
+    // Pre-map problems by ID for O(1) lookup
+    let problem_map: std::collections::HashMap<_, _> = problems.iter().map(|p| (&p.slug, p)).collect();
+
     for run in runs {
-        let problem = problems.iter().find(|p| p.slug == run.task_id);
-        if let Some(problem) = problem {
+        if let Some(problem) = problem_map.get(&run.task_id) {
             *total_by_tier.entry(problem.difficulty.clone()).or_insert(0) += 1;
             if !run.passed {
                 total_failures += 1;
