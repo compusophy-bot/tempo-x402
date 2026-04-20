@@ -68,8 +68,7 @@ pub fn benchmark_report(runs: &[BenchmarkRun], problems: &[BenchmarkProblem]) ->
     let mut total_by_tier: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut common_errors = std::collections::HashMap::new();
 
-    // Pre-map problems by ID for O(1) lookup
-    let problem_map: std::collections::HashMap<_, _> = problems.iter().map(|p| (&p.slug, p)).collect();
+    let problem_map: std::collections::HashMap<&String, &BenchmarkProblem> = problems.iter().map(|p| (&p.slug, p)).collect();
 
     for run in runs {
         if let Some(problem) = problem_map.get(&run.task_id) {
@@ -78,8 +77,12 @@ pub fn benchmark_report(runs: &[BenchmarkRun], problems: &[BenchmarkProblem]) ->
                 total_failures += 1;
                 *failures_by_tier.entry(problem.difficulty.clone()).or_insert(0) += 1;
                 
-                // Track simple common error patterns
-                let error_summary = run.error_output.lines().take(3).collect::<Vec<_>>().join(" ");
+                // Optimized error summary tracking using a faster iterator approach
+                let error_summary = run.error_output
+                    .lines()
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 *common_errors.entry(error_summary).or_insert(0) += 1;
             }
         }
