@@ -120,16 +120,31 @@ impl Brain {
         }
     }
 
-    /// Performs self-diagnosis on a list of raw error messages to determine the most
-    /// likely failure patterns, enabling smarter planning adjustments.
-    pub fn self_diagnose_errors(&self, errors: &[String]) -> Vec<ErrorCategory> {
-        // TODO: In a production version, this would map text error patterns 
-        // to ErrorCategory via the neural network or a heuristic classifier.
-        // Currently, it defaults to Unknown.
-        errors
-            .iter()
-            .map(|_| ErrorCategory::Unknown)
-            .collect()
+    /// Performs diagnostic analysis of compiler output to suggest localized fixes.
+    pub fn self_diagnose_errors_v2(&self, compiler_output: &str) -> String {
+        let mut diagnosis = Vec::new();
+
+        if compiler_output.contains("error[E0382]") || compiler_output.contains("use of moved value") {
+            diagnosis.push("Ownership violation: Variable moved. Check if clone() or borrowing is needed.");
+        }
+        if compiler_output.contains("error[E0507]") {
+            diagnosis.push("Cannot move out of borrowed content. Consider using reference or cloning.");
+        }
+        if compiler_output.contains("error[E0277]") {
+            diagnosis.push("Trait bound not satisfied. Verify types implement required traits.");
+        }
+        if compiler_output.contains("error[E0597]") {
+            diagnosis.push("Borrowed value does not live long enough. Check lifetime annotations or scope.");
+        }
+        if compiler_output.contains("mismatched types") {
+            diagnosis.push("Type mismatch. Verify expected vs actual types in assignment or return.");
+        }
+
+        if diagnosis.is_empty() {
+            "No specific patterns detected. Please check compiler logs manually.".to_string()
+        } else {
+            format!("Diagnostic v2 suggestions: {}", diagnosis.join(" | "))
+        }
     }
 
     /// Create a new brain with Xavier-initialized weights.
