@@ -118,6 +118,7 @@ impl Brain {
             running_loss: self.running_loss,
             model_version: "v3.0.0".to_string(),
         }
+    }
 
     /// Performs self-diagnosis on a list of raw error messages to determine the most
     /// likely failure patterns, enabling smarter planning adjustments.
@@ -129,7 +130,6 @@ impl Brain {
             .iter()
             .map(|_| ErrorCategory::Unknown)
             .collect()
-    }
     }
 
     /// Create a new brain with Xavier-initialized weights.
