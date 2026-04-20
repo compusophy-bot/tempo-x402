@@ -185,6 +185,83 @@ pub const REFERENCE_SCORES: &[(&str, f64)] = &[
     ("Gemini 3 Pro", 80.0),
 ];
 
+/// Calculates IQ score based on difficulty-weighted pass rates.
+pub fn calculate_iq(runs: &[BenchmarkRun], problems: &[BenchmarkProblem]) -> f64 {
+    let mut total_weighted_score = 0.0;
+    let mut total_possible_score = 0.0;
+
+    for run in runs {
+        if let Some(problem) = problems.iter().find(|p| p.slug == run.task_id) {
+            let weight = difficulty_weight(&problem.difficulty);
+            total_possible_score += weight;
+            if run.passed {
+                total_weighted_score += weight;
+            }
+        }
+    }
+
+    if total_possible_score == 0.0 {
+        100.0
+    } else {
+        100.0 + (total_weighted_score / total_possible_score) * 60.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_iq() {
+        let problems = vec![
+            BenchmarkProblem {
+                slug: "t1".into(),
+                instructions: "".into(),
+                test_code: "".into(),
+                starter_code: "".into(),
+                difficulty: "tier1".into(),
+                cargo_toml: "".into(),
+            },
+            BenchmarkProblem {
+                slug: "t6".into(),
+                instructions: "".into(),
+                test_code: "".into(),
+                starter_code: "".into(),
+                difficulty: "tier6".into(),
+                cargo_toml: "".into(),
+            },
+        ];
+
+        let runs = vec![
+            BenchmarkRun {
+                id: "1".into(),
+                task_id: "t1".into(),
+                entry_point: "".into(),
+                passed: true,
+                generated_solution: "".into(),
+                error_output: "".into(),
+                total_ms: 0,
+                created_at: 0,
+            },
+            BenchmarkRun {
+                id: "2".into(),
+                task_id: "t6".into(),
+                entry_point: "".into(),
+                passed: false,
+                generated_solution: "".into(),
+                error_output: "".into(),
+                total_ms: 0,
+                created_at: 0,
+            },
+        ];
+
+        let iq = calculate_iq(&runs, &problems);
+        // tier1 (1.0), tier6 (8.0). Total 9.0. Pass tier1 (1.0).
+        // 100 + (1.0/9.0) * 60 = 100 + 6.666 = 106.666
+        assert!((iq - 106.666).abs() < 0.1);
+    }
+}
+
 /// Shared target directory for all benchmark compilations.
 /// Deps compile once, then each exercise only recompiles its own lib + tests.
 const BENCHMARK_TARGET_DIR: &str = "/tmp/bench_target";
